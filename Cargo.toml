@@ -27,6 +27,10 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 
+[profile.dev]
+# 只保留行号表（回溯仍有文件/行号），不含完整调试信息 —— target 体积从 17G 级降到 1G 级
+debug = "line-tables-only"
+
 [profile.release]
 lto = true
 codegen-units = 1
