@@ -1,0 +1,22 @@
+[package]
+name = "myday-cli"
+description = "MyDay 命令行接口：可被脚本与 agent 调用的结构化 CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "myday"
+path = "src/main.rs"
+
+[dependencies]
+myday-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+serde_json.workspace = true

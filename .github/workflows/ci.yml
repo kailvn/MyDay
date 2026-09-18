@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+
+      - name: 安装 Tauri Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: cargo test（core / cli / desktop）
+        run: cargo test --workspace
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: 前端依赖
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: golden 自检（holidays / recurrence / timewords / tpltime）
+        working-directory: apps/desktop
+        run: pnpm test
+
+      - name: i18n key 覆盖检查
+        working-directory: apps/desktop
+        run: node scripts/check-i18n.mjs
+
+      - name: Playwright e2e（真 Chromium，浏览器 mock 模式）
+        working-directory: apps/desktop
+        run: pnpm e2e

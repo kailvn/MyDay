@@ -1,0 +1,27 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Node / 前端
+node_modules/
+apps/desktop/dist/
+apps/desktop/test-results/
+pnpm-debug.log*
+
+# Tauri
+apps/desktop/src-tauri/gen/
+
+# 本地运行时数据（开发时重定向的数据目录）
+.local-data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 系统
+.DS_Store
+
+# 本地会话/工具状态
+.zcode/
+gui-test-screenshots/

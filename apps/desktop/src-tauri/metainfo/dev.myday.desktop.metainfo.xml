@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream 元数据：随 deb 包安装到 /usr/share/metainfo/，
+     GNOME Software 等应用商店据此展示（tauri.conf.json bundle.deb.files 接线）。 -->
+<component type="desktop-application">
+  <id>dev.myday.desktop</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>MyDay</name>
+  <summary>Personal schedule, tasks and logs — offline-first</summary>
+  <summary xml:lang="zh-CN">个人日程 / 待办 / 记录管理，离线优先</summary>
+  <description>
+    <p>
+      MyDay unifies events (what will happen), tasks (what must be done) and
+      logs (what happened) in one local SQLite database, with a full CLI and
+      local IPC so scripts and agents can drive it.
+    </p>
+    <p xml:lang="zh-CN">
+      日程（将发生）、待办（要完成）、记录（已发生）统一存本地 SQLite；
+      完整 CLI 与本地 IPC 让脚本和 agent 直接调用。提醒可靠：存意图、去重、
+      错过聚合。支持日历拖拽改期、重复规则、法定节假日、统计挂件与今日悬浮窗。
+    </p>
+  </description>
+  <launchable type="desktop-id">dev.myday.desktop.desktop</launchable>
+  <releases>
+    <release version="1.0.0" date="2026-09-18">
+      <url type="details">https://github.com/kailvn/MyDay/blob/main/CHANGELOG.md</url>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

@@ -1,0 +1,19 @@
+{
+  "identifier": "default",
+  "description": "MyDay 主窗口与快速添加窗口的默认权限",
+  "windows": [
+    "main",
+    "quick-add",
+    "overlay"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-center",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging"
+  ]
+}

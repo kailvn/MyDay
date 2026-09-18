@@ -1,0 +1,117 @@
+/* MyDay 全局主题：自维护「纸黄」配色（不再跟随 GNOME 灰蓝），
+   深色模式跟随系统换深牛皮纸。全应用只维护这一套变量。 */
+:root {
+  --bg: #f6efdd;
+  --sidebar-bg: #ece3ca;
+  --card: #fffbee;
+  --text: #453f30;
+  --text-dim: #8b7f63;
+  --accent: #3584e4;
+  --accent-fg: #ffffff;
+  --border: #ddd0b2;
+  --danger: #e01b24;
+  --radius: 10px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #2a251b;
+    --sidebar-bg: #221e15;
+    --card: #332d20;
+    --text: #ede5d0;
+    --text-dim: #a99d7f;
+    --accent: #3584e4;
+    --border: #4b4331;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Cantarell", "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: filter 0.1s;
+}
+
+button:hover {
+  filter: brightness(1.06);
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+button.ghost:hover {
+  color: var(--text);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+/* 下拉全局统一小号：紧凑内边距 + 12px 字号，新加下拉自动沿用，无需单独调 */
+select {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.empty {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 32px 0;
+}

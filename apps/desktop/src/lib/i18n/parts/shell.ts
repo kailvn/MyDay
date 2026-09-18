@@ -1,0 +1,41 @@
+/** 主窗口骨架（Shell.svelte）：侧边栏导航与全局动作。 */
+export const part_shell = {
+  "shell.nav.today": "今天",
+  "shell.nav.calendar": "日历",
+  "shell.nav.tasks": "待办",
+  "shell.nav.logs": "记录",
+  "shell.nav.stats": "统计",
+  "shell.nav.search": "搜索",
+  "shell.nav.templates": "模板",
+  "shell.nav.help": "帮助",
+  "shell.nav.settings": "设置",
+  "shell.quickAdd": "快速添加",
+  "shell.reminderCenter": "提醒中心",
+  // ---- 小组件：文件链接 chips / 删除撤销条 ----
+  "filelink.openTip": "打开文件",
+  "filelink.revealTip": "在文件管理器中显示",
+  "filelink.remove": "移除链接",
+  "undo.deleted": "已删除 {what}",
+  "undo.morePending": "（还有 {n} 项待删除）",
+  "undo.all": "全部撤销（{n}）",
+} as const;
+
+export const part_shell_en: Record<string, string> = {
+  "shell.nav.today": "Today",
+  "shell.nav.calendar": "Calendar",
+  "shell.nav.tasks": "Tasks",
+  "shell.nav.logs": "Logs",
+  "shell.nav.stats": "Stats",
+  "shell.nav.search": "Search",
+  "shell.nav.templates": "Templates",
+  "shell.nav.help": "Help",
+  "shell.nav.settings": "Settings",
+  "shell.quickAdd": "Quick Add",
+  "shell.reminderCenter": "Reminder center",
+  "filelink.openTip": "Open file",
+  "filelink.revealTip": "Reveal in file manager",
+  "filelink.remove": "Remove link",
+  "undo.deleted": "Deleted {what}",
+  "undo.morePending": " ({n} more pending)",
+  "undo.all": "Undo all ({n})",
+};

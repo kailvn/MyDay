@@ -1,0 +1,24 @@
+[package]
+name = "myday-core"
+description = "MyDay 核心库：数据模型、SQLite 存储、附件、搜索、提醒调度、本地 IPC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+rusqlite.workspace = true
+dirs.workspace = true
+# E2E 桥（src/bin/e2e_bridge.rs）：附件 base64 解码
+base64 = "0.22"
+# 一键备份 zip（SPRINT2-SPEC §6）：仅用 STORED，零压缩特性依赖
+zip = { version = "2", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+zip = { version = "2", default-features = false }

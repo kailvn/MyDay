@@ -1,0 +1,32 @@
+[package]
+name = "myday-desktop"
+description = "MyDay 桌面应用（Tauri 2）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+default-run = "myday-desktop"
+
+[lib]
+name = "myday_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+myday-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+base64 = "0.22"
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+notify-rust = "4"
+
+[features]
+default = []
+# 独立 `cargo build` 时打包前端资源（`tauri build` 会自动启用）；
+# 缺了它 release 二进制仍会去连 devUrl（localhost:1420）
+custom-protocol = ["tauri/custom-protocol"]

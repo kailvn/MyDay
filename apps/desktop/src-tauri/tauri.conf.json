@@ -1,0 +1,94 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MyDay",
+  "version": "1.0.0",
+  "identifier": "dev.myday.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MyDay",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 860,
+        "minHeight": 560
+      },
+      {
+        "label": "quick-add",
+        "title": "快速添加",
+        "width": 560,
+        "height": 600,
+        "resizable": true,
+        "maximizable": false,
+        "visible": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "minWidth": 460,
+        "minHeight": 420
+      },
+      {
+        "label": "overlay",
+        "title": "MyDay 今日",
+        "width": 264,
+        "height": 380,
+        "resizable": true,
+        "maximizable": false,
+        "minimizable": false,
+        "visible": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "focus": false,
+        "shadow": false,
+        "minWidth": 220,
+        "minHeight": 280
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$DATA/myday/**",
+          "$DATA/myday-dev/**"
+        ]
+      }
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false,
+      "menuOnLeftClick": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/metainfo/dev.myday.desktop.metainfo.xml": "metainfo/dev.myday.desktop.metainfo.xml"
+        }
+      }
+    }
+  }
+}
