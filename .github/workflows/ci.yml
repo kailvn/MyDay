@@ -45,6 +45,16 @@ jobs:
         working-directory: apps/desktop
         run: pnpm install --frozen-lockfile
 
+      - name: Playwright 浏览器缓存
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('apps/desktop/pnpm-lock.yaml') }}
+
+      - name: 安装 Playwright Chromium（含系统依赖）
+        working-directory: apps/desktop
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: golden 自检（holidays / recurrence / timewords / tpltime）
         working-directory: apps/desktop
         run: pnpm test
