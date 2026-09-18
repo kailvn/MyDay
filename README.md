@@ -78,7 +78,12 @@ rearrange like widgets.
 
 ## Get started
 
-Rust 1.98+, Node 22 + pnpm; on Linux also
+**Prebuilt binaries** (`.deb` for Ubuntu/Debian, NSIS installer for Windows)
+are on the [Releases](https://github.com/kailvn/MyDay/releases) page, with a
+`SHA256SUMS.txt` to verify them. Windows builds are unsigned — SmartScreen
+will show a warning; choose "More info" → "Run anyway".
+
+Or build from source — Rust 1.98+, Node 22 + pnpm; on Linux also
 `libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev`.
 
 ```bash

@@ -1,0 +1,96 @@
+# 发布工作流：推 v* tag 触发，双平台构建并自动创建 GitHub Release。
+# 产物不签名（公开早期零成本方案）：Windows 下载会有 SmartScreen 提示，
+# Release 附 SHA256SUMS.txt 供校验；接入 Azure Trusted Signing 时在
+# tauri.conf.json 加 bundle.windows.trustedSigning 并在此补环境变量即可。
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux
+            # 只出 deb；AppImage 需要额外系统依赖，需要时再加
+            args: --bundles deb
+          - os: windows-latest
+            label: windows
+            # 本地用交叉编译脚本，CI 走原生 MSVC（runner 自带 WebView2/NSIS）
+            args: --bundles nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 编译缓存（按平台隔离）
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-${{ matrix.label }}
+
+      - name: 安装 Tauri Linux 系统依赖
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: 前端依赖
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建（deb / NSIS）并发布 Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: MyDay ${{ github.ref_name }}
+          releaseBody: >-
+            Offline-first personal planner. Linux: install the .deb
+            (`sudo apt install ./MyDay_*_amd64.deb`). Windows: run the
+            NSIS installer (unsigned — SmartScreen shows a warning,
+            choose "More info" → "Run anyway"; verify with SHA256SUMS.txt).
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  checksums:
+    # 两个平台都发布完成后，下载产物生成 SHA256SUMS.txt 挂回 Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 生成并上传 SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir dist
+          gh release download "$TAG" --dir dist --clobber \
+            --pattern '*.deb' --pattern '*.exe' --pattern '*.msi'
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+          gh release upload "$TAG" dist/SHA256SUMS.txt --clobber

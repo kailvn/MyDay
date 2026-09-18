@@ -64,7 +64,11 @@ Rust 核心 + Tauri 外壳，外加一条把脚本和 AI agent 当成一等公�
 
 ## 开始使用
 
-Rust 1.98+、Node 22 + pnpm；Linux 另需
+**直接下载安装包**（Ubuntu/Debian 的 `.deb`、Windows 的 NSIS 安装器）在
+[Releases](https://github.com/kailvn/MyDay/releases) 页，附 `SHA256SUMS.txt`
+供校验。Windows 包未签名，SmartScreen 会提示——选「更多信息」→「仍要运行」。
+
+或者从源码构建——Rust 1.98+、Node 22 + pnpm；Linux 另需
 `libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev`。
 
 ```bash
