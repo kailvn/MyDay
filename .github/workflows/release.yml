@@ -78,7 +78,8 @@ jobs:
           args: ${{ matrix.args }}
 
   checksums:
-    # 两个平台都发布完成后，下载产物生成 SHA256SUMS.txt 挂回 Release
+    # 两个平台都发布完成后，下载产物生成 SHA256SUMS.txt 挂回 Release。
+    # 本 job 不 checkout，gh 必须显式 -R 指定仓库
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -86,11 +87,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           mkdir dist
-          gh release download "$TAG" --dir dist --clobber \
+          gh release download --repo "$REPO" "$TAG" --dir dist --clobber \
             --pattern '*.deb' --pattern '*.exe' --pattern '*.msi'
           cd dist
           sha256sum * > SHA256SUMS.txt
           cd ..
-          gh release upload "$TAG" dist/SHA256SUMS.txt --clobber
+          gh release upload --repo "$REPO" "$TAG" dist/SHA256SUMS.txt --clobber
