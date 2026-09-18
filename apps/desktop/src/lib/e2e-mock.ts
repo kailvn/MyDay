@@ -148,6 +148,14 @@ export function installE2eMock() {
       status: "done",
       completed_at: utc(dayShift(now, -1, 13, 0)),
     }),
+    // 无任何日期的待办：日历「未排期池」用例的种子（list_items 可查到，窗口查询查不到）
+    mk({
+      id: "tsk_shelf",
+      type: "task",
+      title: "整理书架",
+      status: "todo",
+      tags: ["家务"],
+    }),
     ...Array.from({ length: 6 }, (_, i) =>
       mk({
         id: `log_w${i}`,

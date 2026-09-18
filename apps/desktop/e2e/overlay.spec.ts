@@ -7,7 +7,8 @@
  *   O3 设置面板：透明度 CSS 变量 + 持久化、角落重置清除 custom_pos、锁定持久化
  *
  * 种子里「团队周会 / 交周报」锚在每周四（@weekly:4）：周四进今日列表；
- * 其余 6 天交周报落在过去 = 种子自带「逾期 1」。计数按星期分支断言。
+ * 其余 6 天交周报落在过去 = 种子自带「逾期 1」。种子另有一条无日期待办
+ * （整理书架）恒进摘要「未安排 1」不进列表。计数按星期分支断言。
  * mock 的 settings KV 每次页面加载重置，持久化断言以 get_overlay_config 为准。
  */
 import { expect, test, type Page } from "@playwright/test";
@@ -50,12 +51,13 @@ test("O1 渲染：分区 + 进度 + 摘要省略 + 进行中高亮", async ({ pa
   // 头部进度 = 0 / 今日待办数（§4.4 不含逾期未安排）
   await expect(page.getByTestId("overlay-progress")).toHaveText(`✓ 0/${1 + (thursday ? 1 : 0)}`);
 
-  // 摘要行（§4.3）：仅周四种子无逾期整行省略；其余 6 天交周报逾期 = 「逾期 1」；
-  // 未安排恒 0 恒省略。列表非空 → 无空态。
+  // 摘要行（§4.3）：种子自带一条无日期待办（整理书架，进摘要不进列表）→「未安排 1」
+  // 恒在；其余 6 天交周报逾期叠加 = 「逾期 1 · 未安排 1」（周四无逾期整行只剩未安排）。
+  // 列表非空 → 无空态。
   if (thursday) {
-    await expect(page.getByTestId("overlay-summary")).toHaveCount(0);
+    await expect(page.getByTestId("overlay-summary")).toHaveText("未安排 1");
   } else {
-    await expect(page.getByTestId("overlay-summary")).toHaveText("逾期 1");
+    await expect(page.getByTestId("overlay-summary")).toHaveText("逾期 1 · 未安排 1");
   }
   await expect(page.getByTestId("overlay-empty")).toHaveCount(0);
 
@@ -82,10 +84,14 @@ test("O2 勾选完成：淡出重排 + 进度更新 + 摘要计数联动", async
   const unsched = (await invoke(page, "add_item", {
     new: { item_type: "task", title: "无安排" },
   })) as { id: string };
-  // 非周四时种子自带交周报逾期 1，叠加后按星期分支
+  // 非周四时种子自带交周报逾期 1，叠加后按星期分支；
+  // 种子另有一条无日期待办（整理书架），与本次添加的合计未安排 2
   const seedOverdue = seedThursday() ? 0 : 1;
+  const seedUnsched = 1;
   await expect(page.getByTestId("overlay-summary")).toHaveText(
-    seedOverdue ? `逾期 ${seedOverdue + 1} · 未安排 1` : "逾期 1 · 未安排 1",
+    seedOverdue
+      ? `逾期 ${seedOverdue + 1} · 未安排 ${seedUnsched + 1}`
+      : `逾期 1 · 未安排 ${seedUnsched + 1}`,
   );
 
   // 勾选买牛奶：300ms 淡出 → complete_task → data-changed → 列表重排、进度 +1
@@ -94,10 +100,12 @@ test("O2 勾选完成：淡出重排 + 进度更新 + 摘要计数联动", async
   await expect(milk).toHaveCount(0);
   await expect(page.getByTestId("overlay-progress")).toHaveText(`✓ 1/${1 + (seedThursday() ? 1 : 0)}`);
 
-  // 摘要计数随 data-changed 联动：无安排完成后「未安排」整项省略（皆 0 项省略，§4.3）
+  // 摘要计数随 data-changed 联动：完成后剩种子那条未排期待办，「未安排 1」不再省略
   await invoke(page, "complete_task", { id: unsched.id });
   await expect(page.getByTestId("overlay-summary")).toHaveText(
-    seedOverdue ? `逾期 ${seedOverdue + 1}` : "逾期 1",
+    seedOverdue
+      ? `逾期 ${seedOverdue + 1} · 未安排 ${seedUnsched}`
+      : `逾期 1 · 未安排 ${seedUnsched}`,
   );
   void overdue;
 });

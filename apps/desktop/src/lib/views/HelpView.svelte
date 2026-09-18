@@ -33,6 +33,7 @@
       title: t("help.calendar.title"),
       rows: [
         [t("help.calendar.drag.k"), t("help.calendar.drag.v")],
+        [t("help.calendar.pool.k"), t("help.calendar.pool.v")],
         [t("help.calendar.recur.k"), t("help.calendar.recur.v")],
         [t("help.calendar.neighbor.k"), t("help.calendar.neighbor.v")],
         [t("help.calendar.holidays.k"), t("help.calendar.holidays.v")],

@@ -187,6 +187,33 @@ export function moveTaskDue(item: Item, targetDay: Date): RescheduleResult {
   };
 }
 
+/**
+ * 无日期待办排到目标日（未排期池拖入月格）：due = 当天 23:59，
+ * 与面板锚点日的截止默认一致。undo = 清除截止（退回未排期）。
+ */
+export function scheduleTask(item: Item, targetDay: Date): RescheduleResult {
+  const newDue = new Date(
+    targetDay.getFullYear(),
+    targetDay.getMonth(),
+    targetDay.getDate(),
+    23, 59,
+  );
+  return {
+    patch: { due_at: newDue.toISOString() },
+    undo: { clear_due_at: true },
+    note: t("reschedule.due_moved", { day: fmtDay(newDue), clock: ` ${fmtClock(newDue)}`, series: "" }),
+  };
+}
+
+/** 清除截止（到期行快捷动作，退回未排期池）；undo 恢复原截止。 */
+export function clearTaskDue(item: Item): RescheduleResult {
+  return {
+    patch: { clear_due_at: true },
+    undo: { due_at: item.due_at ?? undefined } as ItemPatch,
+    note: t("reschedule.due_cleared"),
+  };
+}
+
 function dayOf(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }

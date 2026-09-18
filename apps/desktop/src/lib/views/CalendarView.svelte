@@ -21,7 +21,7 @@
   import { openCreate, openEdit, rowDetail } from "../panel.svelte";
   import { toast } from "../toast.svelte";
   import { holidayOfKey } from "../holidays.svelte";
-  import { moveEventOccurrence, moveTaskDue, type RescheduleResult } from "../reschedule";
+  import { moveEventOccurrence, moveTaskDue, scheduleTask, clearTaskDue, type RescheduleResult } from "../reschedule";
   import { t, q, i18n } from "../i18n";
 
   let { dataVersion = 0 } = $props();  /** 月 = 网格 + 当天面板；周 / 日 = 时间网格（WeekGrid，日 = 单列） */
@@ -35,6 +35,8 @@
   let cursor = $state(memo?.cursor ?? new Date());
   let selected = $state(memo?.selected ?? new Date().getDate());
   let monthItems = $state<Item[]>([]);
+  /** 未排期池原始集（load 时过滤好），展示层再排除待删行 */
+  let poolRaw = $state<Item[]>([]);
   let error = $state("");
 
   // 记住上次浏览状态（Anytype 用户高频诉求：切回日历不要弹回当月）
@@ -197,6 +199,12 @@
   );
 
   type Section = { title: string; items: Item[] };
+  /** 未排期池：无日期待办先进先出（最早创建的排最上），待删行即时消失 */
+  let poolItems = $derived(
+    poolRaw
+      .filter((it) => !deletions.pendingIds.includes(it.id))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+  );
   /** 已完成沉底（与今天页一致），同组内按时间升序 */
   const doneLast = (a: Item, b: Item) => (a.status === "done" ? 1 : 0) - (b.status === "done" ? 1 : 0);
   /** 当天信息三节（时间升序，已完成沉底） */
@@ -264,12 +272,13 @@
   }
 
   // ---- 月视图拖拽改期（SPRINT2-SPEC §3）-----------------------------------
-  /** 当天面板行 → 月历格：日程整体平移天数、到期待办改截止日（保钟点） */
+  /** 当天面板行 / 未排期池行 → 月历格：日程整体平移天数、到期待办改截止日（保钟点）、
+   *  池行排期（due = 目标日 23:59） */
   interface RowDrag {
-    kind: "event" | "task";
+    kind: "event" | "task" | "pool";
     /** 系列原条目 */
     base: Item;
-    /** 展开后的本次发生 */
+    /** 展开后的本次发生（池行 = 条目本身） */
     ev: Item;
     x0: number;
     y0: number;
@@ -282,9 +291,9 @@
   let rowDrag = $state<RowDrag | null>(null);
   let suppressRowClickUntil = 0;
 
-  function onRowPointerDown(e: PointerEvent, kind: "event" | "task", ev: Item) {
+  function onRowPointerDown(e: PointerEvent, kind: "event" | "task" | "pool", ev: Item) {
     if (e.button !== 0) return;
-    if (kind === "task" && !ev.due_at) return; // 无截止的待办不参与拖拽
+    if (kind === "task" && !ev.due_at) return; // 无截止的待办不参与拖拽（池行走 pool）
     if (kind === "event" && (ev.type !== "event" || !ev.start_at)) return;
     rowDrag = {
       kind,
@@ -353,9 +362,31 @@
         s.getMinutes(),
       );
       void applyReschedule(d.base, moveEventOccurrence(d.base, s, en, newStart));
+    } else if (d.kind === "pool") {
+      void applyReschedule(d.base, scheduleTask(d.base, target));
     } else {
       void applyReschedule(d.base, moveTaskDue(d.base, target));
     }
+  }
+
+  // ---- 到期行快捷顺延（不拖拽）：语义与拖到目标日完全一致（含重复规则改写） --
+  /** base 取系列原条目（展开实例的时间是虚拟的，改期始终落在原条目上） */
+  function baseOf(it: Item): Item {
+    return monthItems.find((x) => x.id === it.id) ?? it;
+  }
+
+  function deferDue(it: Item, days: number) {
+    const base = baseOf(it);
+    const due = base.due_at ? new Date(base.due_at) : null;
+    if (!due) return;
+    const target = new Date(due.getFullYear(), due.getMonth(), due.getDate() + days);
+    void applyReschedule(base, moveTaskDue(base, target));
+  }
+
+  function clearDue(it: Item) {
+    const base = baseOf(it);
+    if (!base.due_at) return;
+    void applyReschedule(base, clearTaskDue(base));
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -406,7 +437,6 @@
 
   async function load() {
     try {
-      // 窗口查询：覆盖整周网格（含相邻月补位格），四种内置时间字段一次取回
       const start = new Date(
         gridBounds.start.getFullYear(),
         gridBounds.start.getMonth(),
@@ -419,7 +449,14 @@
         gridBounds.end.getDate(),
         23, 59, 59, 999,
       );
-      monthItems = await api.listItemsWindow(start.toISOString(), end.toISOString());
+      const [win, pool] = await Promise.all([
+        api.listItemsWindow(start.toISOString(), end.toISOString()),
+        // 未排期池：进行中且无任何日期的待办（有 start 的已在日程节，有 due 的在到期节）。
+        // list_items 无窗口约束、按字段过滤；上限 200 条，超大规模池截断可接受
+        api.listItems({ item_type: "task", status: "todo", limit: 200 }),
+      ]);
+      monthItems = win;
+      poolRaw = pool.filter((it) => !it.due_at && !it.start_at);
       error = "";
     } catch (e) {
       error = String(e);
@@ -524,6 +561,38 @@
       {selectedLabel}
       <button class="ghost add" onclick={createOnSelected}>{t("calendar.add_new")}</button>
     </h2>
+    <!-- 未排期池：无日期待办的排期入口（拖到任意月格 = 截止那天 23:59，可撤销） -->
+    {#if poolItems.length}
+      <section class="pool" title={t("calendar.pool_tip")}>
+        <h3>{t("calendar.pool_title")} · {poolItems.length}</h3>
+        <ul>
+          {#each poolItems as it (it.id)}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <li
+              class="draggable"
+              onclick={(e) => {
+                if (Date.now() < suppressRowClickUntil) return;
+                rowDetail(it)(e);
+              }}
+              onpointerdown={(e) => onRowPointerDown(e, "pool", it)}
+            >
+              <input
+                type="checkbox"
+                title={t("calendar.mark_done")}
+                onpointerdown={(e) => e.stopPropagation()}
+                onclick={(e) => e.stopPropagation()}
+                onchange={() => toggleDone(it)}
+              />
+              <span class="title">{displayTitle(it)}</span>
+              {#each it.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
+              <EditButton onedit={() => openEdit(it)} />
+              <DeleteButton onconfirm={() => deletions.request(it)} />
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
     {#if daySections.length === 0}
       <div class="empty">{t("calendar.day_empty", { name: q(t("calendar.add_new")) })}</div>
     {:else}
@@ -544,6 +613,7 @@
               onpointerdown={(e) =>
                 onRowPointerDown(e, section.title === t("calendar.section_due") ? "task" : "event", ev)}
             >
+              <div class="main">
               {#if ev.type === "task"}
                 <!-- 勾选框：就地完成 / 回退（点选框不开详情、不触发拖拽） -->
                 <input
@@ -572,6 +642,32 @@
               {#each ev.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
               <EditButton onedit={() => openEdit(ev)} />
               <DeleteButton onconfirm={() => deletions.request(ev)} />
+              </div>
+              {#if section.title === t("calendar.section_due") && ev.due_at}
+                <!-- 顺延快捷动作（悬停 / 键盘聚焦出现）：语义与拖到目标日一致；
+                     块级第二行，不挤占标题与按钮（面板仅 320px） -->
+                <div class="defer">
+                  <button
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      deferDue(ev, 1);
+                    }}>{t("calendar.defer_day")}</button>
+                  <button
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      deferDue(ev, 7);
+                    }}>{t("calendar.defer_week")}</button>
+                  <button
+                    title={t("calendar.defer_clear_tip")}
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      clearDue(ev);
+                    }}>{t("calendar.defer_clear")}</button>
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -898,15 +994,19 @@
     gap: 8px;
   }
 
-  .day-panel li {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-size: 13px;
-    cursor: pointer;
-    border-radius: 6px;
-    padding: 2px 4px;
-  }
+	/* 行 = 块级容器（可含顺延第二行）；.main 是原有的一行 flex 布局 */
+	.day-panel li {
+		font-size: 13px;
+		cursor: pointer;
+		border-radius: 6px;
+		padding: 2px 4px;
+	}
+
+	.day-panel .main {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
 
   .day-panel li:hover {
     background: color-mix(in srgb, var(--text) 6%, transparent);
@@ -932,13 +1032,58 @@
     text-overflow: ellipsis;
   }
 
-  /* 空间不足时 tag 先于标题收缩截断（标题是行内最重要的信息） */
-  .day-panel li .tag {
-    flex-shrink: 10;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+	/* 空间不足时 tag 先于标题收缩截断（标题是行内最重要的信息） */
+	.day-panel li .tag {
+		flex-shrink: 10;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* 未排期池：与当天内容用虚线分隔（池是排期入口，不属于选中日） */
+	.pool {
+		padding-bottom: 8px;
+		border-bottom: 1px dashed var(--border);
+	}
+
+	.pool h3 {
+		margin-top: 0;
+	}
+
+	/* 顺延快捷动作：悬停 / 键盘聚焦行时出现。块级第二行右对齐，不挤占
+	   标题 / 编辑按钮（面板仅 320px，同行放不下；也不改第一行的截断行为） */
+	.day-panel .defer {
+		display: none;
+		justify-content: flex-end;
+		gap: 2px;
+		margin-top: 2px;
+	}
+
+	.day-panel li:hover .defer,
+	.day-panel li:focus-within .defer {
+		display: flex;
+	}
+
+	.day-panel li:hover .defer,
+	.day-panel li:focus-within .defer {
+		display: flex;
+	}
+
+	.defer button {
+		border: 1px solid var(--border);
+		background: var(--card);
+		color: var(--text-dim);
+		font-size: 11px;
+		line-height: 1;
+		padding: 3px 6px;
+		border-radius: 999px;
+		white-space: nowrap;
+	}
+
+	.defer button:hover {
+		color: var(--accent);
+		border-color: var(--accent);
+	}
 
   .time {
     color: var(--text-dim);

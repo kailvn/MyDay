@@ -229,6 +229,51 @@ test("T8.5 附件：粘路径记链接，文件夹 chip 以 📂 区分（拖放
   await expect(page.getByRole("status")).toContainText(/项目资料/);
 });
 
+test("T8.6 未排期池：拖入月格排期 23:59，顺延与清除闭环", async ({ page }) => {
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const dayKey = (offset: number) =>
+    page.evaluate(
+      (o) => {
+        const d = new Date();
+        d.setDate(d.getDate() + o);
+        const p = (n: number) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+      },
+      offset,
+    );
+
+  await navButton(page, /日历/).click();
+  const panel = page.locator(".day-panel");
+  await expect(panel).toContainText("未排期待办");
+  const poolRow = panel.locator("li", { hasText: "整理书架" });
+  await expect(poolRow).toBeVisible();
+
+  // 池行拖到 (今天+10) 的月格 → 截止排到那天 23:59，行离开池
+  const key = await dayKey(10);
+  const cell = page.locator(`[data-cellday="${key}"]`);
+  const from = centerOf((await poolRow.boundingBox())!);
+  const to = centerOf((await cell.boundingBox())!);
+  await dragBy(page, from, to.x - from.x, to.y - from.y);
+  await expect(page.getByRole("status")).toContainText(/截止已改到/);
+  await expect(cell).toContainText("整理书架");
+  await expect(panel).not.toContainText("整理书架");
+
+  // 选中落点日 → 到期行悬停顺延 +1天 → 再清除退回池
+  await cell.click();
+  const dueRow = panel.locator("li", { hasText: "整理书架" });
+  await dueRow.hover();
+  await dueRow.getByRole("button", { name: "＋1天" }).click();
+  await expect(page.getByRole("status")).toContainText(/截止已改到/);
+
+  const nextKey = await dayKey(11);
+  await page.locator(`[data-cellday="${nextKey}"]`).click();
+  const movedRow = panel.locator("li", { hasText: "整理书架" });
+  await movedRow.hover();
+  await movedRow.getByRole("button", { name: "清除" }).click();
+  await expect(page.getByRole("status")).toContainText(/已清除截止/);
+  await expect(panel).toContainText("整理书架");
+});
+
 test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
   test("拖拽改期 → toast 撤销 → Esc 取消", async ({ page }) => {
     await gotoWeek(page);
