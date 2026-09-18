@@ -360,6 +360,8 @@ export function installE2eMock() {
       return null;
     },
     check_conflict: () => [],
+    // 浏览器 mock 无文件系统：约定尾分隔符 = 目录（文件链接 chips 的 📂 展示用例靠它）
+    path_is_dir: (a) => /[\\/]$/.test(String(a.path ?? "")),
     stats_summary: (a) => {
       const days = Math.min(1095, Math.max(7, Number(a.days ?? 365)));
       const todayKey = iso(now).slice(0, 10);

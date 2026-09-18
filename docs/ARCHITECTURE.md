@@ -47,7 +47,7 @@ Cargo workspace，三个成员共用 workspace 依赖版本。GUI 与 CLI 都只
 ### apps/desktop（Tauri 2）
 
 - `src-tauri/src/lib.rs`：启动装配——Store、单实例插件、托盘、IPC 服务线程、提醒循环线程、窗口关闭转隐藏
-- `commands.rs`：Tauri 命令，全部薄封装到 `Store`（另有文件链接的 `open_file_path` / `reveal_file_path`：`xdg-open` 与 `FileManager1.ShowItems` 定位，路径只记在条目 `extra["文件"]` 不复制文件）
+- `commands.rs`：Tauri 命令，全部薄封装到 `Store`（另有文件链接的 `open_file_path` / `reveal_file_path` / `path_is_dir`：`xdg-open` 与 `FileManager1.ShowItems` 定位，路径只记在条目 `extra["文件"]` 不复制文件）
 - `ipc_bridge.rs`：实现 `IpcHandler`，处理 CLI 转发来的写操作与窗口控制，广播 `data-changed`
 - `reminder_loop.rs`：30 秒循环，`notify-rust` 发 GNOME 通知
 - 前端（Svelte 5）：`Shell`（侧边栏 + 六视图 + 统一面板弹层 + 首启引导）、

@@ -15,11 +15,12 @@
    * - 模板模式：填一遍面板存为模板。时间列存 @token（占位池，tpltime.ts 文法），
    *   字段值 / 标题 / 备注 / 状态为具体默认；「模板存意图，条目存事实」。
    * - 提醒 1:N（相对锚点快捷 + 自定义）；event 全天 / task 全天截止开关。
-   * - 时间可清空（task）；文件拖入只记路径；Ctrl+V 粘贴截图。
+   * - 时间可清空（task）；文件 / 文件夹拖入只记路径；Ctrl+V 粘贴截图。
    */
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import {
     api,
+    basename,
     displayTitle,
     fmtDateTime,
     FILE_LINKS_KEY,
@@ -838,7 +839,7 @@
     const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     if (pastedImages.length) return t("panel.autotitle.shot", { time: hm });
     if (fileLinks.length) {
-      const first = fileLinks[0].split("/").filter(Boolean).pop() ?? t("panel.autotitle.file");
+      const first = basename(fileLinks[0]) || t("panel.autotitle.file");
       return fileLinks.length > 1
         ? t("panel.autotitle.files", { name: first, n: fileLinks.length })
         : first;
@@ -1449,7 +1450,7 @@
     </div>
   {/if}
 
-  <!-- 附件区（常驻）：拖文件进窗口任意位置 / Ctrl+V 粘贴截图 / 粘贴路径回车，只记路径不复制（模板态不收） -->
+  <!-- 附件区（常驻）：拖文件/文件夹进窗口任意位置 / Ctrl+V 粘贴截图 / 粘贴路径回车，只记路径不复制（模板态不收） -->
   {#if !isTpl}
   <div class="field drop-zone" class:drag={dragHover}>
     <span class="label">{t("panel.label.attachments")}</span>

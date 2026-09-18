@@ -22,7 +22,7 @@ export const part_help = {
   "help.capture.paste.v": "Ctrl+V 把剪贴板里的图存为附件，想贴几张贴几张。",
   "help.capture.filelink.k": "文件链接",
   "help.capture.filelink.v":
-    "把文件拖进面板（或粘路径回车），MyDay 只记住路径，不动原文件。列表里 📎 打开、📁 定位。",
+    "把文件或文件夹拖进面板（或粘路径回车），MyDay 只记住路径，不动原件。列表里点名字打开（文件夹进文件管理器）、📁 定位。",
   "help.calendar.title": "日历",
   "help.calendar.drag.k": "拖拽改期",
   "help.calendar.drag.v":
@@ -106,7 +106,7 @@ export const part_help_en: Record<string, string> = {
   "help.capture.paste.v": "Ctrl+V saves the clipboard image as an attachment, as many as you like.",
   "help.capture.filelink.k": "File links",
   "help.capture.filelink.v":
-    "Drag a file onto the panel (or paste a path and hit Enter) and MyDay remembers the path — your file stays untouched. 📎 opens it, 📁 reveals it.",
+    "Drag a file or folder onto the panel (or paste a path and hit Enter) and MyDay remembers the path — your files stay untouched. Click a name to open (folders open in the file manager), 📁 reveals it.",
   "help.calendar.title": "Calendar",
   "help.calendar.drag.k": "Drag to reschedule",
   "help.calendar.drag.v":

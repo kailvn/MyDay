@@ -4,6 +4,11 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 功能详情见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
+## [Unreleased]
+
+### 新增
+- 文件链接支持文件夹：拖文件夹进快速创建面板（或粘路径回车）只记路径，chip 以 📂 区分，点击在文件管理器中打开、📁 定位；修复 Windows 反斜杠路径在 chip / 自动标题里显示全串的问题
+
 ## [1.0.0] - 2026-09-18
 
 首个正式版本。个人日程 / 待办 / 记录三合一，离线优先（Linux deb + Windows NSIS）。

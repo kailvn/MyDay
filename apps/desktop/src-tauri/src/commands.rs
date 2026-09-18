@@ -683,6 +683,13 @@ pub fn open_file_path(path: String) -> std::result::Result<(), String> {
     open_with_default(p)
 }
 
+/// 路径是否为目录（文件链接 chips 据此区分 📂/📎 展示与打开提示）。
+/// 不存在 / 无权限时按文件处理（false），不报错——展示决策不值得打断用户。
+#[tauri::command]
+pub fn path_is_dir(path: String) -> bool {
+    Path::new(&path).is_dir()
+}
+
 /// 在文件管理器中定位文件（Windows 用 explorer /select；其余走 FileManager1 标准接口，
 /// 不可用时回退为打开所在目录）。
 #[tauri::command]

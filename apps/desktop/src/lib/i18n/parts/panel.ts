@@ -65,8 +65,8 @@ export const part_panel = {
   'panel.label.attachments': '附件',
   'panel.attach.pastedAlt': '粘贴的截图',
   'panel.attach.removeImage': '移除截图',
-  'panel.attach.dropEdit': '拖文件进窗口',
-  'panel.attach.dropCreate': '拖文件进窗口，或 Ctrl+V 粘贴截图',
+  'panel.attach.dropEdit': '拖文件 / 文件夹进窗口',
+  'panel.attach.dropCreate': '拖文件 / 文件夹进窗口，或 Ctrl+V 粘贴截图',
   'panel.attach.pathPlaceholder': '粘贴路径回车（只记链接不复制）',
   'panel.attach.previewAlt': '截图预览',
 
@@ -136,7 +136,7 @@ export const part_panel = {
 
   // ---- 空标题自动生成 ----
   'panel.autotitle.shot': '截图 {time}',
-  'panel.autotitle.files': '{name} 等 {n} 个文件',
+  'panel.autotitle.files': '{name} 等 {n} 项',
   'panel.autotitle.file': '文件',
   'panel.autotitle.quick': '速记 {time}',
 
@@ -217,8 +217,8 @@ export const part_panel_en: Record<string, string> = {
   'panel.label.attachments': 'Attachments',
   'panel.attach.pastedAlt': 'Pasted screenshot',
   'panel.attach.removeImage': 'Remove screenshot',
-  'panel.attach.dropEdit': 'Drop files into the window',
-  'panel.attach.dropCreate': 'Drop files into the window, or Ctrl+V to paste screenshots',
+  'panel.attach.dropEdit': 'Drop files or folders into the window',
+  'panel.attach.dropCreate': 'Drop files or folders into the window, or Ctrl+V to paste screenshots',
   'panel.attach.pathPlaceholder': 'Paste a path, press Enter (linked, not copied)',
   'panel.attach.previewAlt': 'Screenshot preview',
 
@@ -280,7 +280,7 @@ export const part_panel_en: Record<string, string> = {
   'panel.aria.newItem': 'New item',
 
   'panel.autotitle.shot': 'Screenshot {time}',
-  'panel.autotitle.files': '{name} and {n} more files',
+  'panel.autotitle.files': '{name} and {n} more items',
   'panel.autotitle.file': 'file',
   'panel.autotitle.quick': 'Quick note {time}',
 

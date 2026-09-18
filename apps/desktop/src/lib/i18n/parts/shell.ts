@@ -13,6 +13,7 @@ export const part_shell = {
   "shell.reminderCenter": "提醒中心",
   // ---- 小组件：文件链接 chips / 删除撤销条 ----
   "filelink.openTip": "打开文件",
+  "filelink.openDirTip": "打开文件夹",
   "filelink.revealTip": "在文件管理器中显示",
   "filelink.remove": "移除链接",
   "undo.deleted": "已删除 {what}",
@@ -33,6 +34,7 @@ export const part_shell_en: Record<string, string> = {
   "shell.quickAdd": "Quick Add",
   "shell.reminderCenter": "Reminder center",
   "filelink.openTip": "Open file",
+  "filelink.openDirTip": "Open folder",
   "filelink.revealTip": "Reveal in file manager",
   "filelink.remove": "Remove link",
   "undo.deleted": "Deleted {what}",

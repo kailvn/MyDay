@@ -495,10 +495,12 @@ export const api = {
     const abs = await invoke<string>("attachment_abs_path", { relPath });
     return convertFileSrc(abs);
   },
-  /** 文件链接：用系统默认程序打开 */
+  /** 文件链接：用系统默认程序打开（目录 = 文件管理器） */
   openFilePath: (path: string) => invoke<void>("open_file_path", { path }),
   /** 文件链接：在文件管理器中定位（失败回退打开所在目录） */
   revealFilePath: (path: string) => invoke<void>("reveal_file_path", { path }),
+  /** 文件链接：路径是否为目录（chips 展示用；命令不可用/不存在时按文件处理） */
+  pathIsDir: (path: string) => invoke<boolean>("path_is_dir", { path }).catch(() => false),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   /** 开机自启（Linux XDG autostart / Windows Run 键） */
@@ -664,8 +666,9 @@ export function fileLinksOf(item: Item): string[] {
   return fileLinksFromExtra(item.extra);
 }
 
+/** 路径末段（展示名）：正反斜杠都切（Windows 拖入的路径带 \），尾分隔符与盘符根不碍事 */
 export function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
+  return p.split(/[\\/]+/).filter(Boolean).pop() ?? p;
 }
 
 /** 快速添加幂等键：quickadd-{YYYYMMDDHHmm}-{hash}（§5.8） */

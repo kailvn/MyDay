@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
-   * 文件链接 chips：点击文件名 = 用系统默认程序打开；
-   * 📁 = 在文件管理器中定位（无文件管理器支持时打开所在目录）；
-   * 传入 onremove 时显示移除按钮（面板编辑态）。
-   * 打开失败（文件被移动/删除）就地提示，不打断其他链接。
+   * 文件链接 chips：文件 📎、文件夹 📂，点名字 = 打开
+   * （文件走系统默认程序，文件夹进文件管理器）；📁 = 在文件管理器中定位
+   * （无文件管理器支持时打开所在目录）；传入 onremove 时显示移除按钮（面板编辑态）。
+   * 打开失败（路径被移动/删除）就地提示，不打断其他链接。
    */
   import { api, basename } from "./api";
   import { t } from "./i18n";
@@ -12,6 +12,24 @@
 
   let err = $state("");
   let errTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** 路径 → 是否目录。模块级缓存：面板/详情两处 chips 共享，路径类型不会自发变化 */
+  const dirCache = new Map<string, boolean>();
+  let dirOf = $state<Record<string, boolean>>({});
+
+  $effect(() => {
+    const unknown = links.filter((p) => !dirCache.has(p));
+    for (const p of unknown) dirCache.set(p, false); // 先占位按文件展示，避免闪烁
+    for (const p of unknown) {
+      void api.pathIsDir(p).then((isDir) => {
+        dirCache.set(p, isDir);
+        dirOf = { ...dirOf, [p]: isDir };
+      });
+    }
+    dirOf = { ...Object.fromEntries(links.map((p) => [p, dirCache.get(p) ?? false])) };
+  });
+
+  const isDir = (p: string) => dirOf[p] ?? false;
 
   function showErr(e: unknown) {
     err = String(e);
@@ -40,8 +58,8 @@
   <span class="flinks">
     {#each links as p (p)}
       <span class="flink">
-        <button class="fname" title={t('filelink.openTip')} onclick={() => open(p)}>
-          📎 {basename(p)}
+        <button class="fname" title={isDir(p) ? t('filelink.openDirTip') : t('filelink.openTip')} onclick={() => open(p)}>
+          {#if isDir(p)}📂{:else}📎{/if} {basename(p)}
         </button>
         <button class="act" title={t('filelink.revealTip')} onclick={() => reveal(p)}>📁</button>
         {#if onremove}

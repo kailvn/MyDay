@@ -209,6 +209,26 @@ test("T8 设置：节假日 JSON 导入（非法报错 / 生效覆盖 / 恢复�
   await expect(main).toContainText(/内置默认/);
 });
 
+test("T8.5 附件：粘路径记链接，文件夹 chip 以 📂 区分（拖放同管道，OS 级拖拽无法模拟）", async ({ page }) => {
+  // 快速添加按钮在侧栏但不在 navigation 容器内，不能用 navButton
+  await page.getByRole("button", { name: /快速添加/ }).click();
+  const panel = page.getByRole("dialog", { name: "新建条目" });
+  await expect(panel).toBeVisible();
+
+  const linkInput = panel.getByPlaceholder(/粘贴路径回车/);
+  // 尾分隔符 → mock path_is_dir 判为目录；chips 据此切 📂 前缀
+  await linkInput.fill("/tmp/项目资料/");
+  await linkInput.press("Enter");
+  await linkInput.fill("/tmp/周报.pdf");
+  await linkInput.press("Enter");
+  await expect(panel.getByRole("button", { name: /📂 项目资料/ })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /📎 周报\.pdf/ })).toBeVisible();
+
+  // 空标题自动取首个链接名；保存即建条目
+  await panel.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByRole("status")).toContainText(/项目资料/);
+});
+
 test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
   test("拖拽改期 → toast 撤销 → Esc 取消", async ({ page }) => {
     await gotoWeek(page);

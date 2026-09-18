@@ -117,6 +117,7 @@ pub fn run() {
             commands::app_info,
             commands::open_file_path,
             commands::reveal_file_path,
+            commands::path_is_dir,
             commands::open_log_dir,
             commands::open_quick_add,
             commands::get_autostart,
