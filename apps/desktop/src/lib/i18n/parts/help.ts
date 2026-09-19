@@ -29,7 +29,7 @@ export const part_help = {
     "周 / 日视图拖块移动（15 分钟吸附）、拖上下边调时长、空白处拖出一块即创建；月视图把当天面板里的条目拖进任意日期格。松手才落库，toast 里随时反悔。",
   "help.calendar.pool.k": "未排期待办池",
   "help.calendar.pool.v":
-    "没有日期的待办列在日历侧栏顶部，拖到任意日期格即排到那天 23:59，可撤销；到期行悬停有 ＋1天 / ＋1周 / 清除，清除即退回未排期。",
+    "没有日期的待办列在日历侧栏顶部：月视图拖到任意日期格即排到那天 23:59，周 / 日视图拖到时段格即排到那个钟点，都可撤销；到期行悬停有 ＋1天 / ＋1周 / 清除，清除即退回未排期。待办页的「无日期」标签是同一批条目的清单视图。",
   "help.calendar.recur.k": "重复日程",
   "help.calendar.recur.v":
     "每天 / 每周 X / 每月 X 日三种规则，编辑即改整个系列；把重复块拖到另一个星期几或日期，规则会跟着改写（toast 会告诉你改成了什么）。",
@@ -116,7 +116,7 @@ export const part_help_en: Record<string, string> = {
     "In week/day view, drag blocks to move (15-minute snap), drag the edges to resize, drag across empty space to create; in month view, drag items from the day panel onto any date. Nothing is written until you let go — the toast offers a way back.",
   "help.calendar.pool.k": "Unscheduled pool",
   "help.calendar.pool.v":
-    "Tasks with no date sit at the top of the calendar sidebar; drag one onto any day cell to schedule it at 23:59 (undoable). Hover a due row for +1d / +1w / clear — clearing puts it back in the pool.",
+    "Tasks with no date sit at the top of the calendar sidebar: in month view drag one onto any day cell to schedule it at 23:59, in week/day view onto a time slot to schedule it at that time — both undoable. Hover a due row for +1d / +1w / clear — clearing puts it back in the pool. The “No date” tab on the Tasks page lists the same items.",
   "help.calendar.recur.k": "Recurring events",
   "help.calendar.recur.v":
     "Daily, weekly and monthly rules; editing means the whole series. Drag a recurring block to another weekday or date and the rule rewrites itself — the toast tells you exactly what it became.",

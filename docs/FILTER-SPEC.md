@@ -351,14 +351,17 @@ CREATE TABLE view_defs (
 | `view_builtin_logs_timeline` | logs | source log；无过滤；sort occurred desc；group day:occurred_at；limit 200 | `LogsView` 时间线 |
 | `view_builtin_tasks_today` | tasks | status is todo **且**（**anchor before 明天** 或 anchor 空）；sort anchor asc（空最后）；limit 500 | `tasks_view Today` 逐分支等价：有截止只看截止；无截止看开始；全无 = 收件箱 |
 | `view_builtin_tasks_upcoming` | tasks | status is todo **且** anchor after 今天；sort anchor asc；limit 100 | `Upcoming` |
+| `view_builtin_tasks_nodate` | tasks | status is todo **且** anchor 空；sort created_at asc；limit 200 | 日历「未排期池」同口径的清单视图（FIFO = 先进先出） |
 | `view_builtin_tasks_all` | tasks | status is todo；sort anchor asc（空最后）；limit 500 | `All` |
 | `view_builtin_tasks_done` | tasks | status is done；sort completed_at desc；limit 200 | `Done` |
 | `view_builtin_search_all` | search | source all；无过滤；sort updated desc；limit 50 | 搜索页 |
 
 - 搜索页：关键词是**运行时输入**，编译为 OR 子树（标题 / 备注 / 标签 / 字段值
   contains）并入 AST 合取（§10）——全引擎只有一条求值路径；v1 不保存关键词。
-- 待办页四 tab 即上表四行的展示；用户新建待办视图（如「高优先级未完成」）并列
-  出现在 tab 行。
+- 待办页五 tab 即上表前五行的展示；用户新建待办视图（如「高优先级未完成」）并列
+  出现在 tab 行。「无日期」与日历未排期池同口径（anchor 空 = 无 due 无 start），
+  按创建先后排序（FIFO）；全部行无 due，批量「改期」（平移 due）在该视图无意义，
+  批量条只留完成 / 删除。
 - 「今天」种子条件 = `anchor before 明天 或 anchor 空`，与 `tasks_view` Today 的
   SQL 逐分支等价：有截止只看截止（截止未来不进今天，哪怕开始在过去——截止
   优先）；无截止看开始；全无 = 收件箱（§4.1）。删除 `anchor empty` 分支即可

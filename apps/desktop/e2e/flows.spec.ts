@@ -274,6 +274,45 @@ test("T8.6 未排期池：拖入月格排期 23:59，顺延与清除闭环", asy
   await expect(panel).toContainText("整理书架");
 });
 
+test("T8.7 未排期池 × 周视图：拖入时段格排到具体钟点，拖出取消，可撤销", async ({ page }) => {
+  await gotoWeek(page);
+
+  // 池侧栏：与月视图池同一条种子（无 due 无 start）
+  const pool = page.locator(".pool-panel");
+  await expect(pool).toContainText("未排期待办");
+  const row = pool.locator("li", { hasText: "整理书架" });
+  await expect(row).toBeVisible();
+
+  // 周三列当前无到期；拖出网格（仍在池侧栏上）松手 = 取消
+  const wedSub = page.locator(".day-sub").nth(2);
+  await expect(wedSub).not.toContainText("到期");
+  await dragBy(page, centerOf((await row.boundingBox())!), -60, -60);
+  await expect(page.getByRole("status")).not.toBeVisible();
+  await expect(row).toBeVisible();
+
+  // 拖到周三 10:30（15 分钟吸附）：落点按网格几何换算（与组件内部同公式：
+  // 分钟 = (clientY - 网格顶) / HOUR_H * 60）；1180×780 视口内 10:30 恒可见
+  //（时间网格超出视口的部分靠 main 滚动，深时段需先滚 main，这里不必）
+  const grid = (await page.getByTestId("week-grid").boundingBox())!;
+  const wed = (await page.locator(".day-col").nth(2).boundingBox())!;
+  const to = { x: wed.x + wed.width / 2, y: grid.y + 10.5 * HOUR_H };
+  const from = centerOf((await row.boundingBox())!);
+  await dragBy(page, from, to.x - from.x, to.y - from.y);
+
+  // 写入具体钟点：toast 报「截止已改到 … 10:30」，行离开池（池空则整个侧栏消失），
+  // 周三到期计数 +1
+  const toast = page.getByRole("status");
+  await expect(toast).toContainText(/截止已改到/);
+  await expect(toast).toContainText("10:30");
+  await expect(pool).toHaveCount(0);
+  await expect(wedSub).toContainText("到期 1");
+
+  // 撤销 = 清除截止，退回池（undo 补丁 clear_due_at）
+  await toast.getByRole("button", { name: "撤销" }).click();
+  await expect(pool).toContainText("整理书架");
+  await expect(wedSub).not.toContainText("到期");
+});
+
 test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
   test("拖拽改期 → toast 撤销 → Esc 取消", async ({ page }) => {
     await gotoWeek(page);

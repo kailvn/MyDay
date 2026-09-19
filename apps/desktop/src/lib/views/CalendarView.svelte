@@ -490,7 +490,7 @@
 <svelte:window onkeydown={onKeydown} onpointermove={onRowDragMove} onpointerup={onRowDragEnd} />
 
 {#if mode !== "month"}
-  <WeekGrid {dataVersion} days={mode === "week" ? 7 : 1} />
+  <WeekGrid {dataVersion} days={mode === "week" ? 7 : 1} pool={poolItems} />
 {:else}
 
 {#if error}<p class="error">{error}</p>{/if}
@@ -925,6 +925,9 @@
 
   .day-panel li.draggable {
     cursor: grab;
+    /* 拖拽行禁选文本：残留选区会让下一次 mousedown 触发浏览器原生文本拖拽，
+       pointermove 事件流被接管，自家的拖拽从此收不到事件（与周视图池一致） */
+    user-select: none;
   }
 
   .day-panel li.draggable:active {

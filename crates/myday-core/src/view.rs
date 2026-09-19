@@ -33,6 +33,7 @@ use crate::store::{ListFilter, StatsSummary, Store, FILE_LINKS_KEY};
 pub const VIEW_LOGS_TIMELINE: &str = "view_builtin_logs_timeline";
 pub const VIEW_TASKS_TODAY: &str = "view_builtin_tasks_today";
 pub const VIEW_TASKS_UPCOMING: &str = "view_builtin_tasks_upcoming";
+pub const VIEW_TASKS_NODATE: &str = "view_builtin_tasks_nodate";
 pub const VIEW_TASKS_ALL: &str = "view_builtin_tasks_all";
 pub const VIEW_TASKS_DONE: &str = "view_builtin_tasks_done";
 pub const VIEW_SEARCH_ALL: &str = "view_builtin_search_all";
@@ -947,6 +948,23 @@ pub(crate) fn seed_view_defs(conn: &Connection) -> Result<()> {
                     ] },
                     "sort": [{ "field": "col:anchor", "dir": "asc" }],
                     "limit": 100
+                },
+                "layout": "list"
+            }),
+        ),
+        (
+            VIEW_TASKS_NODATE,
+            "无日期",
+            Panel::Tasks,
+            json!({
+                "dataset": {
+                    "item_type": "task",
+                    "filter": { "op": "and", "children": [
+                        { "field": "col:status", "cmp": "eq", "value": "todo" },
+                        { "field": "col:anchor", "cmp": "empty" }
+                    ] },
+                    "sort": [{ "field": "col:created_at", "dir": "asc" }],
+                    "limit": 200
                 },
                 "layout": "list"
             }),

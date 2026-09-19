@@ -10,7 +10,7 @@ use myday_core::store::{ListFilter, Store, TaskView};
 use myday_core::view::{
     self, Condition, Cmp, EvalCtx, FilterNode, FilterValue, Logic, Panel,
     VIEW_LOGS_TIMELINE, VIEW_SEARCH_ALL, VIEW_STATS_STREAKS,
-    VIEW_TASKS_ALL, VIEW_TASKS_DONE, VIEW_TASKS_TODAY, VIEW_TASKS_UPCOMING,
+    VIEW_TASKS_ALL, VIEW_TASKS_DONE, VIEW_TASKS_NODATE, VIEW_TASKS_TODAY, VIEW_TASKS_UPCOMING,
 };
 
 struct TempDir(tempfile::TempDir);
@@ -207,6 +207,63 @@ fn builtin_task_views_align_with_tasks_view() {
     let done_view = store.query_view(VIEW_TASKS_DONE, None, None).unwrap().items.unwrap();
     assert_eq!(done_view.len(), 1);
     assert_eq!(done_view[0].id, done.id);
+}
+
+#[test]
+fn tasks_nodate_view_is_anchor_empty_fifo() {
+    let t = TempDir::new();
+    let store = t.store();
+
+    // 创建顺序 = 池的先进先出（created_at asc）
+    let first = store
+        .add_item(NewItem {
+            title: Some("池第一条".into()),
+            item_type: Some(ItemType::Task),
+            ..Default::default()
+        })
+        .unwrap();
+    let with_due = store
+        .add_item(NewItem {
+            title: Some("有截止".into()),
+            item_type: Some(ItemType::Task),
+            due_at: Some(at(1, 9, 0)),
+            ..Default::default()
+        })
+        .unwrap();
+    let second = store
+        .add_item(NewItem {
+            title: Some("池第二条".into()),
+            item_type: Some(ItemType::Task),
+            ..Default::default()
+        })
+        .unwrap();
+    let with_start = store
+        .add_item(NewItem {
+            title: Some("有开始".into()),
+            item_type: Some(ItemType::Task),
+            start_at: Some(at(1, 9, 0)),
+            ..Default::default()
+        })
+        .unwrap();
+    let done = store
+        .add_item(NewItem {
+            title: Some("已完成".into()),
+            item_type: Some(ItemType::Task),
+            status: Some(ItemStatus::Done),
+            ..Default::default()
+        })
+        .unwrap();
+
+    let items = store.query_view(VIEW_TASKS_NODATE, None, None).unwrap().items.unwrap();
+    let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [first.id.as_str(), second.id.as_str()],
+        "无日期视图 = 未完成且无 due/start 的待办，按创建先后（FIFO，与日历池一致）"
+    );
+    for id in [&with_due.id, &with_start.id, &done.id] {
+        assert!(!ids.contains(&id.as_str()), "{id} 不应在无日期视图");
+    }
 }
 
 #[test]
@@ -561,11 +618,11 @@ fn view_crud_customize_reset_delete() {
     let t = TempDir::new();
     let store = t.store();
 
-    // 种子齐全：六内置面板视图 + 三个预置统计容器（普通行，非 builtin）
+    // 种子齐全：七内置面板视图 + 三个预置统计容器（普通行，非 builtin）
     let views = store.list_views(None).unwrap();
     assert!(views.iter().any(|v| v.id == VIEW_TASKS_TODAY));
-    assert_eq!(views.len(), 9, "六面板视图 + 三统计容器");
-    assert_eq!(views.iter().filter(|v| v.builtin).count(), 6, "仅面板视图是内置");
+    assert_eq!(views.len(), 10, "七面板视图 + 三统计容器");
+    assert_eq!(views.iter().filter(|v| v.builtin).count(), 7, "仅面板视图是内置");
 
     // 内置编辑写 config_user；生效配置随之变化；customized 标志翻转
     let today = store.get_view(VIEW_TASKS_TODAY).unwrap();

@@ -282,3 +282,28 @@ test("V7 统计：容器重命名（⋯ 菜单 → 行内输入 → 重开仍在
       .getByRole("heading", { name: /坚持打卡/ }),
   ).toBeVisible();
 });
+
+test("V8 待办：无日期内置视图 = 未排期池同口径，批量条无「改期」", async ({ page }) => {
+  await navButton(page, /待办/).click();
+  const toolbar = page.getByTestId("view-toolbar");
+  await toolbar.getByRole("tab", { name: /无日期 · 默认/ }).click();
+
+  // 只剩无 due 无 start 的种子待办（其余都有 due），FIFO 即创建序
+  const rows = page.locator(".rows li");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("整理书架");
+  await expect(rows.first()).not.toContainText("截止");
+
+  // 多选批量条仍在（完成 / 删除 / 全选），「改期」不出现——全部无 due，平移无意义
+  await page.getByRole("button", { name: "多选", exact: true }).click();
+  await rows.first().locator('input[type="checkbox"]').click();
+  const bar = page.locator(".batch-bar");
+  await expect(bar).toContainText("完成");
+  await expect(bar).toContainText("删除");
+  await expect(bar).not.toContainText("改期");
+
+  // 批量完成跑通：行完成即离开无日期视图（status=done 不满足过滤）
+  await bar.getByRole("button", { name: "完成", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText(/已完成 1 条/);
+  await expect(page.locator(".rows li")).toHaveCount(0);
+});

@@ -90,7 +90,25 @@ export function initViewEngine(
       },
     },
     {
-      id: "view_builtin_tasks_all", name: "全部", panel: "tasks", builtin: true, sort: 3,
+      id: "view_builtin_tasks_nodate", name: "无日期", panel: "tasks", builtin: true, sort: 3,
+      config: {
+        dataset: {
+          item_type: "task",
+          filter: {
+            op: "and",
+            children: [
+              { field: "col:status", cmp: "eq", value: "todo" },
+              { field: "col:anchor", cmp: "empty" },
+            ],
+          },
+          sort: [{ field: "col:created_at", dir: "asc" }],
+          limit: 200,
+        },
+        layout: "list",
+      },
+    },
+    {
+      id: "view_builtin_tasks_all", name: "全部", panel: "tasks", builtin: true, sort: 4,
       config: {
         dataset: {
           item_type: "task",
@@ -105,7 +123,7 @@ export function initViewEngine(
       },
     },
     {
-      id: "view_builtin_tasks_done", name: "已完成", panel: "tasks", builtin: true, sort: 4,
+      id: "view_builtin_tasks_done", name: "已完成", panel: "tasks", builtin: true, sort: 5,
       config: {
         dataset: {
           item_type: "task",
@@ -120,7 +138,7 @@ export function initViewEngine(
       },
     },
     {
-      id: "view_builtin_search_all", name: "全部类型", panel: "search", builtin: true, sort: 5,
+      id: "view_builtin_search_all", name: "全部类型", panel: "search", builtin: true, sort: 6,
       config: {
         dataset: {
           item_type: "all",
@@ -132,7 +150,7 @@ export function initViewEngine(
       },
     },
     {
-      id: "view_builtin_stats_heatmap", name: "记录热力图", panel: "stats", builtin: false, sort: 6,
+      id: "view_builtin_stats_heatmap", name: "记录热力图", panel: "stats", builtin: false, sort: 7,
       config: {
         kind: "container", layout: "vertical",
         widgets: [{
@@ -145,7 +163,7 @@ export function initViewEngine(
       },
     },
     {
-      id: "view_builtin_stats_streaks", name: "打卡连续", panel: "stats", builtin: false, sort: 7,
+      id: "view_builtin_stats_streaks", name: "打卡连续", panel: "stats", builtin: false, sort: 8,
       config: {
         kind: "container", layout: "horizontal",
         widgets: ["tpl_health", "tpl_run", "tpl_weight"].map((tid) => {
@@ -162,7 +180,7 @@ export function initViewEngine(
       },
     },
     {
-      id: "view_builtin_stats_series", name: "数值趋势", panel: "stats", builtin: false, sort: 8,
+      id: "view_builtin_stats_series", name: "数值趋势", panel: "stats", builtin: false, sort: 9,
       config: {
         kind: "container", layout: "vertical",
         widgets: fieldDefs.filter((f) => f.kind === "number").map((f) => ({

@@ -1,7 +1,9 @@
 <script lang="ts">
-  /** 需求 §6：待办页（FILTER-SPEC §9）：四 tab = 四个内置视图，用户新建视图
-   *  并列出现在 tab 行；工具条共享（筛选 / 排序 / 另存为）。
-   *  SPRINT-SPEC §4：多选批量操作（完成 / 改期 / 删除 + 一键撤销）保留。 */
+  /** 需求 §6：待办页（FILTER-SPEC §9）：五个 tab = 五个内置视图（今天 / 即将到期 /
+   *  无日期 / 全部 / 已完成），用户新建视图并列出现在 tab 行；工具条共享（筛选 / 排序 / 另存为）。
+   *  SPRINT-SPEC §4：多选批量操作（完成 / 改期 / 删除 + 一键撤销）保留。
+   *  「无日期」视图与日历未排期池同口径（无 due 无 start，FIFO）；全部无 due，
+   *  批量「改期」（平移 due）无意义，只留完成 / 删除。 */
   import { api, displayTitle, fmtDate, type FieldDef, type Item, type ItemStatus, type ViewDef, type ViewResult } from "../api";
   import { recurrenceLabel } from "../recurrence";
   import { deletions } from "../deletion.svelte";
@@ -11,7 +13,7 @@
   import { openEdit, rowDetail } from "../panel.svelte";
   import ItemTimeInfo from "../ItemTimeInfo.svelte";
   import ViewToolbar from "../viewmodel/ViewToolbar.svelte";
-  import { VIEW_TASKS_DONE, VIEW_TASKS_TODAY } from "../viewIds";
+  import { VIEW_TASKS_DONE, VIEW_TASKS_NODATE, VIEW_TASKS_TODAY } from "../viewIds";
   import { t } from "../i18n";
 
   let { dataVersion = 0, clockVersion = 0 } = $props();
@@ -242,20 +244,22 @@
     <span class="count">{t("tasks.selected", { n: sel.length })}</span>
     <button onclick={() => (sel = visibleItems.map((i) => i.id))}>{t("tasks.select_all")}</button>
     <button class="primary" onclick={batchComplete}>{t("tasks.complete")}</button>
-    <span class="resched">
-      <button onclick={() => (reschedOpen = !reschedOpen)}>{t("tasks.reschedule")}</button>
-      {#if reschedOpen}
-        <span class="menu">
-          <button onclick={() => batchReschedule("tomorrow")}>{t("tasks.tomorrow")}</button>
-          <button onclick={() => batchReschedule("plus1")}>{t("tasks.plus1")}</button>
-          <button onclick={() => batchReschedule("nextMonday")}>{t("tasks.next_monday")}</button>
-          <span class="custom">
-            <input type="date" bind:value={customDate} />
-            <button disabled={!customDate} onclick={() => batchReschedule("custom")}>{t("common.ok")}</button>
+    {#if activeId !== VIEW_TASKS_NODATE}
+      <span class="resched">
+        <button onclick={() => (reschedOpen = !reschedOpen)}>{t("tasks.reschedule")}</button>
+        {#if reschedOpen}
+          <span class="menu">
+            <button onclick={() => batchReschedule("tomorrow")}>{t("tasks.tomorrow")}</button>
+            <button onclick={() => batchReschedule("plus1")}>{t("tasks.plus1")}</button>
+            <button onclick={() => batchReschedule("nextMonday")}>{t("tasks.next_monday")}</button>
+            <span class="custom">
+              <input type="date" bind:value={customDate} />
+              <button disabled={!customDate} onclick={() => batchReschedule("custom")}>{t("common.ok")}</button>
+            </span>
           </span>
-        </span>
-      {/if}
-    </span>
+        {/if}
+      </span>
+    {/if}
     <button class="danger" onclick={batchDelete}>{t("common.delete")}</button>
     <button onclick={exitMulti}>{t("common.cancel")}</button>
   </div>

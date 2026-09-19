@@ -10,25 +10,30 @@
    *   **拖拽**：块主体移动（15 分钟吸附、可跨列）、上下边缘调时长、
    *   空白处按下拖动 ≥15 分钟松开直达创建（首尾预填）；Esc 取消；
    *   松手才写库，toast 可撤销；重复块拖拽 = 改整个系列（规则智能改写）
+   * - 未排期池（calendar 传入）：无日期待办列在右侧栏，拖到时段格 =
+   *   排到那天那个钟点（15 分钟吸附），拖出网格松手 = 取消
    * - 列头显示节假日 休/班 角标（holidays.ts，数据年外自动隐藏）
    */
   import { onMount } from "svelte";
   import { api, displayTitle, fmtTime, toDateInput, typeLabel, type Item } from "./api";
   import { expandItems } from "./recurrence";
   import { deletions } from "./deletion.svelte";
-  import { openCreate, openDetail } from "./panel.svelte";
+  import { openCreate, openDetail, openEdit } from "./panel.svelte";
   import { toast } from "./toast.svelte";
   import { holidayOfKey } from "./holidays.svelte";
+  import DeleteButton from "./DeleteButton.svelte";
+  import EditButton from "./EditButton.svelte";
   import {
     moveEventOccurrence,
     resizeEventOccurrence,
+    scheduleTaskAt,
     snapMinutes,
     SNAP_MIN,
     type RescheduleResult,
   } from "./reschedule";
   import { t, i18n } from "./i18n";
 
-  let { dataVersion = 0, days = 7 }: { dataVersion?: number; days?: number } = $props();
+  let { dataVersion = 0, days = 7, pool = [] }: { dataVersion?: number; days?: number; pool?: Item[] } = $props();
 
   const HOUR_H = 44;
   /** 星期 / 月份名随 locale（规则：走 Intl，不建 key）；星期一为一周开始（2023-01-02 恰是周一） */
@@ -253,7 +258,19 @@
     y0: number;
     moved: boolean;
   }
-  type Drag = EventDrag | SelectDrag;
+  /** 池行 → 时段格：无日期待办排到落点日 + 吸附钟点（min = null 表示指针已拖出网格） */
+  interface PoolDrag {
+    kind: "pool";
+    /** 池条目无 due（重复待办必有 due，不会进池），拖的就是原条目本身 */
+    base: Item;
+    x0: number;
+    y0: number;
+    dayIdx: number;
+    min: number | null;
+    moved: boolean;
+    label: string;
+  }
+  type Drag = EventDrag | SelectDrag | PoolDrag;
 
   let drag = $state<Drag | null>(null);
   /** 拖拽后短暂抑制 click / dblclick（pointerup 后浏览器仍会派发 click） */
@@ -337,6 +354,22 @@
     };
   }
 
+  /** 池行按下：起点无所谓（落点才定钟点），落点列/分钟在 move 里跟随 */
+  function onPoolPointerDown(e: PointerEvent, it: Item) {
+    if (e.button !== 0) return;
+    cacheCols();
+    drag = {
+      kind: "pool",
+      base: it,
+      x0: e.clientX,
+      y0: e.clientY,
+      dayIdx: 0,
+      min: null,
+      moved: false,
+      label: displayTitle(it),
+    };
+  }
+
   function onDragMove(e: PointerEvent) {
     if (!drag || !gridEl) return;
     const dx = e.clientX - drag.x0;
@@ -354,6 +387,15 @@
       drag.dayIdx = nearestCol(e.clientX - g.left);
       drag.fromMin = Math.min(drag.anchorMin, min);
       drag.toMin = Math.max(drag.anchorMin, min);
+      return;
+    }
+    if (drag.kind === "pool") {
+      // 落点 = 指针所在列 + 吸附分钟；拖出网格 = min 置空（松手取消，ghost 隐藏）。
+      // 末刻封顶 23:45：1440 会落到次日 00:00，与「拖到哪格排哪天」的直觉不符
+      drag.dayIdx = nearestCol(e.clientX - g.left);
+      const inside =
+        e.clientX >= g.left && e.clientX <= g.right && e.clientY >= g.top && e.clientY <= g.bottom;
+      drag.min = inside ? Math.min(min, 23 * 60 + 45) : null;
       return;
     }
     drag.dayIdx = nearestCol(e.clientX - g.left);
@@ -392,6 +434,20 @@
     }
   }
 
+  /** 池行勾选框：就地完成 / 回退（点选框不开详情、不触发拖拽），与月视图池一致 */
+  async function togglePoolDone(it: Item) {
+    try {
+      if (it.status === "done") {
+        await api.updateItem(it.id, { status: "todo" });
+      } else {
+        await api.completeTask(it.id);
+      }
+      await load();
+    } catch (e) {
+      toast.show(t("calendar.update_failed", { error: String(e) }));
+    }
+  }
+
   function onDragEnd() {
     if (!drag) return;
     const d = drag;
@@ -408,6 +464,12 @@
           presetEnd: mk(d.toMin).toISOString(),
         });
       }
+      return;
+    }
+    if (d.kind === "pool") {
+      // 拖出网格松手 = 取消（min 为 null）；写库后 data-changed 自动刷新池与到期行
+      if (d.min === null) return;
+      void applyReschedule(d.base, scheduleTaskAt(d.base, days_[d.dayIdx], d.min));
       return;
     }
     const day = days_[d.dayIdx];
@@ -433,6 +495,12 @@
         ? t("week.release_create", { from: fmtMin(drag.fromMin), to: fmtMin(drag.toMin) })
         : t("week.drag_longer");
     }
+    if (drag.kind === "pool") {
+      if (drag.min === null) return t("week.pool_cancel");
+      const day = days_[drag.dayIdx];
+      const dLabel = days > 1 ? `${weekLabels[(day.getDay() + 6) % 7]} ` : "";
+      return t("week.pool_release", { day: dLabel, time: fmtMin(drag.min) });
+    }
     const day = days_[drag.dayIdx];
     const dLabel = days > 1 ? ` ${weekLabels[(day.getDay() + 6) % 7]}` : "";
     return t("week.release_apply", {
@@ -444,7 +512,8 @@
 
 <svelte:window onkeydown={onKeydown} onpointermove={onDragMove} onpointerup={onDragEnd} />
 
-<div class="week">
+<div class="week" class:with-pool={pool.length > 0}>
+  <div class="week-main">
   <div class="bar">
     <h2>{rangeLabel}</h2>
     <span class="spacer"></span>
@@ -534,7 +603,18 @@
       {/each}
 
       <!-- 拖拽 ghost（半透明预览）与选区高亮 -->
-      {#if drag && drag.moved && drag.kind !== "select"}
+      {#if drag && drag.moved && drag.kind === "pool"}
+        {@const col = colCache[drag.dayIdx]}
+        {#if drag.min !== null}
+          <div
+            class="ghost"
+            style={`top:${(drag.min / 60) * HOUR_H}px;height:20px;left:${col?.left ?? 0}px;width:${col?.width ?? 0}px`}
+          >
+            <span class="ev-time">{fmtMin(drag.min)}</span>
+            <span class="ev-title">{drag.label}</span>
+          </div>
+        {/if}
+      {:else if drag && drag.moved && drag.kind !== "select"}
         {@const col = colCache[drag.dayIdx]}
         <div
           class="ghost"
@@ -552,6 +632,40 @@
       {/if}
     </div>
   </div>
+  </div>
+
+  <!-- 未排期池：无日期待办的排期入口（拖到任意时段格 = 截止那天那个钟点，可撤销） -->
+  {#if pool.length}
+    <aside class="pool-panel" title={t("calendar.pool_week_tip")}>
+      <h3>{t("calendar.pool_title")} · {pool.length}</h3>
+      <ul>
+        {#each pool as it (it.id)}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <li
+            class="draggable"
+            onclick={(e) => {
+              if (Date.now() < suppressClickUntil) return;
+              openDetail(it);
+            }}
+            onpointerdown={(e) => onPoolPointerDown(e, it)}
+          >
+            <input
+              type="checkbox"
+              title={t("calendar.mark_done")}
+              onpointerdown={(e) => e.stopPropagation()}
+              onclick={(e) => e.stopPropagation()}
+              onchange={() => togglePoolDone(it)}
+            />
+            <span class="title">{displayTitle(it)}</span>
+            {#each it.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
+            <EditButton onedit={() => openEdit(it)} />
+            <DeleteButton onconfirm={() => deletions.request(it)} />
+          </li>
+        {/each}
+      </ul>
+    </aside>
+  {/if}
 </div>
 
 {#if dragTip}
@@ -577,6 +691,97 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  /* 有未排期池时右侧栏（与月视图日面板同宽节奏）；窄窗堆叠到网格下方 */
+  .week.with-pool {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  @media (max-width: 1080px) {
+    .week.with-pool {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .week-main {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* 池侧栏：与月视图日面板同款卡片（池是排期入口，不属于任何一格） */
+  .pool-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+
+  .pool-panel h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  .pool-panel ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pool-panel li {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 2px 4px;
+    /* 拖拽行禁选文本：第一次拖拽留下的选区会让下一次 mousedown 触发浏览器
+       原生文本拖拽，pointermove 事件流被接管，自家的拖拽从此收不到事件 */
+    user-select: none;
+  }
+
+  .pool-panel li:hover {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+  }
+
+  .pool-panel li.draggable {
+    cursor: grab;
+  }
+
+  .pool-panel li.draggable:active {
+    cursor: grabbing;
+  }
+
+  .pool-panel li input[type="checkbox"] {
+    flex-shrink: 0;
+  }
+
+  .pool-panel .title {
+    flex: 1 0.1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 空间不足时 tag 先于标题收缩（与月视图面板一致） */
+  .pool-panel li .tag {
+    flex-shrink: 10;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .bar {

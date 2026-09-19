@@ -6,6 +6,7 @@
 export const VIEW_LOGS_TIMELINE = "view_builtin_logs_timeline";
 export const VIEW_TASKS_TODAY = "view_builtin_tasks_today";
 export const VIEW_TASKS_UPCOMING = "view_builtin_tasks_upcoming";
+export const VIEW_TASKS_NODATE = "view_builtin_tasks_nodate";
 export const VIEW_TASKS_ALL = "view_builtin_tasks_all";
 export const VIEW_TASKS_DONE = "view_builtin_tasks_done";
 export const VIEW_SEARCH_ALL = "view_builtin_search_all";

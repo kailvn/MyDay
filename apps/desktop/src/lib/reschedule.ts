@@ -188,15 +188,21 @@ export function moveTaskDue(item: Item, targetDay: Date): RescheduleResult {
 }
 
 /**
- * 无日期待办排到目标日（未排期池拖入月格）：due = 当天 23:59，
- * 与面板锚点日的截止默认一致。undo = 清除截止（退回未排期）。
+ * 无日期待办排到目标日：月格拖入 = 当天 23:59（与面板锚点日的截止默认一致），
+ * 周/日时段拖入 = 拖放处的具体钟点（15 分钟吸附）。undo = 清除截止（退回未排期）。
  */
 export function scheduleTask(item: Item, targetDay: Date): RescheduleResult {
+  return scheduleTaskAt(item, targetDay, 23 * 60 + 59);
+}
+
+/** 无日期待办排到目标日的指定分钟（周/日视图时段拖入，已吸附） */
+export function scheduleTaskAt(item: Item, targetDay: Date, minutes: number): RescheduleResult {
   const newDue = new Date(
     targetDay.getFullYear(),
     targetDay.getMonth(),
     targetDay.getDate(),
-    23, 59,
+    Math.floor(minutes / 60),
+    minutes % 60,
   );
   return {
     patch: { due_at: newDue.toISOString() },
