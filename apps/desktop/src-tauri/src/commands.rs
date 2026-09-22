@@ -816,14 +816,21 @@ fn reveal_impl(p: &Path) -> std::result::Result<(), String> {
 }
 
 /// 主窗口内的快速添加入口：弹出快速窗口并预填。
+/// `preset_due`：快捷日期档（"today"/"tomorrow"/"day_after"），面板按该日 23:59
+/// 预填截止并推断为待办；其余入口传 None。
 #[tauri::command]
 pub fn open_quick_add(
     app: tauri::AppHandle,
     item_type: Option<String>,
     title: Option<String>,
+    preset_due: Option<String>,
 ) -> std::result::Result<(), String> {
     let ty = item_type.as_deref().and_then(ItemType::parse);
-    crate::ipc_bridge::show_quick_add(&app, ty, title);
+    let preset = preset_due
+        .as_deref()
+        .filter(|v| matches!(*v, "today" | "tomorrow" | "day_after"))
+        .map(str::to_string);
+    crate::ipc_bridge::show_quick_add(&app, ty, title, preset);
     Ok(())
 }
 
@@ -871,6 +878,10 @@ pub struct OverlayConfig {
     pub opacity: f64,
     /// 锁定（点击穿透）态
     pub locked: bool,
+    /// 显示内容分档："all" / "events" / "tasks"（v1.2；未知值按 all）
+    pub show: String,
+    /// 展开逾期与未安排成列表（false = 底部摘要只计数，v1.2）
+    pub expand_summary: bool,
 }
 
 impl Default for OverlayConfig {
@@ -882,8 +893,17 @@ impl Default for OverlayConfig {
             size: None,
             opacity: 0.90,
             locked: false,
+            show: "all".into(),
+            expand_summary: false,
         }
     }
+}
+
+/// 合法 show 分档白名单。
+const OVERLAY_SHOW: [&str; 3] = ["all", "events", "tasks"];
+
+fn normalize_overlay_show(v: &str) -> String {
+    if OVERLAY_SHOW.contains(&v) { v.to_string() } else { "all".to_string() }
 }
 
 pub(crate) fn overlay_config(store: &Store) -> std::result::Result<OverlayConfig, String> {
@@ -898,6 +918,8 @@ pub(crate) fn overlay_config(store: &Store) -> std::result::Result<OverlayConfig
             .map(|v| v.clamp(0.30, 1.00))
             .unwrap_or(0.90),
         locked: get("overlay.locked").map(|v| v == "true" || v == "1").unwrap_or(false),
+        show: normalize_overlay_show(get("overlay.show").as_deref().unwrap_or("all")),
+        expand_summary: get("overlay.expand_summary").map(|v| v == "true" || v == "1").unwrap_or(false),
     })
 }
 
@@ -910,6 +932,12 @@ fn save_overlay_config(store: &Store, cfg: &OverlayConfig) -> std::result::Resul
         .set_setting("overlay.opacity", &cfg.opacity.clamp(0.30, 1.00).to_string())
         .map_err(err_string)?;
     store.set_setting("overlay.locked", &cfg.locked.to_string()).map_err(err_string)?;
+    store
+        .set_setting("overlay.show", &normalize_overlay_show(&cfg.show))
+        .map_err(err_string)?;
+    store
+        .set_setting("overlay.expand_summary", &cfg.expand_summary.to_string())
+        .map_err(err_string)?;
     match cfg.custom_pos {
         Some(p) => {
             let json = serde_json::to_string(&p).map_err(|e| format!("[INTERNAL] {e}"))?;

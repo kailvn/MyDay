@@ -65,7 +65,7 @@ export const part_help = {
   "help.overlay.lock.k": "锁定 = 点击穿透",
   "help.overlay.lock.v": "锁定后悬浮窗不挡鼠标，点哪穿哪；解锁走托盘菜单。位置、大小、透明度都会被记住。",
   "help.overlay.readonly.k": "只读 + 勾选",
-  "help.overlay.readonly.v": "悬浮窗只列今天没做完的事，唯一的操作是勾掉它们；要编辑请回主窗口。",
+  "help.overlay.readonly.v": "悬浮窗按「今日」口径列日程与待办；⚙ 里可分档只看日程或待办，逾期与未安排默认折叠成计数、可展开成列勾掉。编辑请回主窗口。",
   "help.data.title": "数据与备份",
   "help.data.dir.k": "数据在哪",
   "help.data.dir.v": "一切都在 ~/.local/share/myday/：SQLite 库、附件、备份。整个目录拷走就完成迁移；MYDAY_DATA_DIR 可改道。",
@@ -154,7 +154,7 @@ export const part_help_en: Record<string, string> = {
   "help.overlay.lock.k": "Lock = click-through",
   "help.overlay.lock.v": "When locked, the overlay never gets in the way of a click; unlock from the tray menu. Position, size and opacity are remembered.",
   "help.overlay.readonly.k": "Read-only + check",
-  "help.overlay.readonly.v": "The overlay lists today's unfinished items, and the only thing you can do is finish them. For everything else, the main window.",
+  "help.overlay.readonly.v": "The overlay lists today's events and tasks. Under ⚙ you can show events only or tasks only; overdue and unscheduled items collapse into summary counts until you expand them. Everything else lives in the main window.",
   "help.data.title": "Data & backup",
   "help.data.dir.k": "Where data lives",
   "help.data.dir.v":

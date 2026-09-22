@@ -297,6 +297,26 @@
         <option value="tl">{t("settings.cornerTl")}</option>
       </select>
     </label>
+    <label>
+      {t("overlay.show")}
+      <select bind:value={overlayCfg.show} onchange={saveOverlay} data-testid="overlay-show">
+        <option value="all">{t("overlay.showAll")}</option>
+        <option value="events">{t("overlay.showEvents")}</option>
+        <option value="tasks">{t("overlay.showTasks")}</option>
+      </select>
+    </label>
+    <label class="col-check">
+      <input
+        type="checkbox"
+        data-testid="overlay-expand"
+        checked={overlayCfg.expand_summary}
+        onchange={(e) => {
+          overlayCfg = { ...overlayCfg, expand_summary: e.currentTarget.checked };
+          void saveOverlay();
+        }}
+      />
+      {t("overlay.expand")}
+    </label>
     <label class="col-check">
       <input
         type="checkbox"

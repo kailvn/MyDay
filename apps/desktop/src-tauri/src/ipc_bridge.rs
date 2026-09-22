@@ -18,7 +18,14 @@ pub struct IpcBridge {
 }
 
 /// 弹出快速添加窗口并预填（GNOME 自定义快捷键 → `myday quick-add` 路径）。
-pub fn show_quick_add(app: &tauri::AppHandle, item_type: Option<ItemType>, title: Option<String>) {
+/// `preset_due`：快捷日期档（"today"/"tomorrow"/"day_after"，主窗口快捷钮专用），
+/// CLI 路径恒为 None。
+pub fn show_quick_add(
+    app: &tauri::AppHandle,
+    item_type: Option<ItemType>,
+    title: Option<String>,
+    preset_due: Option<String>,
+) {
     if let Some(win) = app.get_webview_window("quick-add") {
         let _ = win.show();
         let _ = win.set_focus();
@@ -28,6 +35,7 @@ pub fn show_quick_add(app: &tauri::AppHandle, item_type: Option<ItemType>, title
                 // 无类型时不预填（面板按内容推断，避免随手记被预设开始变成日程）
                 "type": item_type.map(|t| t.as_str()),
                 "title": title,
+                "preset_due": preset_due,
             }),
         );
     }
@@ -42,7 +50,7 @@ impl IpcHandler for IpcBridge {
             })),
 
             IpcRequest::ShowQuickAdd { item_type, title } => {
-                show_quick_add(&self.app, item_type, title);
+                show_quick_add(&self.app, item_type, title, None);
                 IpcResponse::ok(json!({ "shown": true }))
             }
 

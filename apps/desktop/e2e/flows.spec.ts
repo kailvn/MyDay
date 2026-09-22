@@ -283,34 +283,38 @@ test("T8.7 未排期池 × 周视图：拖入时段格排到具体钟点，拖�
   const row = pool.locator("li", { hasText: "整理书架" });
   await expect(row).toBeVisible();
 
-  // 周三列当前无到期；拖出网格（仍在池侧栏上）松手 = 取消
-  const wedSub = page.locator(".day-sub").nth(2);
-  await expect(wedSub).not.toContainText("到期");
+  // 目标列避开种子恒有的两个到期日——今天（买牛奶）与本周四（交周报）：
+  // 恒取周五，周五恰为今天时取周六 → 拖入前列内恒无到期，断言与运行日解耦
+  const todayCol = (new Date().getDay() + 6) % 7; // 周一 = 0
+  const col = todayCol === 4 ? 5 : 4;
+  const sub = page.locator(".day-sub").nth(col);
+  await expect(sub).not.toContainText("到期");
+  // 拖出网格（仍在池侧栏上）松手 = 取消
   await dragBy(page, centerOf((await row.boundingBox())!), -60, -60);
   await expect(page.getByRole("status")).not.toBeVisible();
   await expect(row).toBeVisible();
 
-  // 拖到周三 10:30（15 分钟吸附）：落点按网格几何换算（与组件内部同公式：
+  // 拖到目标列 10:30（15 分钟吸附）：落点按网格几何换算（与组件内部同公式：
   // 分钟 = (clientY - 网格顶) / HOUR_H * 60）；1180×780 视口内 10:30 恒可见
   //（时间网格超出视口的部分靠 main 滚动，深时段需先滚 main，这里不必）
   const grid = (await page.getByTestId("week-grid").boundingBox())!;
-  const wed = (await page.locator(".day-col").nth(2).boundingBox())!;
-  const to = { x: wed.x + wed.width / 2, y: grid.y + 10.5 * HOUR_H };
+  const dayCol = (await page.locator(".day-col").nth(col).boundingBox())!;
+  const to = { x: dayCol.x + dayCol.width / 2, y: grid.y + 10.5 * HOUR_H };
   const from = centerOf((await row.boundingBox())!);
   await dragBy(page, from, to.x - from.x, to.y - from.y);
 
   // 写入具体钟点：toast 报「截止已改到 … 10:30」，行离开池（池空则整个侧栏消失），
-  // 周三到期计数 +1
+  // 目标列到期计数 +1
   const toast = page.getByRole("status");
   await expect(toast).toContainText(/截止已改到/);
   await expect(toast).toContainText("10:30");
   await expect(pool).toHaveCount(0);
-  await expect(wedSub).toContainText("到期 1");
+  await expect(sub).toContainText("到期 1");
 
   // 撤销 = 清除截止，退回池（undo 补丁 clear_due_at）
   await toast.getByRole("button", { name: "撤销" }).click();
   await expect(pool).toContainText("整理书架");
-  await expect(wedSub).not.toContainText("到期");
+  await expect(sub).not.toContainText("到期");
 });
 
 test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
@@ -365,4 +369,53 @@ test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
     await expect(panel).toContainText("09:00");
     await expect(panel).toContainText("10:00");
   });
+});
+
+test("T9 快速添加快捷日期档：侧栏 今天/明天/后天 直达预填，行内未来/过去三档 chips", async ({ page }) => {
+  const dayStr = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+
+  // 侧栏「今天」：面板打开即预填今日 23:59 截止（激活截止 → 推断待办 → 自动展开）
+  await page.getByTestId("quick-day-today").click();
+  const panel = page.getByRole("dialog", { name: "新建条目" });
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(0)} 23:59`);
+  // 行内三档 chips：点「后天」即改截止（不关面板）
+  await panel.getByRole("button", { name: "后天" }).click();
+  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(2)} 23:59`);
+  // 填标题保存 → 今日视图出现该待办
+  await panel.getByPlaceholder("记点什么…").fill("快捷待办");
+  await panel.getByRole("button", { name: "保存" }).click();
+  await expect(page.locator("main")).toContainText("快捷待办");
+
+  // 明天 / 后天快捷钮：仅预填档位不同，流程一致（不保存，Esc 收起）
+  await page.getByTestId("quick-day-tomorrow").click();
+  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(1)} 23:59`);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("quick-day-day_after").click();
+  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(2)} 23:59`);
+  await page.keyboard.press("Escape");
+
+  // 首页直达（未展开态）：+ 打开即见时间入口，点「今天」一步到位（激活+预填+锁定待办+展开）
+  await page.getByRole("button", { name: /＋ 快速添加/ }).click();
+  const home = page.getByRole("dialog", { name: "新建条目" });
+  await home.getByRole("button", { name: "＋ 截止" }).waitFor();
+  await page.getByTestId("entry-due-今天").click();
+  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(0)} 23:59`);
+  await page.keyboard.press("Escape");
+
+  // 过去时三档（记录）：普通 + 打开 → 展开详情 → 类型切记录 → 激活发生时间 → 昨天/前天
+  await page.getByRole("button", { name: /＋ 快速添加/ }).click();
+  const logPanel = page.getByRole("dialog", { name: "新建条目" });
+  await logPanel.getByRole("button", { name: "＋ 时间 / 字段 / 标签 ▾" }).click();
+  await logPanel.getByRole("combobox", { name: /类型/ }).selectOption("log");
+  await logPanel.getByRole("button", { name: "＋ 发生时间" }).click();
+  await page.getByRole("button", { name: "昨天" }).click();
+  await expect(page.getByTestId("tp-occurred")).toContainText(dayStr(-1));
+  await page.getByRole("button", { name: "前天" }).click();
+  await expect(page.getByTestId("tp-occurred")).toContainText(dayStr(-2));
 });

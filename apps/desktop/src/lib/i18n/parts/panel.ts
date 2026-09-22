@@ -11,9 +11,6 @@ export const part_panel = {
   'panel.group.time': '时间',
 
   // ---- 时间快捷 chip：开始行 ----
-  'panel.start.nextHour': '下一整点',
-  'panel.start.plus1h': '一小时后',
-  'panel.start.tomorrow9': '明天 9:00',
 
   // ---- 时间快捷 chip：结束行 ----
   'panel.end.plus30m': '半小时后',
@@ -27,8 +24,6 @@ export const part_panel = {
   'panel.label.ranges': '时段',
 
   // ---- 时间行内提示 / 操作 ----
-  'panel.quick.tomorrow': '明天',
-  'panel.quick.now': '现在',
   'panel.time.allDayEnd': '当天 23:59 结束',
   'panel.time.emptyEnd': '留空 = 开始 + 1 小时',
   'panel.time.deactivate': '取消激活（类型回退）',
@@ -170,9 +165,6 @@ export const part_panel_en: Record<string, string> = {
   'panel.time.occurred': 'Occurred',
   'panel.group.time': 'Time',
 
-  'panel.start.nextHour': 'Next hour',
-  'panel.start.plus1h': 'In 1 hour',
-  'panel.start.tomorrow9': 'Tomorrow 9:00',
 
   'panel.end.plus30m': 'Start + 30 min',
   'panel.end.plus1h': 'Start + 1 hour',
@@ -183,8 +175,6 @@ export const part_panel_en: Record<string, string> = {
   'panel.range.lunch': 'Lunch',
   'panel.label.ranges': 'Ranges',
 
-  'panel.quick.tomorrow': 'Tomorrow',
-  'panel.quick.now': 'Now',
   'panel.time.allDayEnd': 'Ends 23:59 same day',
   'panel.time.emptyEnd': 'Empty = start + 1 hour',
   'panel.time.deactivate': 'Deactivate (type reverts)',

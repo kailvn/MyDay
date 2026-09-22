@@ -2,14 +2,23 @@
   /**
    * 今日悬浮窗（OVERLAY-SPEC v1）：第三个 Tauri 窗口，只读展示「今日未完成」，
    * 唯一高频动作 = 勾选完成；头部日期行拖动定位（位置防抖持久化）；⚙ 内联设置
-   * （透明度 / 角落吸附重置 / 锁定）。求值走 overlay_today（myday-core 唯一语义
-   * 实现），data-changed（300ms 防抖）+ 60s tick 双路刷新（§4.5，覆盖跨午夜、
-   * 进行中态迁移）。
+   * （透明度 / 角落吸附重置 / 锁定 / 显示分档 / 逾期未安排展开）。求值走
+   * overlay_today（myday-core 唯一语义实现），data-changed（300ms 防抖）+ 60s
+   * tick + 转可见即刷 三路刷新（§4.5，覆盖跨午夜、进行中态迁移与 WebView2
+   * 后台冻结）。刷新接线互相独立注册：任一监听失败只降级单路，不冻结整个悬浮窗。
    */
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
-  import { api, fmtTime, type OverlayConfig, type OverlayToday } from "./api";
+  import {
+    api,
+    fmtTime,
+    overlayShowOf,
+    type OverlayConfig,
+    type OverlayEntry,
+    type OverlayShow,
+    type OverlayToday,
+  } from "./api";
   import { t } from "./i18n";
 
   const win = getCurrentWindow();
@@ -50,6 +59,10 @@
     } catch (e) {
       console.error("overlay_today 失败", e);
     }
+    // cfg 读取失败不能永久空窗（{#if data && cfg}）：挂在 tick 上自愈重试
+    if (!cfg) {
+      cfg = await api.getOverlayConfig().catch(() => null);
+    }
   }
 
   function scheduleRefresh() {
@@ -76,7 +89,14 @@
     }, 300);
   }
 
-  /** 头部进度：只统计今日待办（不含逾期与未安排，§4.4） */
+  /** 显示分档（v1.2 §4.1）：待办档不渲染日程区，日程档不渲染待办区 */
+  const show = $derived(overlayShowOf(cfg));
+  const showEvents = $derived(show !== "tasks");
+  const showTasks = $derived(show !== "events");
+  /** 逾期/未安排展开成列（关闭 = 折叠进摘要行只显计数） */
+  const expand = $derived(cfg?.expand_summary ?? false);
+
+  /** 头部进度：只统计今日待办（不含逾期与未安排，§4.4）；日程档无待办区则整行隐藏 */
   const progress = $derived.by(() => {
     const done = data?.done_count ?? 0;
     return `${done}/${done + (data?.tasks.length ?? 0)}`;
@@ -89,17 +109,44 @@
     return t("overlay.headDate", { m: d.getMonth() + 1, day: d.getDate(), wd });
   });
 
-  /** 摘要行：逾期 / 未安排（皆 0 省略，§4.3） */
+  /**
+   * 摘要行（§4.3 统一折叠口径）：凡未列出的组一律折成计数——待办档折「日程 n」，
+   * 日程档折「待办 n」；逾期/未安排关闭展开时折计数、展开后成列不再重复计数。
+   * 全部列出（或皆空）时整行省略。
+   */
   const summaryText = $derived.by(() => {
+    if (!data) return "";
+    const listed = showTasks && expand;
     const parts: string[] = [];
-    if ((data?.overdue_count ?? 0) > 0) parts.push(t("overlay.overdue", { n: data!.overdue_count }));
-    if ((data?.unscheduled_count ?? 0) > 0) parts.push(t("overlay.unscheduled", { m: data!.unscheduled_count }));
+    if (!showEvents && data.events.length > 0) {
+      parts.push(t("overlay.hiddenEvents", { n: data.events.length }));
+    }
+    if (!showTasks && data.tasks.length > 0) {
+      parts.push(t("overlay.hiddenTasks", { n: data.tasks.length }));
+    }
+    if (!listed && data.overdue.length > 0) {
+      parts.push(t("overlay.overdue", { n: data.overdue.length }));
+    }
+    if (!listed && data.unscheduled.length > 0) {
+      parts.push(t("overlay.unscheduled", { m: data.unscheduled.length }));
+    }
     return parts.join(" · ");
   });
 
-  const allClear = $derived(
-    !!data && data.events.length === 0 && data.tasks.length === 0 && !summaryText,
-  );
+  const anyListed = $derived.by(() => {
+    if (!data) return false;
+    return (
+      (showEvents && data.events.length > 0) ||
+      (showTasks && data.tasks.length > 0) ||
+      (showTasks && expand && (data.overdue.length > 0 || data.unscheduled.length > 0))
+    );
+  });
+
+  const allClear = $derived(!!data && !anyListed && !summaryText);
+
+  function setShow(v: OverlayShow) {
+    if (cfg) void save({ ...cfg, show: v });
+  }
 
   function resetCorner(corner: string) {
     if (cfg) void save({ ...cfg, corner, custom_pos: null }); // 清除 custom_pos 重新吸附（§3）
@@ -109,34 +156,52 @@
     if (e.key === "Escape") settingsOpen = false;
   }
 
-  onMount(async () => {
+  onMount(() => {
     // 透明窗口底色让位（与 QuickAddWindow 同款），圆角外露出桌面
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
-    cfg = await api.getOverlayConfig().catch(() => null);
-    await refresh();
-    await listen("data-changed", scheduleRefresh);
-    await listen("overlay-config", (e) => {
+    // 刷新接线彼此独立注册，任一失败不拖垮其余（WebView2 隐藏页/后台
+    // 节流下 invoke、listen 偶发失败，串行 await 链一旦断掉后续，悬浮窗
+    // 会冻结在启动快照——表现为「新加的待办永远不出现」）。
+    void refresh();
+    listen("data-changed", scheduleRefresh).catch((e) => console.error("data-changed 监听失败", e));
+    listen("overlay-config", (e) => {
       // 托盘 / 设置页改动广播过来的最新配置
       cfg = (e.payload ?? null) as OverlayConfig | null;
-    });
+    }).catch((e) => console.error("overlay-config 监听失败", e));
+    // 60s 本地 tick（§4.5）：覆盖跨午夜、进行中态迁移等无广播变更
     setInterval(refresh, 60_000);
+    // 窗口由隐藏转可见（启动期挂载后首次 show、休眠唤醒、后台冻结恢复）
+    // 时立即重查——隐藏期间 WebView2 可能暂停/合并掉 tick，不能等 60s。
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void refresh();
+    });
     // 拖动定位持久化（§3）：onMoved 高频触发，防抖 400ms 落库
-    await win.onMoved(() => {
+    win.onMoved(() => {
       if (!dragging) return;
       clearTimeout(dragDebounce);
       dragDebounce = setTimeout(() => void api.overlaySaveDragPos(), 400);
-    });
+    }).catch((e) => console.error("onMoved 监听失败", e));
     // 拖边尺寸持久化（v1.1）：onResized 高频触发，防抖 400ms；Rust 侧钳制
     // 上下限（220×280 ~ 1200×1600）。程序化 set_size 也会触发，回存同值幂等。
-    await win.onResized(() => {
+    win.onResized(() => {
       clearTimeout(resizeDebounce);
       resizeDebounce = setTimeout(() => void api.overlaySaveResizeSize(), 400);
-    });
+    }).catch((e) => console.error("onResized 监听失败", e));
   });
 </script>
 
 <svelte:window onkeydown={onKeydown} onpointerup={() => (dragging = false)} />
+
+{#snippet taskRow(task: OverlayEntry, testid: string)}
+  <div class="row task" class:fading={fading.includes(task.id)} data-testid={testid}>
+    <input type="checkbox" title={t("overlay.markDone")} onchange={() => complete(task.id)} />
+    <button class="goto" title={t("overlay.openMain")} onclick={() => api.overlayShowMain()}>
+      <span class="t">{task.due_all_day ? "" : fmtTime(task.due_at)}</span>
+      <span class="ti">{task.title}</span>
+    </button>
+  </div>
+{/snippet}
 
 {#if data && cfg}
   <div class="overlay" style={`--op:${cfg.opacity}`} data-testid="overlay-root">
@@ -147,9 +212,11 @@
         onpointerdown={() => (dragging = true)}>{headDate}</span
       >
       <span class="spacer" data-tauri-drag-region onpointerdown={() => (dragging = true)}></span>
-      <span class="progress" data-testid="overlay-progress" title={t("overlay.progressTitle")}
-        >✓ {progress}</span
-      >
+      {#if showTasks}
+        <span class="progress" data-testid="overlay-progress" title={t("overlay.progressTitle")}
+          >✓ {progress}</span
+        >
+      {/if}
       <!-- 锁定态下 ⚙ 不可达（整窗穿透），解锁先走托盘菜单（§5.2/§5.4） -->
       <button class="gear" aria-label={t("overlay.settings")} onclick={() => (settingsOpen = !settingsOpen)}>⚙</button>
     </div>
@@ -173,6 +240,36 @@
           <button class:active={cfg.corner === "tl"} onclick={() => resetCorner("tl")}>{t("overlay.cornerTl")}</button>
           <button class:active={cfg.corner === "tr"} onclick={() => resetCorner("tr")}>{t("overlay.cornerTr")}</button>
         </div>
+        <!-- 显示分档（v1.2）：全部 / 仅日程 / 仅待办；未显示的组折叠进摘要行计数 -->
+        <div class="row-line">
+          {t("overlay.show")}
+          <span class="seg">
+            <button
+              class:active={show === "all"}
+              data-testid="overlay-show-all"
+              onclick={() => setShow("all")}>{t("overlay.showAll")}</button
+            >
+            <button
+              class:active={show === "events"}
+              data-testid="overlay-show-events"
+              onclick={() => setShow("events")}>{t("overlay.showEvents")}</button
+            >
+            <button
+              class:active={show === "tasks"}
+              data-testid="overlay-show-tasks"
+              onclick={() => setShow("tasks")}>{t("overlay.showTasks")}</button
+            >
+          </span>
+        </div>
+        <div class="row-line">
+          {t("overlay.expand")}
+          <input
+            type="checkbox"
+            data-testid="overlay-expand"
+            checked={expand}
+            onchange={(e) => cfg && save({ ...cfg, expand_summary: e.currentTarget.checked })}
+          />
+        </div>
         <div class="row-line">
           {t("overlay.locked")}
           <input
@@ -190,7 +287,7 @@
       {#if allClear}
         <div class="empty" data-testid="overlay-empty">{t("overlay.allClear", { n: data.done_count })}</div>
       {:else}
-        {#if data.events.length}
+        {#if showEvents && data.events.length}
           <div class="sec">{t("type.event")}</div>
           {#each data.events as ev (ev.id)}
             <button
@@ -207,17 +304,27 @@
             </button>
           {/each}
         {/if}
-        {#if data.tasks.length}
+        {#if showTasks && data.tasks.length}
           <div class="sec">{t("type.task")}</div>
           <div class="tasks">
             {#each data.tasks as task (task.id)}
-              <div class="row task" class:fading={fading.includes(task.id)} data-testid="overlay-task">
-                <input type="checkbox" title={t("overlay.markDone")} onchange={() => complete(task.id)} />
-                <button class="goto" title={t("overlay.openMain")} onclick={() => api.overlayShowMain()}>
-                  <span class="t">{task.due_all_day ? "" : fmtTime(task.due_at)}</span>
-                  <span class="ti">{task.title}</span>
-                </button>
-              </div>
+              {@render taskRow(task, "overlay-task")}
+            {/each}
+          </div>
+        {/if}
+        {#if showTasks && expand && data.overdue.length}
+          <div class="sec warn">{t("overlay.overdue", { n: data.overdue.length })}</div>
+          <div class="tasks">
+            {#each data.overdue as task (task.id)}
+              {@render taskRow(task, "overlay-overdue")}
+            {/each}
+          </div>
+        {/if}
+        {#if showTasks && expand && data.unscheduled.length}
+          <div class="sec">{t("overlay.unscheduled", { m: data.unscheduled.length })}</div>
+          <div class="tasks">
+            {#each data.unscheduled as task (task.id)}
+              {@render taskRow(task, "overlay-unscheduled")}
             {/each}
           </div>
         {/if}
@@ -355,6 +462,15 @@
     color: var(--text-dim);
     padding: 4px 8px 2px;
     font-weight: 600;
+  }
+
+  .sec.warn {
+    color: var(--danger);
+  }
+
+  .seg {
+    display: inline-flex;
+    gap: 4px;
   }
 
   .tasks {

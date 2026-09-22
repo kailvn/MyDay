@@ -45,10 +45,10 @@ pub struct TodayOverlay {
     pub tasks: Vec<OverlayEntry>,
     /// 今日已完成（done 且 due 在今日）
     pub done_count: i64,
-    /// 逾期 = todo 且 due < 今日 00:00（只计数不成列）
-    pub overdue_count: i64,
-    /// 未安排 = todo 且无 due（只计数不成列）
-    pub unscheduled_count: i64,
+    /// 逾期 = todo 且 due < 今日 00:00（due 升序；v1.2 展开成列）
+    pub overdue: Vec<OverlayEntry>,
+    /// 未安排 = todo 且无 due（created_at 升序 = 未排期池同口径 FIFO；v1.2 展开成列）
+    pub unscheduled: Vec<OverlayEntry>,
 }
 
 /// `day` 的本地 00:00 → UTC（DST 缺失时刻回退为标准时区零点）。
@@ -87,9 +87,9 @@ pub fn today_overlay(store: &Store, day: NaiveDate) -> Result<TodayOverlay> {
 
     let mut events: Vec<OverlayEntry> = Vec::new();
     let mut tasks: Vec<OverlayEntry> = Vec::new();
+    let mut overdue: Vec<OverlayEntry> = Vec::new();
+    let mut unscheduled: Vec<OverlayEntry> = Vec::new();
     let mut done_count = 0i64;
-    let mut overdue_count = 0i64;
-    let mut unscheduled_count = 0i64;
 
     for it in &all {
         match it.item_type {
@@ -121,25 +121,30 @@ pub fn today_overlay(store: &Store, day: NaiveDate) -> Result<TodayOverlay> {
                             done_count += 1;
                         }
                     }
-                    Some(d) if open && d < day0 => overdue_count += 1,
-                    None if open => unscheduled_count += 1,
+                    Some(d) if open && d < day0 => {
+                        overdue.push(entry(it, ItemType::Task, it.start_at, None, now))
+                    }
+                    None if open => unscheduled.push(entry(it, ItemType::Task, it.start_at, None, now)),
                     _ => {}
                 }
             }
         }
     }
 
-    // §4.2：时间升序，同刻按 created_at 稳定排序
+    // §4.2：时间升序，同刻按 created_at 稳定排序；未安排无时刻，按创建 FIFO
+    //（与月视图未排期池同口径）
     events.sort_by(|a, b| a.start_at.cmp(&b.start_at).then(a.created_at.cmp(&b.created_at)));
     tasks.sort_by(|a, b| a.due_at.cmp(&b.due_at).then(a.created_at.cmp(&b.created_at)));
+    overdue.sort_by(|a, b| a.due_at.cmp(&b.due_at).then(a.created_at.cmp(&b.created_at)));
+    unscheduled.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     Ok(TodayOverlay {
         date: day,
         events,
         tasks,
         done_count,
-        overdue_count,
-        unscheduled_count,
+        overdue,
+        unscheduled,
     })
 }
 
@@ -252,9 +257,28 @@ mod tests {
         let out = eval(&store, (2026, 9, 17));
         assert_eq!(out.tasks.len(), 1);
         assert_eq!(out.tasks[0].title, "卡点今日");
-        assert_eq!(out.overdue_count, 1, "due < 今日00:00 即逾期");
-        assert_eq!(out.unscheduled_count, 1, "无 due 计入未安排");
+        assert_eq!(out.overdue.len(), 1, "due < 今日00:00 即逾期");
+        assert_eq!(out.overdue[0].title, "差一秒逾期");
+        assert_eq!(out.unscheduled.len(), 1, "无 due 计入未安排");
         assert_eq!(out.done_count, 0);
+    }
+
+    #[test]
+    fn due_default_clock_2359_belongs_to_today() {
+        let t = TempDir(tempfile::tempdir().unwrap());
+        let store = t.store();
+        // 截止快捷默认钟点 23:59（TimePopover due 档）：必须落在当日窗口内，
+        // 且不因任何 UTC 换算平移溢出到次日（Windows 反馈的回归锚）。
+        task_due(&store, "今日2359", Some(local(2026, 9, 17, 23, 59)), None);
+        let out = eval(&store, (2026, 9, 17));
+        assert_eq!(out.tasks.len(), 1, "{:?}", out.tasks);
+        assert_eq!(out.tasks[0].title, "今日2359");
+        assert!(out.overdue.is_empty());
+        // 次日 00:00 起才算明日的
+        task_due(&store, "次日整点", Some(local(2026, 9, 18, 0, 0)), None);
+        let out = eval(&store, (2026, 9, 17));
+        assert_eq!(out.tasks.len(), 1);
+        assert!(out.overdue.is_empty(), "次日 due 不算今日也不算逾期");
     }
 
     #[test]
@@ -272,7 +296,7 @@ mod tests {
         assert_eq!(fri.events.len(), 0);
         assert_eq!(fri.tasks.len(), 0);
         // 周五视角：周四待办即逾期
-        assert_eq!(fri.overdue_count, 1);
+        assert_eq!(fri.overdue.len(), 1);
     }
 
     #[test]
@@ -317,7 +341,7 @@ mod tests {
         );
         let out = eval(&store, (2026, 9, 17));
         assert!(out.tasks.is_empty());
-        assert_eq!(out.overdue_count, 1);
+        assert_eq!(out.overdue.len(), 1);
     }
 
     #[test]

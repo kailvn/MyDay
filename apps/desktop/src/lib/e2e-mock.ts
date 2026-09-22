@@ -511,7 +511,11 @@ export function installE2eMock() {
     open_quick_add: (a) => {
       window.dispatchEvent(
         new CustomEvent("myday-dev-quick-add", {
-          detail: { itemType: a.itemType ?? null, title: a.title ?? null },
+          detail: {
+            itemType: a.itemType ?? null,
+            title: a.title ?? null,
+            presetDue: a.presetDue ?? null,
+          },
         }),
       );
       return null;
@@ -551,24 +555,34 @@ export function installE2eMock() {
         })
         .sort((a, b) => Date.parse(a.start_at!) - Date.parse(b.start_at!) || a.created_at.localeCompare(b.created_at));
       const openTasks = items.filter((i) => i.type === "task" && i.status === "todo");
+      const taskEntry = (i: (typeof openTasks)[number]) => ({
+        id: i.id,
+        kind: "task" as const,
+        title: i.title ?? i.note?.slice(0, 40) ?? "无标题",
+        start_at: i.start_at,
+        end_at: null,
+        due_at: i.due_at,
+        all_day: i.all_day,
+        due_all_day: i.due_all_day,
+        in_progress: false,
+        created_at: i.created_at,
+      });
       const tasks = openTasks
         .filter((i) => {
           const d = i.due_at ? Date.parse(i.due_at) : Number.NaN;
           return d >= t0 && d < t1;
         })
-        .map((i) => ({
-          id: i.id,
-          kind: "task" as const,
-          title: i.title ?? i.note?.slice(0, 40) ?? "无标题",
-          start_at: i.start_at,
-          end_at: null,
-          due_at: i.due_at,
-          all_day: i.all_day,
-          due_all_day: i.due_all_day,
-          in_progress: false,
-          created_at: i.created_at,
-        }))
+        .map(taskEntry)
         .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!) || a.created_at.localeCompare(b.created_at));
+      // 逾期/未安排（v1.2 展开成列）：due 升序 / created_at FIFO，与 core 同口径
+      const overdue = openTasks
+        .filter((i) => i.due_at && Date.parse(i.due_at) < t0)
+        .map(taskEntry)
+        .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!) || a.created_at.localeCompare(b.created_at));
+      const unscheduled = openTasks
+        .filter((i) => !i.due_at)
+        .map(taskEntry)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
       return {
         date: iso(now).slice(0, 10),
         events,
@@ -576,8 +590,8 @@ export function installE2eMock() {
         done_count: items.filter(
           (i) => i.type === "task" && i.status === "done" && i.due_at && Date.parse(i.due_at) >= t0 && Date.parse(i.due_at) < t1,
         ).length,
-        overdue_count: openTasks.filter((i) => i.due_at && Date.parse(i.due_at) < t0).length,
-        unscheduled_count: openTasks.filter((i) => !i.due_at).length,
+        overdue,
+        unscheduled,
       };
     },
     get_overlay_config: () => ({
@@ -587,6 +601,8 @@ export function installE2eMock() {
       size: settings["overlay.size"] ? JSON.parse(settings["overlay.size"]) : null,
       opacity: Number(settings["overlay.opacity"] ?? 0.9),
       locked: settings["overlay.locked"] === "true",
+      show: (settings["overlay.show"] as "all" | "events" | "tasks") ?? "all",
+      expand_summary: settings["overlay.expand_summary"] === "true",
     }),
     set_overlay_config: (a) => {
       const c = (a.config ?? {}) as Record<string, unknown>;
@@ -594,6 +610,8 @@ export function installE2eMock() {
       settings["overlay.corner"] = String(c.corner ?? "tr");
       settings["overlay.opacity"] = String(Number(c.opacity ?? 0.9));
       settings["overlay.locked"] = String(Boolean(c.locked));
+      settings["overlay.show"] = String(c.show ?? "all");
+      settings["overlay.expand_summary"] = String(Boolean(c.expand_summary));
       if (c.custom_pos) settings["overlay.custom_pos"] = JSON.stringify(c.custom_pos);
       else delete settings["overlay.custom_pos"]; // 清除 = 重新吸附
       if (c.size) settings["overlay.size"] = JSON.stringify(c.size);

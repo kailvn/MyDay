@@ -18,6 +18,7 @@
    * - 最近使用：localStorage `myday.recent_times` 存 HH:mm 取前 3
    */
   import { t, type MessageKey } from "./i18n";
+  import { parseLocalInput } from "./api";
 
   const pad = (n: number) => String(n).padStart(2, "0");
   const DAY_MS = 86_400_000;
@@ -59,20 +60,15 @@
   }
   function parse(v: string): Date | null {
     if (!v) return null;
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
+    return parseLocalInput(v);
   }
 
   function emit(d: Date | null) {
     onchange?.(d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}` : "");
   }
 
-  // ---- 快捷行 --------------------------------------------------------------
-  const DATE_QUICKS: { label: MessageKey; days: number }[] = [
-    { label: "common.today", days: 0 },
-    { label: "timepop.tomorrow", days: 1 },
-    { label: "timepop.day_after", days: 2 },
-  ];
+  // ---- 快捷行（v1.2 统一口径：未来时 今天/明天/后天，过去时 现在/昨天/前天）
+  // ------------------------------------------------------------------------
   /** 迷你月历表头（周一 → 周日） */
   const WEEKDAYS: MessageKey[] = [
     "timepop.wd1",
@@ -119,21 +115,17 @@
     if (variant === "occurred") {
       return [
         { label: t("timepop.now"), run: () => applyOccOffset(0) },
-        { label: t("timepop.min5_ago"), run: () => applyOccOffset(5) },
-        { label: t("timepop.min30_ago"), run: () => applyOccOffset(30) },
+        { label: t("timepop.yesterday"), run: () => applyOccOffset(1440) },
+        { label: t("timepop.day_before"), run: () => applyOccOffset(2880) },
       ];
     }
-    if (variant === "due") {
-      return [
-        { label: t("common.today"), run: () => applyDate(0) },
-        { label: t("timepop.tomorrow"), run: () => applyDate(1) },
-        { label: t("timepop.friday"), run: () => applyDate(0, 5) },
-      ];
-    }
-    return [
-      ...DATE_QUICKS.map((q) => ({ label: t(q.label), run: () => applyDate(q.days) })),
-      { label: t("timepop.next_monday"), run: () => applyDate(0, 1) },
+    // 未来时统一三档：due 档默认钟点 23:59，start/end 档 09:00（applyDate 内取默认）
+    const FUTURE: [MessageKey, number][] = [
+      ["common.today", 0],
+      ["timepop.tomorrow", 1],
+      ["timepop.day_after", 2],
     ];
+    return FUTURE.map(([key, days]) => ({ label: t(key), run: () => applyDate(days) }));
   }
 
   // ---- 最近使用 ------------------------------------------------------------
@@ -226,7 +218,7 @@
 <svelte:window onkeydown={onKey} />
 
 <span class="tp" bind:this={root}>
-  <button class="tp-btn" class:set={!!value} onclick={openPanel}>
+  <button class="tp-btn" class:set={!!value} data-testid={`tp-${variant}`} onclick={openPanel}>
     {label(value)}
   </button>
   {#if open}

@@ -348,15 +348,18 @@ export interface OverlayEntry {
   created_at: string;
 }
 
-/** `overlay_today` 输出信封（§7） */
+/** `overlay_today` 输出信封（§7）；逾期/未安排为条目数组，前端按设置决定展开渲染 */
 export interface OverlayToday {
   date: string;
   events: OverlayEntry[];
   tasks: OverlayEntry[];
   done_count: number;
-  overdue_count: number;
-  unscheduled_count: number;
+  overdue: OverlayEntry[];
+  unscheduled: OverlayEntry[];
 }
+
+/** 悬浮窗显示内容分档：全部 / 仅日程 / 仅待办（v1.2） */
+export type OverlayShow = "all" | "events" | "tasks";
 
 /** 悬浮窗配置（settings KV 整体读写，§6） */
 export interface OverlayConfig {
@@ -370,6 +373,16 @@ export interface OverlayConfig {
   /** 0.30–1.00 */
   opacity: number;
   locked: boolean;
+  /** 显示内容分档（未知值按 all 处理） */
+  show: OverlayShow;
+  /** 展开逾期与未安排成列表（false = 底部摘要只计数） */
+  expand_summary: boolean;
+}
+
+/** 归一化 show 分档：容忍旧档/脏值（未知按 all） */
+export function overlayShowOf(cfg: OverlayConfig | null): OverlayShow {
+  const v = cfg?.show;
+  return v === "events" || v === "tasks" ? v : "all";
 }
 
 export interface ItemGroup {
@@ -556,8 +569,16 @@ export const api = {
   loadHolidaysJson: () => invoke<string | null>("load_holidays_json"),
   saveHolidaysJson: (text: string) => invoke<void>("save_holidays_json", { text }),
   resetHolidaysJson: () => invoke<void>("reset_holidays_json"),
-  openQuickAdd: (itemType?: ItemType | null, title?: string | null) =>
-    invoke<void>("open_quick_add", { itemType: itemType ?? null, title: title ?? null }),
+  openQuickAdd: (
+    itemType?: ItemType | null,
+    title?: string | null,
+    presetDue?: QuickAddPreset | null,
+  ) =>
+    invoke<void>("open_quick_add", {
+      itemType: itemType ?? null,
+      title: title ?? null,
+      presetDue: presetDue ?? null,
+    }),
   // ---- 今日悬浮窗（OVERLAY-SPEC）----
   overlayToday: () => invoke<OverlayToday>("overlay_today"),
   getOverlayConfig: () => invoke<OverlayConfig>("get_overlay_config"),
@@ -603,9 +624,36 @@ export function toDateInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** 解析本地时间输入串 `YYYY-MM-DDTHH:mm(:ss)` → Date。
+ *  按字段构造而非 `new Date(string)`：无时区的日期时间串按 ES5 语义会被
+ *  部分引擎（旧 WebView2 运行时）解析成 UTC，钟点整体平移一个时区——
+ *  23:59 截止会落到次日，待办从「今日」消失。 */
+export function parseLocalInput(v: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(v);
+  if (!m) {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const [, y, mo, d, h, mi, s] = m;
+  return new Date(+y, +mo - 1, +d, +h, +mi, s ? +s : 0);
+}
+
+/** 快速添加快捷日期档（主窗口「+」旁快捷钮，未来时三档） */
+export type QuickAddPreset = "today" | "tomorrow" | "day_after";
+
+/** 快捷档 → 该日 23:59 的本地输入串（截止默认钟点与 TimePopover due 档一致） */
+export function presetDueLocal(preset: QuickAddPreset): string {
+  const d = new Date();
+  d.setDate(d.getDate() + (preset === "tomorrow" ? 1 : preset === "day_after" ? 2 : 0));
+  d.setHours(23, 59, 0, 0);
+  return toLocalInput(d.toISOString());
+}
+
 /** RFC3339（UTC），core 端按 UTC RFC3339 字符串存库。 */
 export function fromLocalInput(v: string): string {
-  return new Date(v).toISOString();
+  const d = parseLocalInput(v);
+  if (!d || Number.isNaN(d.getTime())) throw new RangeError(`无效的本地时间: ${v}`);
+  return d.toISOString();
 }
 
 /** 日程默认开始 = 下一个整点。 */

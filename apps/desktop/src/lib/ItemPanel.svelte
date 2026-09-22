@@ -362,14 +362,24 @@
     TIME_GROUP_META[g].members.forEach(deactivateTime);
   }
 
-  // ---- 时间快捷标签：同一人话标签按所在行映射到不同 token，点击即算 -------
-  // 开始行基准 = 当前时刻 / 锚点日；结束行基准 = 开始时间；时段标签同时填首尾。
-  // 全天是时段标签而非开关（选中后开始/结束变日期输入，存 all_day + 00:00–23:59）。
-  const START_LABELS: { label: MessageKey; token: string }[] = [
-    { label: "panel.start.nextHour", token: "@next_hour" },
-    { label: "panel.start.plus1h", token: "@now+1h" },
-    { label: "panel.start.tomorrow9", token: "@d+1T09:00" },
+
+  // ---- 快捷三档（统一口径）：未来时 今天/明天/后天、过去时 现在/昨天/前天。
+  // 首页时间入口旁与激活行内 chips 共用同一组常量，语义一致只是少一步展开。
+  const FUTURE_DAYS: [MessageKey, number][] = [
+    ["common.today", 0],
+    ["timepop.tomorrow", 1],
+    ["timepop.day_after", 2],
   ];
+  const PAST_DAYS: [MessageKey, number][] = [
+    ["timepop.now", 0],
+    ["timepop.yesterday", 1],
+    ["timepop.day_before", 2],
+  ];
+  // ---- 时间快捷标签：结束行保留相对时长（以已填开始为基准），开始行 = 未来三档。
+  const START_LABELS: { label: MessageKey; token: string }[] = FUTURE_DAYS.map(([key, off]) => ({
+    label: key,
+    token: `@d${off === 0 ? "" : `+${off}`}T09:00`,
+  }));
   const END_LABELS: { label: MessageKey; token: string }[] = [
     { label: "panel.end.plus30m", token: "@start+30m" },
     { label: "panel.end.plus1h", token: "@start+1h" },
@@ -536,11 +546,35 @@
     d.setHours(d.getHours() + 1);
     return toLocalInput(d.toISOString());
   }
-  function tomorrow(): string {
+  /** 未来日期档（今天/明天/后天快捷）：offset 天后 h:mi 的本地输入串 */
+  function dayFromNow(offset: number, h: number, mi: number): string {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(23, 59, 0, 0);
+    d.setDate(d.getDate() + offset);
+    d.setHours(h, mi, 0, 0);
     return toLocalInput(d.toISOString());
+  }
+  /** 过去日期档（昨天/前天快捷）：n 天前同时刻（记录不允许未来） */
+  function daysAgo(n: number): string {
+    const d = new Date(Date.now() - n * 86_400_000);
+    d.setSeconds(0, 0);
+    return toLocalInput(d.toISOString());
+  }
+
+  /** 首页（未激活）时间入口旁的快捷三档：点击 = 激活该组 + 注入对应值。
+   *  时间组落 09:00（与 TimePopover start 档一致）、截止落 23:59、发生保持当前钟点回推。 */
+  function groupQuicks(g: TimeGroupId): { label: string; run: () => void }[] {
+    if (isTpl) return [];
+    const days = g === "occurred" ? PAST_DAYS : FUTURE_DAYS;
+    return days.map(([key, off]) => ({
+      label: t(key),
+      run: () => {
+        activateGroup(g);
+        setTimeValue(
+          g === "time" ? "start" : g,
+          g === "occurred" ? daysAgo(off) : dayFromNow(off, g === "due" ? 23 : 9, g === "due" ? 59 : 0),
+        );
+      },
+    }));
   }
 
   // ---- 渐进披露：创建时默认只露「标题 + 模板」，时间/字段/标签收进「更多」。
@@ -1315,10 +1349,16 @@
         {/if}
       {/if}
       {#if !isTpl && !isEdit && effType === "task" && id === "due"}
-        <button class="chip" onclick={() => setTimeValue("due", tomorrow())}>{t("panel.quick.tomorrow")}</button>
+        {#each FUTURE_DAYS as [key, off] (key)}
+          <button class="chip" onclick={() => setTimeValue("due", dayFromNow(off, 23, 59))}
+            >{t(key)}</button
+          >
+        {/each}
       {/if}
       {#if !isTpl && id === "occurred" && !isEdit}
-        <button class="chip" onclick={() => setTimeValue("occurred", nowLocalInput())}>{t("panel.quick.now")}</button>
+        {#each PAST_DAYS as [key, n] (key)}
+          <button class="chip" onclick={() => setTimeValue("occurred", daysAgo(n))}>{t(key)}</button>
+        {/each}
       {/if}
       {#if isTpl && id === "end"}
         <span class="dim">{t("panel.tpl.endHint")}</span>
@@ -1492,13 +1532,8 @@
   </div>
   {/if}
 
-  {#if !isTpl && !isEdit && (!showDetails || more)}
-    <button class="ghost more-btn" onclick={() => setExpanded(!more)}>
-      {more ? t("panel.more.collapse") : t("panel.more.expand")}
-    </button>
-  {/if}
-
-  {#if showDetails}
+  <!-- 时间组：首页常驻入口。未激活 = 「＋chip + 快捷三档」，点快捷即激活并注入值
+       （类型随之锁定、面板自动展开）；激活后渲染完整字段行。 -->
   {#each TIME_GROUP_IDS.filter(groupVisible) as g (g)}
     {#if groupActive(g)}
       {#each TIME_GROUP_META[g].members.filter(timeVisible) as mid (mid)}
@@ -1523,10 +1558,20 @@
         <button class="chip ghost" onclick={() => activateGroup(g)}>
           ＋ {t(TIME_GROUP_META[g].label)}
         </button>
+        {#each groupQuicks(g) as q (q.label)}
+          <button class="chip" data-testid={`entry-${g}-${q.label}`} onclick={q.run}>{q.label}</button>
+        {/each}
       </div>
     {/if}
   {/each}
 
+  {#if !isTpl && !isEdit && (!showDetails || more)}
+    <button class="ghost more-btn" onclick={() => setExpanded(!more)}>
+      {more ? t("panel.more.collapse") : t("panel.more.expand")}
+    </button>
+  {/if}
+
+  {#if showDetails}
   {#if recVisible}
   <div class="field">
     <span class="label">{t("panel.label.repeat")}</span>
