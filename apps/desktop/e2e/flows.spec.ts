@@ -436,13 +436,12 @@ test("T8.8 时间块：预计分钟待办在周网格按时长占位，池行带
 });
 
 test("T10 回收站：删除入站 → 恢复 → 彻底删除，与活跃列表口径一致", async ({ page }) => {
-  // 今天页两步确认删除「买牛奶」；提示改为「移入回收站」，5 秒宽限期后写库
+  // 今天页两步确认删除「买牛奶」：删除即入回收站（无撤销宽限期），行即时消失
   const todayRow = () => page.locator("li", { hasText: "买牛奶" });
   await expect(todayRow()).toBeVisible();
   const del = todayRow().locator('button[title="删除"]');
   await del.click();
   await del.click(); // 「确认？」
-  await page.waitForTimeout(5_600);
   await expect(todayRow()).toHaveCount(0);
 
   // 回收站页：行可见（类型 + 删除时刻），恢复 → 回到今天页
@@ -458,7 +457,6 @@ test("T10 回收站：删除入站 → 恢复 → 彻底删除，与活跃列表
   // 再删 → 彻底删除（两步确认）→ 活跃与回收站都不再有
   await del.click();
   await del.click();
-  await page.waitForTimeout(5_600);
   await expect(todayRow()).toHaveCount(0);
   await navButton(page, /回收站/).click();
   const again = page.getByTestId("trash-row").filter({ hasText: "买牛奶" });

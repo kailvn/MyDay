@@ -46,7 +46,7 @@ export const part_help = {
   "help.tasks.recur.k": "重复待办",
   "help.tasks.recur.v": "完成一次自动排到下一期；反悔取消，只退一期。",
   "help.tasks.batch.k": "批量操作",
-  "help.tasks.batch.v": "待办视图里多选后可批量完成 / 改期 / 删除；删除有 5 秒后悔药，一键全部救回。",
+  "help.tasks.batch.v": "待办视图里多选后可批量完成 / 改期 / 删除；删除直接进回收站，误删去回收站页恢复。",
   "help.reminders.title": "提醒",
   "help.reminders.intent.k": "提醒跟着条目走",
   "help.reminders.intent.v":
@@ -134,7 +134,7 @@ export const part_help_en = {
   "help.tasks.recur.k": "Recurring tasks",
   "help.tasks.recur.v": "Complete one and the next occurrence is already queued; change your mind and it steps back — one period, no more.",
   "help.tasks.batch.k": "Batch actions",
-  "help.tasks.batch.v": "Multi-select in the Tasks view to complete, reschedule or delete in bulk; deletes come with a 5-second undo that brings everything back at once.",
+  "help.tasks.batch.v": "Multi-select in the Tasks view to complete, reschedule or delete in bulk; deleted items go straight to the trash — restore them from the Trash page.",
   "help.reminders.title": "Reminders",
   "help.reminders.intent.k": "Reminders follow their items",
   "help.reminders.intent.v":

@@ -6,8 +6,7 @@
    * 超 30 天的条目由 GUI 启动时自动清理（lib.rs TRASH_RETENTION_DAYS）。
    */
   import { api, displayTitle, fmtDateTime, typeLabel, type Item } from "../api";
-  import { deletions } from "../deletion.svelte";
-  import { toast } from "../toast.svelte";
+    import { toast } from "../toast.svelte";
   import { t, q } from "../i18n";
 
   let { dataVersion = 0 } = $props();
@@ -32,10 +31,12 @@
     load();
   });
 
+  const describe = (it: Item) => `${typeLabel(it.type)}${q(displayTitle(it))}`;
+
   async function restore(it: Item) {
     try {
       await api.restoreItem(it.id);
-      toast.show(t("trash.restored", { name: deletions.describe(it) }));
+      toast.show(t("trash.restored", { name: describe(it) }));
       await load();
     } catch (e) {
       toast.show(t("trash.failed", { e: String(e) }));
@@ -46,7 +47,7 @@
     confirming = "";
     try {
       await api.purgeItem(it.id);
-      toast.show(t("trash.purged", { name: deletions.describe(it) }));
+      toast.show(t("trash.purged", { name: describe(it) }));
       await load();
     } catch (e) {
       toast.show(t("trash.failed", { e: String(e) }));

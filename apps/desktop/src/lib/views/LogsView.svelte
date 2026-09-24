@@ -8,7 +8,7 @@
    */
   import { api, displayTitle, fmtTime, type FieldDef, type Item, type Template, type ViewDef, type ViewResult, fileLinksOf } from "../api";
   import { fieldBadges, fieldDefMap } from "../fields.svelte";
-  import { deletions } from "../deletion.svelte";
+  import { trashItems } from "../trash";
   import DeleteButton from "../DeleteButton.svelte";
   import EditButton from "../EditButton.svelte";
   import FileLinkChips from "../FileLinkChips.svelte";
@@ -51,14 +51,14 @@
 
   type DayGroup = { day: string; items: Item[] };
 
-  let visibleLogs = $derived(logs.filter((i) => !deletions.pendingIds.includes(i.id)));
+  let visibleLogs = $derived(logs);
 
   // 时间线分组：来自视图求值结果（组序 = 组键倒序，组内按 sort，引擎定）
   let groups = $derived.by<DayGroup[]>(() => {
     if (result?.groups) {
       return result.groups.map((g) => ({
         day: g.key ?? "",
-        items: g.items.filter((i) => !deletions.pendingIds.includes(i.id)),
+        items: g.items,
       }));
     }
     return [];
@@ -208,7 +208,7 @@
                 <ItemTimeInfo item={l} />
               <FileLinkChips links={fileLinksOf(l)} />
                 <EditButton onedit={() => openEdit(l)} />
-                <DeleteButton onconfirm={() => deletions.request(l)} />
+                <DeleteButton onconfirm={() => void trashItems([l.id])} />
               </li>
             {/each}
           </ul>

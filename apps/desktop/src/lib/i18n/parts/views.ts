@@ -140,6 +140,7 @@ export const part_views = {
   'trash.purged': '已彻底删除 {name}',
   'trash.emptied': '已清空回收站（{n} 条）',
   'trash.failed': '操作失败：{e}',
+  'trash.deleteFailed': '删除失败：{e}',
 } as const;
 
 export const part_views_en = {
@@ -279,4 +280,5 @@ export const part_views_en = {
   'trash.purged': 'Deleted forever: {name}',
   'trash.emptied': 'Trash emptied ({n} items)',
   'trash.failed': 'Operation failed: {e}',
+  'trash.deleteFailed': 'Delete failed: {e}',
 };

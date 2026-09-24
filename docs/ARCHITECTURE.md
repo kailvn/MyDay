@@ -56,7 +56,7 @@ Cargo workspace，三个成员共用 workspace 依赖版本。GUI 与 CLI 都只
   删除撤销，显示创建 / 修改时间；类型不可变）、`QuickAddWindow`（快速添加窗口根，
   复用 ItemPanel）、`panel.svelte.ts`（面板全局状态）、
   `fields.svelte.ts`（字段定义全局 store，extra 键 = 字段 id 查名，data-changed 自动刷新）、
-  `api.ts`（类型化命令封装）、`deletion.svelte.ts`（延迟删除 + 撤销）、
+  `api.ts`（类型化命令封装）、`trash.ts`（删除即入回收站，data-changed 驱动行消失）、
   `Onboarding.svelte`（首启「选择启用模板」）、设置页字段 / 模板管理、记录页模板按钮
 
 ## 3. 关键数据流

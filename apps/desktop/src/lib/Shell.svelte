@@ -9,7 +9,6 @@
   import ItemPanel from "./ItemPanel.svelte";
   import ItemDetail from "./ItemDetail.svelte";
   import { panelRequest, openCreate, openDetail } from "./panel.svelte";
-  import UndoToast from "./UndoToast.svelte";
   import { toast } from "./toast.svelte";
   import CommandPalette from "./CommandPalette.svelte";
   import Onboarding from "./Onboarding.svelte";
@@ -190,7 +189,6 @@
     {/if}
   {/key}
 
-  <UndoToast />
 
   <!-- 提醒中心（SPRINT2-SPEC §5）：关闭时刷新未读角标 -->
   <ReminderCenter

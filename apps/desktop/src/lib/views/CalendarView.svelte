@@ -14,7 +14,7 @@
    */
   import { api, anchorTime, displayTitle, fmtTime, toDateInput, type Item } from "../api";
   import { expandItems, recurrenceLabel } from "../recurrence";
-  import { deletions } from "../deletion.svelte";
+  import { trashItems } from "../trash";
   import WeekGrid from "../WeekGrid.svelte";
   import DeleteButton from "../DeleteButton.svelte";
   import EditButton from "../EditButton.svelte";
@@ -168,7 +168,6 @@
   let eventsByDay = $derived.by(() => {
     const map = new Map<string, Item[]>();
     for (const it of displayItems) {
-      if (deletions.pendingIds.includes(it.id)) continue;
       for (const key of relatedDays(it)) {
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(it);
@@ -214,7 +213,6 @@
   /** 未排期池：无日期待办先进先出（最早创建的排最上），待删行即时消失 */
   let poolItems = $derived(
     poolRaw
-      .filter((it) => !deletions.pendingIds.includes(it.id))
       .filter(matchTag)
       .sort((a, b) => a.created_at.localeCompare(b.created_at)),
   );
@@ -226,7 +224,7 @@
     const fromT = Date.parse(from);
     const toT = Date.parse(to);
     const ms = (iso: string | null) => (iso ? Date.parse(iso) : Number.NaN);
-    const visible = displayItems.filter((it) => !deletions.pendingIds.includes(it.id));
+    const visible = displayItems;
     const events = visible
       .filter((it) => {
         if (it.type === "event") {
@@ -606,7 +604,7 @@
               <span class="title">{displayTitle(it)}</span>
               {#each it.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
               <EditButton onedit={() => openEdit(it)} />
-              <DeleteButton onconfirm={() => deletions.request(it)} />
+              <DeleteButton onconfirm={() => void trashItems([it.id])} />
             </li>
           {/each}
         </ul>
@@ -660,7 +658,7 @@
               {#if ev.recurrence}<span class="tag nowrap">🔁 {recurrenceLabel(ev.recurrence)}</span>{/if}
               {#each ev.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
               <EditButton onedit={() => openEdit(ev)} />
-              <DeleteButton onconfirm={() => deletions.request(ev)} />
+              <DeleteButton onconfirm={() => void trashItems([ev.id])} />
               </div>
               {#if section.title === t("calendar.section_due") && ev.due_at}
                 <!-- 顺延快捷动作（悬停 / 键盘聚焦出现）：语义与拖到目标日一致；

@@ -17,9 +17,6 @@ export const part_shell = {
   "filelink.openDirTip": "打开文件夹",
   "filelink.revealTip": "在文件管理器中显示",
   "filelink.remove": "移除链接",
-  "undo.deleted": "已移入回收站：{what}",
-  "undo.morePending": "（还有 {n} 项待删除）",
-  "undo.all": "全部撤销（{n}）",
 } as const;
 
 export const part_shell_en = {
@@ -39,7 +36,4 @@ export const part_shell_en = {
   "filelink.openDirTip": "Open folder",
   "filelink.revealTip": "Reveal in file manager",
   "filelink.remove": "Remove link",
-  "undo.deleted": "Moved to trash: {what}",
-  "undo.morePending": " ({n} more pending)",
-  "undo.all": "Undo all ({n})",
 };

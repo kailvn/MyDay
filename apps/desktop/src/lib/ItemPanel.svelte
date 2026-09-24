@@ -54,7 +54,7 @@
   import { toast } from "./toast.svelte";
   import TimePopover, { timePopoverOpen } from "./TimePopover.svelte";
   import { closePanel, panelRequest } from "./panel.svelte";
-  import { deletions } from "./deletion.svelte";
+  import { trashItems } from "./trash";
   import DeleteButton from "./DeleteButton.svelte";
   import FileLinkChips from "./FileLinkChips.svelte";
   import { t, q, type MessageKey } from "./i18n";
@@ -1241,7 +1241,7 @@
 
   function remove() {
     if (!src) return;
-    void deletions.request(src);
+    void trashItems([src.id]);
     finish();
   }
 

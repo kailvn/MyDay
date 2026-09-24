@@ -25,7 +25,7 @@
     type Item,
   } from "./api";
   import { expandItems } from "./recurrence";
-  import { deletions } from "./deletion.svelte";
+  import { trashItems } from "./trash";
   import { openCreate, openDetail, openEdit } from "./panel.svelte";
   import { toast } from "./toast.svelte";
   import { holidayOfKey } from "./holidays.svelte";
@@ -85,7 +85,7 @@
   let displayItems = $derived(expandItems(items, windowStart, windowEnd));
   /** 标签过滤（日历页下拉；"" = 全部）：网格块、到期行与池行统一生效 */
   let visible = $derived(
-    displayItems.filter((i) => !deletions.pendingIds.includes(i.id) && (!tagFilter || i.tags.includes(tagFilter))),
+    displayItems.filter((i) => !tagFilter || i.tags.includes(tagFilter)),
   );
   let poolShown = $derived(pool.filter((it) => !tagFilter || it.tags.includes(tagFilter)));
 
@@ -718,7 +718,7 @@
             {/if}
             {#each it.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
             <EditButton onedit={() => openEdit(it)} />
-            <DeleteButton onconfirm={() => deletions.request(it)} />
+            <DeleteButton onconfirm={() => void trashItems([it.id])} />
           </li>
         {/each}
       </ul>

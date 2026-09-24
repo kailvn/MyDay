@@ -7,13 +7,13 @@
    *   下一个未开始的标「下一个」；逾期待办红标「逾期」并显示完整截止日期
    *   时间；已完成的行沉到列表末尾。
    * - 今日活动：今天创建或修改过的所有条目（含日程/待办/记录），倒序；可折叠，默认收起。
-   * 每行显示创建/修改时间，可编辑（✎）与删除（✕，5 秒可撤销）。
+   * 每行显示创建/修改时间，可编辑（✎）与删除（✕，入回收站）。
    */
   import { onMount } from "svelte";
   import { api, displayTitle, fmtTime, fmtDateTime, toDateInput, typeLabel, fileLinksOf, type Item } from "../api";
   import { expandItems, recurrenceLabel } from "../recurrence";
   import { fieldBadges } from "../fields.svelte";
-  import { deletions } from "../deletion.svelte";
+  import { trashItems } from "../trash";
   import DeleteButton from "../DeleteButton.svelte";
   import EditButton from "../EditButton.svelte";
   import FileLinkChips from "../FileLinkChips.svelte";
@@ -78,16 +78,15 @@
     }),
   );
 
-  let pending = $derived(deletions.pendingIds);
-  let visibleEvents = $derived(events.filter((i) => !pending.includes(i.id) && matchTag(i)));
-  let visibleTasks = $derived(tasks.filter((i) => !pending.includes(i.id) && matchTag(i)));
+  let visibleEvents = $derived(events.filter(matchTag));
+  let visibleTasks = $derived(tasks.filter(matchTag));
   // 已完成沉底（Notion 式）：进行中的事保持在视野顶部
   let sortedEvents = $derived([...visibleEvents].sort(bySchedule));
   let sortedTasks = $derived([...visibleTasks].sort(bySchedule));
   // 今日活动与今日安排去重：同一条目不在两个列表重复出现
   let shownIds = $derived(new Set([...visibleEvents, ...visibleTasks].map((i) => i.id)));
   let visibleActivity = $derived(
-    activity.filter((i) => !pending.includes(i.id) && !shownIds.has(i.id) && matchTag(i)),
+    activity.filter((i) => !shownIds.has(i.id) && matchTag(i)),
   );
 
   onMount(() => {
@@ -171,7 +170,7 @@
             <ItemTimeInfo item={ev} />
             <FileLinkChips links={fileLinksOf(ev)} />
             <EditButton onedit={() => openEdit(ev)} />
-            <DeleteButton onconfirm={() => deletions.request(ev)} />
+            <DeleteButton onconfirm={() => void trashItems([ev.id])} />
           </li>
         {/each}
       </ul>
@@ -201,7 +200,7 @@
             <ItemTimeInfo item={task} />
             <FileLinkChips links={fileLinksOf(task)} />
             <EditButton onedit={() => openEdit(task)} />
-            <DeleteButton onconfirm={() => deletions.request(task)} />
+            <DeleteButton onconfirm={() => void trashItems([task.id])} />
           </li>
         {/each}
       </ul>
@@ -239,7 +238,7 @@
             <ItemTimeInfo item={it} />
             <FileLinkChips links={fileLinksOf(it)} />
             <EditButton onedit={() => openEdit(it)} />
-            <DeleteButton onconfirm={() => deletions.request(it)} />
+            <DeleteButton onconfirm={() => void trashItems([it.id])} />
           </li>
         {/each}
       </ul>

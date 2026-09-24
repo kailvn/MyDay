@@ -6,7 +6,7 @@
    */
   import { anchorTime, api, displayTitle, fmtDateTime, typeLabel, type FieldDef, type Item, type ViewDef, type ViewResult, fileLinksOf } from "../api";
   import { highlightText } from "../highlight";
-  import { deletions } from "../deletion.svelte";
+  import { trashItems } from "../trash";
   import DeleteButton from "../DeleteButton.svelte";
   import EditButton from "../EditButton.svelte";
   import FileLinkChips from "../FileLinkChips.svelte";
@@ -30,7 +30,7 @@
   let error = $state("");
 
   let hits = $derived(result?.items ?? []);
-  let visibleHits = $derived(hits.filter((h) => !deletions.pendingIds.includes(h.id)));
+  let visibleHits = $derived(hits);
 
   async function loadViews() {
     try {
@@ -142,7 +142,7 @@
         <ItemTimeInfo item={it} />
           <FileLinkChips links={fileLinksOf(it)} />
         <EditButton onedit={() => openEdit(it)} />
-        <DeleteButton onconfirm={() => deletions.request(it)} />
+        <DeleteButton onconfirm={() => void trashItems([it.id])} />
       </li>
     {/each}
   </ul>

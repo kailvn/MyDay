@@ -1,12 +1,12 @@
 <script lang="ts">
   /** 需求 §6：待办页（FILTER-SPEC §9）：五个 tab = 五个内置视图（今天 / 即将到期 /
    *  无日期 / 全部 / 已完成），用户新建视图并列出现在 tab 行；工具条共享（筛选 / 排序 / 另存为）。
-   *  SPRINT-SPEC §4：多选批量操作（完成 / 改期 / 删除 + 一键撤销）保留。
+   *  SPRINT-SPEC §4：多选批量操作（完成 / 改期 / 删除）保留。
    *  「无日期」视图与日历未排期池同口径（无 due 无 start，FIFO）；全部无 due，
    *  批量「改期」（平移 due）无意义，只留完成 / 删除。 */
   import { api, displayTitle, fmtDate, type FieldDef, type Item, type ItemStatus, type ViewDef, type ViewResult } from "../api";
   import { recurrenceLabel } from "../recurrence";
-  import { deletions } from "../deletion.svelte";
+  import { trashItems } from "../trash";
   import { toast } from "../toast.svelte";
   import DeleteButton from "../DeleteButton.svelte";
   import EditButton from "../EditButton.svelte";
@@ -32,7 +32,7 @@
   let customDate = $state("");
 
   let items = $derived(result?.items ?? []);
-  let visibleItems = $derived(items.filter((i) => !deletions.pendingIds.includes(i.id)));
+  let visibleItems = $derived(items);
   let selectedItems = $derived(visibleItems.filter((i) => sel.includes(i.id)));
 
   async function load() {
@@ -144,10 +144,11 @@
     await load();
   }
 
-  function batchDelete() {
-    // 撤销反馈由 UndoToast 承担（含「全部撤销」入口），不再发全局 toast 避免重叠
-    deletions.requestMany(selectedItems);
+  async function batchDelete() {
+    const ids = selectedItems.map((i) => i.id);
     sel = [];
+    await trashItems(ids);
+    await load();
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -232,7 +233,7 @@
         <ItemTimeInfo item={item} />
         {#if !multi}
           <EditButton onedit={() => openEdit(item)} />
-          <DeleteButton onconfirm={() => deletions.request(item)} />
+          <DeleteButton onconfirm={() => void trashItems([item.id])} />
         {/if}
       </li>
     {/each}
