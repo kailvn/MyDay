@@ -4,7 +4,7 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 功能详情见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
-## [未发布]
+## [1.2.0] - 2026-09-24
 
 ### 新增
 - 重复规则补全（schema v7）：结束条件 `;until=YYYY-MM-DD`（含当天）与 `;count=N`（剩余期数，完成推进自动递减、取消完成回拨恢复；耗尽后完成 = 系列正常终结），条目面板重复行新增结束条件选择（永不 / 至某日 / N 次后），列表徽标带「· 至 … / · 共 N 次」后缀，ICS 往返映射 UNTIL / COUNT / EXDATE

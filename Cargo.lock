@@ -2304,7 +2304,7 @@ dependencies = [
 
 [[package]]
 name = "myday-cli"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "clap",
@@ -2316,7 +2316,7 @@ dependencies = [
 
 [[package]]
 name = "myday-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "myday-desktop"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
