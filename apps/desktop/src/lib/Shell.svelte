@@ -5,7 +5,7 @@
    */
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { api, presetDueLocal, type QuickAddPreset } from "./api";
+  import { api } from "./api";
   import ItemPanel from "./ItemPanel.svelte";
   import ItemDetail from "./ItemDetail.svelte";
   import { panelRequest, openCreate, openDetail } from "./panel.svelte";
@@ -120,7 +120,6 @@
       openCreate({
         item_type: d.itemType ?? null,
         title: d.title ?? null,
-        presetDue: d.presetDue ? presetDueLocal(d.presetDue) : null,
       });
     });
   });
@@ -148,17 +147,6 @@
       ＋ {t('shell.quickAdd')}
       <kbd>Ctrl+N</kbd>
     </button>
-    <!-- 快捷日期档（未来时三档，高频操作直达）：点日期即开面板预填该日 23:59 截止
-         （激活截止 → 推断待办 → 面板展开），类型仍可现场改 -->
-    <div class="quick-days" data-testid="quick-days">
-      {#each [["today", "common.today"], ["tomorrow", "timepop.tomorrow"], ["day_after", "timepop.day_after"]] as [preset, key] (preset)}
-        <button
-          class="quick-day"
-          data-testid={`quick-day-${preset}`}
-          onclick={() => api.openQuickAdd(null, null, preset as QuickAddPreset)}
-        >{t(key as MessageKey)}</button>
-      {/each}
-    </div>
     <nav>
       {#each nav as n (n.id)}
         <button class:active={view === n.id} onclick={() => (view = n.id)}>
@@ -321,18 +309,6 @@
     border: 1px solid currentColor;
     border-radius: 3px;
     padding: 0 4px;
-  }
-
-  .quick-days {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-  }
-
-  .quick-day {
-    flex: 1;
-    padding: 5px 0;
-    font-size: 12px;
   }
 
   nav {

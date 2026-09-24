@@ -256,7 +256,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "open" => show_main(app),
-            "quick" => ipc_bridge::show_quick_add(app, None, None, None),
+            "quick" => ipc_bridge::show_quick_add(app, None, None),
             "overlay-show" => {
                 let checked = overlay_show.is_checked().unwrap_or(false);
                 let store = app.state::<AppState>().store.clone();
@@ -323,7 +323,7 @@ fn single_instance_handler(app: &tauri::AppHandle, args: Vec<String>, _cwd: Stri
         let _ = commands::set_overlay_visible(app, &store, true, false);
     } else if wants_quick {
         let item_type = myday_core::model::ItemType::Log;
-        ipc_bridge::show_quick_add(app, Some(item_type), None, None);
+        ipc_bridge::show_quick_add(app, Some(item_type), None);
     } else {
         show_main(app);
     }

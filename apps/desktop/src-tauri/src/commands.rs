@@ -900,21 +900,14 @@ fn reveal_impl(p: &Path) -> std::result::Result<(), String> {
 }
 
 /// 主窗口内的快速添加入口：弹出快速窗口并预填。
-/// `preset_due`：快捷日期档（"today"/"tomorrow"/"day_after"），面板按该日 23:59
-/// 预填截止并推断为待办；其余入口传 None。
 #[tauri::command]
 pub fn open_quick_add(
     app: tauri::AppHandle,
     item_type: Option<String>,
     title: Option<String>,
-    preset_due: Option<String>,
 ) -> std::result::Result<(), String> {
     let ty = item_type.as_deref().and_then(ItemType::parse);
-    let preset = preset_due
-        .as_deref()
-        .filter(|v| matches!(*v, "today" | "tomorrow" | "day_after"))
-        .map(str::to_string);
-    crate::ipc_bridge::show_quick_add(&app, ty, title, preset);
+    crate::ipc_bridge::show_quick_add(&app, ty, title);
     Ok(())
 }
 

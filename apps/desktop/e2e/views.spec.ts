@@ -347,3 +347,26 @@ test("V10 即时搜索：Ctrl+K 与搜索页输入即出 + 命中高亮（不回
   await expect(page.getByTestId("search-hit-title").filter({ hasText: "周报" }).first()).toBeVisible();
   await expect(page.locator("mark").first()).toContainText("周报");
 });
+
+test("V11 今天页：日程/待办分组，今日活动默认折叠", async ({ page }) => {
+  // 分组小标题：日程组恒有 晨跑（每天）/ 产品评审 / 临时插会（周四再展开团队周会，
+  // 故不硬编码总数）；待办组 = 今天到期的「买牛奶」（带勾选框）——两类不再混排
+  await expect(page.getByRole("heading", { name: "今日安排" })).toBeVisible();
+  const evRows = page.locator("h3:has-text('日程') + ul.rows li");
+  await expect(evRows.filter({ hasText: "产品评审" })).toBeVisible();
+  expect(await evRows.count()).toBeGreaterThanOrEqual(3);
+  const taskRows = page.locator("h3:has-text('待办') + ul.rows li");
+  await expect(taskRows.filter({ hasText: "买牛奶" })).toBeVisible();
+  await expect(taskRows.filter({ hasText: "买牛奶" }).locator('input[type="checkbox"]')).toBeVisible();
+
+  // 今日活动默认折叠：标题（带计数）可见、列表不渲染；点开即出行
+  //（种子活动与安排去重后仍有其他今日改动条目，恒非空）
+  const fold = page.getByTestId("today-activity-fold");
+  const actSection = page.locator("section", { has: fold });
+  await expect(fold).toContainText("今日活动");
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(actSection.locator("li")).toHaveCount(0);
+  await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  await expect(actSection.locator("li").first()).toBeVisible();
+});

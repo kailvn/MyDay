@@ -5,7 +5,7 @@
  */
 export const part_views = {
   // ---- today.*（TodayView）----
-  'today.plan_title': '今日安排（日程 {events} · 待办 {tasks}）',
+  'today.plan_title': '今日安排',
   'today.empty': '今天暂无安排 · 按',
   'today.empty_after': '随手记一条',
   'today.ongoing': '进行中',
@@ -144,7 +144,7 @@ export const part_views = {
 
 export const part_views_en: Record<string, string> = {
   // ---- today.* ----
-  'today.plan_title': "Today's plan ({events} events · {tasks} tasks)",
+  'today.plan_title': "Today's plan",
   'today.empty': 'Nothing planned today · press',
   'today.empty_after': 'to jot one down',
   'today.ongoing': 'Now',

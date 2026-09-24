@@ -601,15 +601,10 @@ export const api = {
   loadHolidaysJson: () => invoke<string | null>("load_holidays_json"),
   saveHolidaysJson: (text: string) => invoke<void>("save_holidays_json", { text }),
   resetHolidaysJson: () => invoke<void>("reset_holidays_json"),
-  openQuickAdd: (
-    itemType?: ItemType | null,
-    title?: string | null,
-    presetDue?: QuickAddPreset | null,
-  ) =>
+  openQuickAdd: (itemType?: ItemType | null, title?: string | null) =>
     invoke<void>("open_quick_add", {
       itemType: itemType ?? null,
       title: title ?? null,
-      presetDue: presetDue ?? null,
     }),
   // ---- 今日悬浮窗（OVERLAY-SPEC）----
   overlayToday: () => invoke<OverlayToday>("overlay_today"),
@@ -668,17 +663,6 @@ export function parseLocalInput(v: string): Date | null {
   }
   const [, y, mo, d, h, mi, s] = m;
   return new Date(+y, +mo - 1, +d, +h, +mi, s ? +s : 0);
-}
-
-/** 快速添加快捷日期档（主窗口「+」旁快捷钮，未来时三档） */
-export type QuickAddPreset = "today" | "tomorrow" | "day_after";
-
-/** 快捷档 → 该日 23:59 的本地输入串（截止默认钟点与 TimePopover due 档一致） */
-export function presetDueLocal(preset: QuickAddPreset): string {
-  const d = new Date();
-  d.setDate(d.getDate() + (preset === "tomorrow" ? 1 : preset === "day_after" ? 2 : 0));
-  d.setHours(23, 59, 0, 0);
-  return toLocalInput(d.toISOString());
 }
 
 /** RFC3339（UTC），core 端按 UTC RFC3339 字符串存库。 */

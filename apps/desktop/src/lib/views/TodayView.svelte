@@ -1,11 +1,12 @@
 <script lang="ts">
   /**
    * 今天视图（场景 A / F）：
-   * - 今日安排：当日日程（按开始时间）+ 待办（今天到期或逾期、未完成）
-   * - 今日活动：今天创建或修改过的所有条目（含日程/待办/记录），倒序
+   * - 今日安排：分「日程 / 待办」两组——日程 = 当天日程（按开始时间，含重复展开）；
+   *   待办 = 带开始时间的待办 ∪ 今天到期或逾期的未完成待办（按 ID 去重）
    * - 展示逻辑（对齐 Notion/日历类应用）：进行中的日程高亮标「进行中」、
    *   下一个未开始的标「下一个」；逾期待办红标「逾期」并显示完整截止日期
    *   时间；已完成的行沉到列表末尾。
+   * - 今日活动：今天创建或修改过的所有条目（含日程/待办/记录），倒序；可折叠，默认收起。
    * 每行显示创建/修改时间，可编辑（✎）与删除（✕，5 秒可撤销）。
    */
   import { onMount } from "svelte";
@@ -27,6 +28,8 @@
   let tasks = $state<Item[]>([]);
   let activity = $state<Item[]>([]);
   let error = $state("");
+  /** 今日活动折叠（默认收起：今天页先看安排，活动是辅助信息） */
+  let activityOpen = $state(false);
   /** 标签过滤（"" = 全部）：今日安排 / 今日活动统一生效 */
   let tagFilter = $state("");
 
@@ -106,12 +109,13 @@
         api.listItems({ changed_on: toDateInput(now), order: "desc", limit: 200 }),
       ]);
       const expanded = expandItems(windowItems, start, end);
-      const scheduled = expanded
-        .filter((i) => i.type === "event" || (i.type === "task" && i.start_at))
-        .sort((a, b) => Date.parse(a.start_at ?? "") - Date.parse(b.start_at ?? ""));
-      const scheduledIds = new Set(scheduled.map((i) => i.id));
-      events = scheduled;
-      tasks = dueTasks.filter((it) => !scheduledIds.has(it.id));
+      // 分组：日程 = 今天的日程（含重复展开）；待办 = 带开始时间的待办 ∪
+      // 今天到期/逾期待办（tasksView），按 ID 去重（同一条目两边都命中只留一份）
+      const evs = expanded.filter((i) => i.type === "event");
+      const startedTasks = expanded.filter((i) => i.type === "task" && i.start_at);
+      const startedIds = new Set(startedTasks.map((i) => i.id));
+      events = evs;
+      tasks = [...startedTasks, ...dueTasks.filter((it) => !startedIds.has(it.id))];
       activity = activityItems;
       error = "";
     } catch (e) {
@@ -146,89 +150,100 @@
 {#if error}<p class="error">{error}</p>{/if}
 
 <section>
-  <h2>{t("today.plan_title", { events: visibleEvents.length, tasks: visibleTasks.length })}</h2>
+  <h2>{t("today.plan_title")}</h2>
 
   {#if visibleEvents.length === 0 && visibleTasks.length === 0}
     <div class="empty">{t("today.empty")} <kbd>Ctrl+N</kbd> {t("today.empty_after")}</div>
   {:else}
-    <ul class="rows">
-      {#each sortedEvents as ev (ev.id)}
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <li class:done={ev.status === "done"} class:ongoing={isOngoing(ev)} onclick={rowDetail(ev)}>
-          {#if ev.type === "task"}
-            <input
-              type="checkbox"
-              checked={ev.status === "done"}
-              onchange={() => toggle(ev)}
-            />
-          {/if}
-          <span class="time">{fmtTime(ev.start_at)}–{fmtTime(ev.end_at)}</span>
-          {#if ev.type !== "event"}<span class="kind">{typeLabel(ev.type)}</span>{/if}
-          <span class="title">{displayTitle(ev)}</span>
-          {#if isOngoing(ev)}<span class="badge live">{t("today.ongoing")}</span>{/if}
-          {#if ev.id === nextId}<span class="badge next">{t("today.next")}</span>{/if}
-          {#if ev.recurrence}<span class="tag">🔁 {recurrenceLabel(ev.recurrence)}</span>{/if}
-          {#each ev.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
-          <ItemTimeInfo item={ev} />
-          <FileLinkChips links={fileLinksOf(ev)} />
-          <EditButton onedit={() => openEdit(ev)} />
-          <DeleteButton onconfirm={() => deletions.request(ev)} />
-        </li>
-      {/each}
-      {#each sortedTasks as task (task.id)}
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <li class:done={task.status === "done"} class:overdue={isOverdue(task) && task.status !== "done"} onclick={rowDetail(task)}>
-          <input type="checkbox" checked={task.status === "done"} onchange={() => toggle(task)} />
-          {#if task.start_at}
-            <span class="time">{fmtTime(task.start_at)}</span>
-          {:else}
-            <span class="time">{t("type.task")}</span>
-          {/if}
-          <span class="title">{displayTitle(task)}</span>
-          {#if task.status !== "done" && isOverdue(task)}
-            <span class="badge od" title={t("today.overdue_tip", { time: fmtDateTime(task.due_at) })}>{t("today.overdue")}</span>
-            <span class="time od-time">{fmtDateTime(task.due_at)}</span>
-          {:else if task.due_at}
-            <span class="time">{t("today.due_time", { time: fmtTime(task.due_at) })}</span>
-          {/if}
-          {#if task.extra["fd_priority"] === "高"}<span class="pri">{t("today.priority_high")}</span>{/if}
-          {#each task.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
-          <ItemTimeInfo item={task} />
-          <FileLinkChips links={fileLinksOf(task)} />
-          <EditButton onedit={() => openEdit(task)} />
-          <DeleteButton onconfirm={() => deletions.request(task)} />
-        </li>
-      {/each}
-    </ul>
+    {#if sortedEvents.length}
+      <h3><span>{t("type.event")}</span><span class="cnt">{sortedEvents.length}</span></h3>
+      <ul class="rows">
+        {#each sortedEvents as ev (ev.id)}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <li class:ongoing={isOngoing(ev)} onclick={rowDetail(ev)}>
+            <span class="time">{fmtTime(ev.start_at)}–{fmtTime(ev.end_at)}</span>
+            <span class="title">{displayTitle(ev)}</span>
+            {#if isOngoing(ev)}<span class="badge live">{t("today.ongoing")}</span>{/if}
+            {#if ev.id === nextId}<span class="badge next">{t("today.next")}</span>{/if}
+            {#if ev.recurrence}<span class="tag">🔁 {recurrenceLabel(ev.recurrence)}</span>{/if}
+            {#each ev.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
+            <ItemTimeInfo item={ev} />
+            <FileLinkChips links={fileLinksOf(ev)} />
+            <EditButton onedit={() => openEdit(ev)} />
+            <DeleteButton onconfirm={() => deletions.request(ev)} />
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if sortedTasks.length}
+      <h3><span>{t("type.task")}</span><span class="cnt">{sortedTasks.length}</span></h3>
+      <ul class="rows">
+        {#each sortedTasks as task (task.id)}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <li class:done={task.status === "done"} class:overdue={isOverdue(task) && task.status !== "done"} onclick={rowDetail(task)}>
+            <input type="checkbox" checked={task.status === "done"} onchange={() => toggle(task)} />
+            {#if task.start_at}
+              <span class="time">{fmtTime(task.start_at)}</span>
+            {:else}
+              <span class="time">{t("type.task")}</span>
+            {/if}
+            <span class="title">{displayTitle(task)}</span>
+            {#if task.status !== "done" && isOverdue(task)}
+              <span class="badge od" title={t("today.overdue_tip", { time: fmtDateTime(task.due_at) })}>{t("today.overdue")}</span>
+              <span class="time od-time">{fmtDateTime(task.due_at)}</span>
+            {:else if task.due_at}
+              <span class="time">{t("today.due_time", { time: fmtTime(task.due_at) })}</span>
+            {/if}
+            {#if task.extra["fd_priority"] === "高"}<span class="pri">{t("today.priority_high")}</span>{/if}
+            {#each task.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
+            <ItemTimeInfo item={task} />
+            <FileLinkChips links={fileLinksOf(task)} />
+            <EditButton onedit={() => openEdit(task)} />
+            <DeleteButton onconfirm={() => deletions.request(task)} />
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </section>
 
 <section>
-  <h2>{t("today.activity_title", { n: visibleActivity.length })}</h2>
-  {#if visibleActivity.length === 0}
-    <div class="empty">{t("today.activity_empty")}</div>
-  {:else}
-    <ul class="rows">
-      {#each visibleActivity as it (it.id)}
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <li onclick={rowDetail(it)}>
-          <span class="kind">{typeLabel(it.type)}</span>
-          <span class="change">{it.updated_at !== it.created_at ? t("today.changed") : t("today.created")}</span>
-          <span class="title">{it.title}</span>
-          {#each fieldBadges(it).slice(0, 4) as b (b.name)}
-            <span class="value" class:deleted={b.deleted}>{b.text}</span>
-          {/each}
-          {#each it.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
-          <ItemTimeInfo item={it} />
-          <FileLinkChips links={fileLinksOf(it)} />
-          <EditButton onedit={() => openEdit(it)} />
-          <DeleteButton onconfirm={() => deletions.request(it)} />
-        </li>
-      {/each}
-    </ul>
+  <h2>
+    <button
+      class="fold"
+      data-testid="today-activity-fold"
+      aria-expanded={activityOpen}
+      onclick={() => (activityOpen = !activityOpen)}
+    >
+      <span class="chev">{activityOpen ? "▾" : "▸"}</span>{t("today.activity_title", { n: visibleActivity.length })}
+    </button>
+  </h2>
+  {#if activityOpen}
+    {#if visibleActivity.length === 0}
+      <div class="empty">{t("today.activity_empty")}</div>
+    {:else}
+      <ul class="rows">
+        {#each visibleActivity as it (it.id)}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <li onclick={rowDetail(it)}>
+            <span class="kind">{typeLabel(it.type)}</span>
+            <span class="change">{it.updated_at !== it.created_at ? t("today.changed") : t("today.created")}</span>
+            <span class="title">{it.title}</span>
+            {#each fieldBadges(it).slice(0, 4) as b (b.name)}
+              <span class="value" class:deleted={b.deleted}>{b.text}</span>
+            {/each}
+            {#each it.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
+            <ItemTimeInfo item={it} />
+            <FileLinkChips links={fileLinksOf(it)} />
+            <EditButton onedit={() => openEdit(it)} />
+            <DeleteButton onconfirm={() => deletions.request(it)} />
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </section>
 
@@ -269,6 +284,45 @@
     font-size: 14px;
     color: var(--text-dim);
     margin: 22px 0 8px;
+  }
+
+  /* 安排分组小标题（日程 / 待办） */
+  h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin: 14px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .cnt {
+    font-weight: 400;
+    color: color-mix(in srgb, var(--text-dim) 70%, transparent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 今日活动折叠头：整行可点，箭头指示开合 */
+  .fold {
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .fold:hover {
+    color: var(--text);
+  }
+
+  .chev {
+    width: 12px;
+    font-size: 11px;
   }
 
   .rows {

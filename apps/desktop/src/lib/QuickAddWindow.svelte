@@ -9,7 +9,7 @@
   import { listen } from "@tauri-apps/api/event";
   import ItemPanel from "./ItemPanel.svelte";
   import { closePanel, openCreate, panelRequest } from "./panel.svelte";
-  import { presetDueLocal, type ItemType, type QuickAddPreset } from "./api";
+  import { type ItemType } from "./api";
 
   const win = getCurrentWindow();
 
@@ -18,16 +18,10 @@
     // html/body 也得让出底色，圆角外才露得出桌面
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
-    await listen<{
-      type: ItemType | null;
-      title: string | null;
-      preset_due: QuickAddPreset | null;
-    }>("quick-add", async (e) => {
+    await listen<{ type: ItemType | null; title: string | null }>("quick-add", async (e) => {
       openCreate({
         item_type: e.payload?.type ?? null,
         title: e.payload?.title ?? null,
-        // 主窗口快捷钮：按档位预填该日 23:59 截止（激活即推断待办并展开面板）
-        presetDue: e.payload?.preset_due ? presetDueLocal(e.payload.preset_due) : null,
       });
       // 窗口刚 show 时 WM 可能还没把焦点交过来，JS 侧再要一次
       await win.setFocus();

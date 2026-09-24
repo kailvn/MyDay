@@ -610,7 +610,6 @@ export function installE2eMock() {
           detail: {
             itemType: a.itemType ?? null,
             title: a.title ?? null,
-            presetDue: a.presetDue ?? null,
           },
         }),
       );

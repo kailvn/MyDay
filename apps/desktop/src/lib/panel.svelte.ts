@@ -21,8 +21,6 @@ export interface CreateRequest {
   presetStart?: string | null;
   /** 预设结束时间（拖选创建时段用；需与 presetStart 同给） */
   presetEnd?: string | null;
-  /** 预设截止时间 */
-  presetDue?: string | null;
   /** 预设模板：无默认值的模板点击时改为打开面板让用户补值，而不是静默生成空记录 */
   presetTemplateId?: string | null;
   presetDefaults?: Record<string, unknown> | null;

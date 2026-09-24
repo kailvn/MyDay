@@ -27,6 +27,7 @@
     fileLinksFromExtra,
     fromLocalInput,
     nowLocalInput,
+    parseLocalInput,
     quickAddIdempotencyKey,
     toLocalInput,
     toDateInput,
@@ -208,11 +209,6 @@
         endLocal = toLocalInput(req.presetEnd);
       }
     }
-    // svelte-ignore state_referenced_locally
-    if (req.presetDue) {
-      activeTimes.push("due");
-      dueLocal = toLocalInput(req.presetDue);
-    }
   }
   // svelte-ignore state_referenced_locally
   extraVals = { ...extraVals, ...initialExtra };
@@ -385,13 +381,19 @@
     { label: "panel.end.plus1h", token: "@start+1h" },
     { label: "panel.end.plus2h", token: "@start+2h" },
   ];
-  const RANGE_LABELS: { label: MessageKey; start: string; end: string; allDay?: boolean }[] = [
-    { label: "panel.range.allDay", start: "@d0", end: "@d0Tend", allDay: true },
-    { label: "panel.range.work", start: "@d0T09:00", end: "@d0T18:00" },
-    { label: "panel.range.lunch", start: "@d0T12:00", end: "@d0T14:00" },
+  const RANGE_LABELS: {
+    label: MessageKey;
+    /** 起止钟点；全天档 startClock 为 null（= 00:00），end 23:59 */
+    startClock: [number, number] | null;
+    endClock: [number, number];
+    allDay?: boolean;
+  }[] = [
+    { label: "panel.range.allDay", startClock: null, endClock: [23, 59], allDay: true },
+    { label: "panel.range.work", startClock: [9, 0], endClock: [18, 0] },
+    { label: "panel.range.lunch", startClock: [12, 0], endClock: [14, 0] },
   ];
 
-  /** token 解析上下文：开始行/时段用当前与锚点日；结束行再带上已填的开始 */
+  /** token 解析上下文：开始行用当前与锚点日；结束行再带上已填的开始 */
   function resolveCtx(withStart = false): ResolveCtx {
     return {
       now: new Date(),
@@ -410,14 +412,31 @@
     const iso = resolveToken(token, resolveCtx(true));
     if (iso) setTimeValue("end", toLocalInput(iso));
   }
-  function fillRange(r: { start: string; end: string; allDay?: boolean }) {
-    const s = resolveToken(r.start, resolveCtx());
-    const e = resolveToken(r.end, resolveCtx());
-    if (!s || !e) return;
-    setTimeValue("start", toLocalInput(s));
-    setTimeValue("end", toLocalInput(e));
-    allDayStart = toDateInput(new Date(s));
+  /** 时段基准日 = 已填开始（或全天日期）的那天 > 日历锚点日 > 今天。
+   *  与结束行 @start+ 时长同族：时段相对已填日期计算——开始指到哪天，
+   *  点「工作时间 / 午休 / 全天」就落到那天的对应钟点，而非恒落今天。 */
+  function rangeBaseDay(): Date {
+    const v = startLocal || allDayStart;
+    if (v) {
+      const d = parseLocalInput(v);
+      if (d) return d;
+    }
+    if (anchorDay) {
+      const [y, m, d] = anchorDay.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date();
+  }
+  function fillRange(r: (typeof RANGE_LABELS)[number]) {
+    const base = rangeBaseDay();
+    const s = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+    const e = new Date(s);
+    if (r.startClock) s.setHours(r.startClock[0], r.startClock[1], 0, 0);
+    e.setHours(r.endClock[0], r.endClock[1], 0, 0);
     allDay = !!r.allDay;
+    allDayStart = toDateInput(s);
+    setTimeValue("start", toLocalInput(s.toISOString()));
+    setTimeValue("end", toLocalInput(e.toISOString()));
   }
 
   // ---- 重复规则（SPRINT-SPEC §2）：时间字段激活后出现，「修改全部」语义 ----

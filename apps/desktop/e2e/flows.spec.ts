@@ -371,7 +371,7 @@ test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
   });
 });
 
-test("T9 快速添加快捷日期档：侧栏 今天/明天/后天 直达预填，行内未来/过去三档 chips", async ({ page }) => {
+test("T9 快速添加：入口/行内三档日期 chips，时段相对已填开始日期", async ({ page }) => {
   const dayStr = (offset: number) => {
     const d = new Date();
     d.setDate(d.getDate() + offset);
@@ -379,33 +379,30 @@ test("T9 快速添加快捷日期档：侧栏 今天/明天/后天 直达预填�
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   };
 
-  // 侧栏「今天」：面板打开即预填今日 23:59 截止（激活截止 → 推断待办 → 自动展开）
-  await page.getByTestId("quick-day-today").click();
-  const panel = page.getByRole("dialog", { name: "新建条目" });
-  await expect(panel).toBeVisible();
-  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(0)} 23:59`);
-  // 行内三档 chips：点「后天」即改截止（不关面板）
-  await panel.getByRole("button", { name: "后天" }).click();
-  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(2)} 23:59`);
-  // 填标题保存 → 今日视图出现该待办
-  await panel.getByPlaceholder("记点什么…").fill("快捷待办");
-  await panel.getByRole("button", { name: "保存" }).click();
-  await expect(page.locator("main")).toContainText("快捷待办");
-
-  // 明天 / 后天快捷钮：仅预填档位不同，流程一致（不保存，Esc 收起）
-  await page.getByTestId("quick-day-tomorrow").click();
-  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(1)} 23:59`);
-  await page.keyboard.press("Escape");
-  await page.getByTestId("quick-day-day_after").click();
-  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(2)} 23:59`);
-  await page.keyboard.press("Escape");
-
   // 首页直达（未展开态）：+ 打开即见时间入口，点「今天」一步到位（激活+预填+锁定待办+展开）
   await page.getByRole("button", { name: /＋ 快速添加/ }).click();
-  const home = page.getByRole("dialog", { name: "新建条目" });
-  await home.getByRole("button", { name: "＋ 截止" }).waitFor();
+  const panel = page.getByRole("dialog", { name: "新建条目" });
+  await panel.getByRole("button", { name: "＋ 截止" }).waitFor();
   await page.getByTestId("entry-due-今天").click();
   await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(0)} 23:59`);
+  // 行内三档 chips：点「后天」即改截止（不关面板；锁成待办后时间组整组隐藏，名字唯一）
+  await panel.getByRole("button", { name: "后天" }).click();
+  await expect(page.getByTestId("tp-due")).toHaveText(`${dayStr(2)} 23:59`);
+  // 填标题保存 → 今日活动展开后可见（截止在后天不进今日安排；活动区默认折叠）
+  await panel.getByPlaceholder("记点什么…").fill("快捷待办");
+  await panel.getByRole("button", { name: "保存" }).click();
+  await page.getByTestId("today-activity-fold").click();
+  await expect(page.locator("main")).toContainText("快捷待办");
+
+  // 时段相对已填开始日期：开始行点「后天」→ 点「工作时间」= 后天 09:00–18:00
+  await page.getByRole("button", { name: /＋ 快速添加/ }).click();
+  const evPanel = page.getByRole("dialog", { name: "新建条目" });
+  await evPanel.getByRole("button", { name: "＋ 时间", exact: true }).click();
+  await evPanel.getByRole("button", { name: "后天" }).click(); // 开始 = 后天 09:00
+  await expect(page.getByTestId("tp-start")).toHaveText(`${dayStr(2)} 09:00`);
+  await evPanel.getByRole("button", { name: "工作时间" }).click();
+  await expect(page.getByTestId("tp-start")).toHaveText(`${dayStr(2)} 09:00`);
+  await expect(page.getByTestId("tp-end")).toHaveText(`${dayStr(2)} 18:00`);
   await page.keyboard.press("Escape");
 
   // 过去时三档（记录）：普通 + 打开 → 展开详情 → 类型切记录 → 激活发生时间 → 昨天/前天
