@@ -29,6 +29,10 @@ pub const FILE_LINKS_KEY: &str = "文件";
 /// 供取消完成回拨到完成前的那一期；系统写，不经字段校验。
 pub const RECURRED_DONE_KEY: &str = "recurred_done_at";
 
+/// 重复待办完成记账保留键：值 = 完成前的完整 recurrence spec。
+/// count 结束条件随推进递减（count = 剩余期数），取消完成时随 due 一起回拨。
+pub const RECURRED_SPEC_KEY: &str = "recurred_spec";
+
 /// 模板 defaults 可写的 items 列白名单（§2.6 双命名空间之一）。
 /// 时间列的值只能为 @ 时间占位 token（tpltime 文法）——模板存意图，条目存事实。
 /// 无 status：新建待办恒为未完成，模板不带状态默认。
@@ -48,9 +52,8 @@ pub fn column_default_keys() -> &'static [&'static str] {
     COLUMN_DEFAULT_KEYS
 }
 
-/// 当前库结构版本。v5：view_defs 视图模型表（FILTER-SPEC §7，附加式迁移：
-/// v4 库只补建表 + 种子，不重建、不动数据）。更旧结构仍走备份重建。
-const SCHEMA_VERSION: i64 = 5;
+/// 当前库结构版本。v7：items.recurrence_exdates 单次例外列（附加式迁移）。
+const SCHEMA_VERSION: i64 = 7;
 
 /// 迁移基线：v4 = 「只追加迁移，永不重建」政策的起点（1.0 数据承诺）。
 /// 基线及以上的库升级只允许走 MIGRATIONS 链；DROP 重建只属于更旧的遗留库。
@@ -58,16 +61,23 @@ const MIGRATION_BASELINE: i64 = 4;
 
 /// 附加式迁移链：每项 `(from_version, sql)` 把库从 from_version 升一级。
 /// 发布后每次递增 SCHEMA_VERSION 必须在此追加一项；缺项时 init 报错拒绝打开
-/// ——宁可打不开，也不静默重建丢数据。SQL 要求幂等（迁移中途崩溃可重开重放）。
+/// ——宁可打不开，也不静默重建丢数据。SQL 要求幂等（迁移中途崩溃可重开重放；
+/// execute_batch 原子：中途崩溃整体回滚，user_version 未动，可重放）。
 const MIGRATIONS: &[(i64, &str)] = &[
     // v4 → v5（1.0 基线）：view_defs 表 + 内置视图种子（IF NOT EXISTS，幂等）
     (4, crate::view::VIEW_DEFS_SQL),
+    // v5 → v6：回收站软删列（NULL = 活跃；非 NULL = 进回收站的时刻）+ 部分索引
+    (5, "ALTER TABLE items ADD COLUMN deleted_at TEXT;
+         CREATE INDEX IF NOT EXISTS idx_items_trash ON items(deleted_at) WHERE deleted_at IS NOT NULL;"),
+    // v6 → v7：重复规则单次例外（JSON 数组，RFC3339 时刻；NULL = 无例外）
+    (6, "ALTER TABLE items ADD COLUMN recurrence_exdates TEXT;"),
 ];
 
 /// 内置种子版本（fd_priority + 3 个内置模板）。未来内置内容变更时递增触发升级。
-/// 内置内容版本：v2 = 模板精简为通用的 喝水/体重（emoji 图标 + 数字字段单位）。
+/// 内置内容版本：v2 = 模板精简为通用的 喝水/体重（emoji 图标 + 数字字段单位）；
+/// v3 = 新增内置字段 fd_est_min（预计分钟，时间块排期用）。
 /// 升级只按 id 覆盖内置模板行；用户自建/改名/删除一律不动。
-const BUILTIN_SEED_VERSION: i64 = 2;
+const BUILTIN_SEED_VERSION: i64 = 3;
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE items (
@@ -92,8 +102,14 @@ CREATE TABLE items (
   -- 重复规则（SPRINT-SPEC §2）：@daily / @weekly:n / @monthly:d（仅 event / task，CHECK 见下）
   recurrence      TEXT,
 
+  -- 重复规则单次例外（v7）：JSON 数组的 RFC3339 发生锚点，NULL = 无例外
+  recurrence_exdates TEXT,
+
   template_id     TEXT,
   idempotency_key TEXT UNIQUE,
+
+  -- 回收站软删（v6）：NULL = 活跃；非 NULL = 进入回收站的时刻
+  deleted_at      TEXT,
 
   extra           TEXT NOT NULL DEFAULT '{}',
   created_at      TEXT NOT NULL,
@@ -199,6 +215,9 @@ CREATE INDEX idx_items_end_at         ON items(end_at);
 CREATE INDEX idx_items_task_open ON items(due_at)
   WHERE type = 'task' AND status = 'todo';
 
+-- 回收站列表（deleted_at 非 NULL 的行很少，部分索引够用）
+CREATE INDEX idx_items_trash ON items(deleted_at) WHERE deleted_at IS NOT NULL;
+
 CREATE INDEX idx_item_tags_tag  ON item_tags(tag_id);
 CREATE INDEX idx_attach_item    ON attachments(item_id);
 CREATE INDEX idx_reminders_item ON reminders(item_id);
@@ -216,9 +235,12 @@ CREATE TABLE view_defs (
 );
 "#;
 
-/// 内置字段种子：只有优先级一条（对齐需求 §7.1）。
-const SEED_FIELD_DEF: (&str, &str, FieldKind, &str, &str) =
-    ("fd_priority", "优先级", FieldKind::Select, r#"{"choices":["低","中","高"]}"#, "task");
+/// 内置字段种子：优先级 + 预计分钟（时间块排期；升级路径见 upgrade_builtin_fields）。
+const SEED_FIELD_DEFS: &[(&str, &str, FieldKind, &str, &str)] = &[
+    ("fd_priority", "优先级", FieldKind::Select, r#"{"choices":["低","中","高"]}"#, "task"),
+    // 预计耗时（分钟）：未排期池拖入周/日时段格时按它占位时间块（WeekGrid 渲染）
+    ("fd_est_min", "预计分钟", FieldKind::Number, r#"{"unit":"分钟"}"#, "task"),
+];
 
 /// 内置模板种子（§4）：最少、最通用——不做健康记录的用户也用得上，
 /// 避免为了清场删一堆内置项。均 pinned = 1，跳过引导的用户记录页也有入口。
@@ -388,6 +410,8 @@ impl Store {
             )?;
             // 内置视图种子：升级/每次打开 upsert 覆盖 config 列，config_user 永不触碰
             crate::view::seed_view_defs(&conn)?;
+            // 内置字段/模板升级（seed_version 滞后的旧库补种新增内置内容，如 fd_est_min）
+            Self::seed_builtin(&conn)?;
             drop(conn);
             // 统计页预置容器：一次性播种（普通容器，可删可恢复）
             self.seed_stats_presets()?;
@@ -451,6 +475,7 @@ impl Store {
             Some(_) => {
                 // 内置内容升级：按 id 覆盖（不动 deleted_at，不复活已删模板）
                 Self::upgrade_builtin_templates(conn)?;
+                Self::upgrade_builtin_fields(conn)?;
                 conn.execute(
                     "INSERT INTO settings (key, value) VALUES ('seed_version', ?1) \
                      ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -460,12 +485,13 @@ impl Store {
             }
             None => {}
         }
-        let (id, name, kind, options, scope) = SEED_FIELD_DEF;
-        conn.execute(
-            "INSERT OR IGNORE INTO field_defs (id, name, kind, options, scope, sort, builtin)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, 1)",
-            params![id, name, kind.as_str(), options, scope],
-        )?;
+        for (id, name, kind, options, scope) in SEED_FIELD_DEFS {
+            conn.execute(
+                "INSERT OR IGNORE INTO field_defs (id, name, kind, options, scope, sort, builtin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, 1)",
+                params![id, name, kind.as_str(), options, scope],
+            )?;
+        }
         for (i, (id, tpl_name, item_type, icon, defaults, fields)) in
             SEED_TEMPLATES.iter().enumerate()
         {
@@ -499,6 +525,23 @@ impl Store {
                 continue; // 用户已删除该模板，不复活
             }
             Self::materialize_template_fields(conn, fields)?;
+        }
+        Ok(())
+    }
+
+    /// 升级内置字段：新版本新增的内置字段按 id 补种（INSERT OR IGNORE——
+    /// 已存在含软删的行不动，用户删掉的内置字段不复活）。
+    fn upgrade_builtin_fields(conn: &Connection) -> Result<()> {
+        for (id, name, kind, options, scope) in SEED_FIELD_DEFS {
+            let n = conn.execute(
+                "INSERT OR IGNORE INTO field_defs (id, name, kind, options, scope, sort, builtin)
+                 VALUES (?1, ?2, ?3, ?4, ?5,
+                         (SELECT COALESCE(MAX(sort), 0) + 1 FROM field_defs), 1)",
+                params![id, name, kind.as_str(), options, scope],
+            )?;
+            if n == 0 {
+                eprintln!("myday: 内置字段 {id}({name}) 已存在或撞名，跳过补种");
+            }
         }
         Ok(())
     }
@@ -740,12 +783,20 @@ impl Store {
         }
 
         let id = new_id(item_type);
+        // 单次例外只在重复条目上有意义；统一截到秒保证往返相等
+        let exdates = if recurrence.is_some() && !new.recurrence_exdates.is_empty() {
+            let list: Vec<DateTime<Utc>> =
+                new.recurrence_exdates.iter().map(|t| t.trunc_subsecs(0)).collect();
+            exdates_json(&list)
+        } else {
+            None
+        };
         let tx = conn.unchecked_transaction()?;
         tx.execute(
             "INSERT INTO items (id, type, title, note, start_at, end_at, all_day,
                                 due_at, due_all_day, occurred_at, status, completed_at,
-                                recurrence, template_id, idempotency_key, extra, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)",
+                                recurrence, recurrence_exdates, template_id, idempotency_key, extra, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
             params![
                 id,
                 item_type.as_str(),
@@ -760,6 +811,7 @@ impl Store {
                 status.map(|s| s.as_str()),
                 opt_dt(completed_at),
                 recurrence,
+                exdates,
                 new.template_id,
                 empty_to_none(new.idempotency_key.as_deref()),
                 serde_json::to_string(&serde_json::Value::Object(extra))
@@ -919,9 +971,10 @@ impl Store {
 
     pub fn find_by_idempotency_key(&self, key: &str) -> Result<Option<Item>> {
         let conn = self.lock()?;
+        // 命中回收站行的键不算命中：幂等重试不应把已删条目「复活」为创建结果
         let mut item = conn
             .query_row(
-                "SELECT * FROM items WHERE idempotency_key = ?1",
+                "SELECT * FROM items WHERE idempotency_key = ?1 AND deleted_at IS NULL",
                 params![key],
                 item_mapper,
             )
@@ -947,7 +1000,8 @@ impl Store {
 
     fn query_items(&self, filter: &ListFilter, default_limit: Option<i64>) -> Result<Vec<Item>> {
         let conn = self.lock()?;
-        let mut sql = String::from("SELECT * FROM items WHERE 1=1");
+        // 活跃条目专用查询：回收站行（deleted_at 非 NULL）不进任何列表 / 视图 / 统计
+        let mut sql = String::from("SELECT * FROM items WHERE deleted_at IS NULL");
         let mut dyn_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
         if let Some(t) = filter.item_type {
@@ -1093,12 +1147,14 @@ impl Store {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT * FROM items \
-             WHERE (?3 IS NULL OR type = ?3) \
+             WHERE deleted_at IS NULL \
+               AND (?3 IS NULL OR type = ?3) \
                AND ( \
                  (start_at IS NOT NULL AND datetime(start_at) < datetime(?2) \
                     AND datetime(COALESCE(end_at, start_at)) >= datetime(?1)) \
                  OR (datetime(due_at) >= datetime(?1) AND datetime(due_at) <= datetime(?2)) \
                  OR (datetime(occurred_at) >= datetime(?1) AND datetime(occurred_at) <= datetime(?2)) \
+                 OR (recurrence IS NOT NULL AND datetime(COALESCE(start_at, due_at, occurred_at, created_at)) <= datetime(?2)) \
                ) \
              ORDER BY COALESCE(start_at, due_at, occurred_at, created_at) ASC",
         )?;
@@ -1132,7 +1188,7 @@ impl Store {
         let (sql, bind): (&str, bool) = match view {
             TaskView::Today => (
                 &format!(
-                    "SELECT * FROM items WHERE type='task' AND status IN {open} \
+                    "SELECT * FROM items WHERE type='task' AND status IN {open} AND deleted_at IS NULL \
                      AND ((due_at IS NOT NULL AND datetime(due_at) <= datetime(?1)) \
                        OR (due_at IS NULL AND (start_at IS NULL OR datetime(start_at) <= datetime(?1)))) \
                      ORDER BY COALESCE(due_at, start_at) IS NULL, COALESCE(due_at, start_at) ASC"
@@ -1141,7 +1197,7 @@ impl Store {
             ),
             TaskView::Upcoming => (
                 &format!(
-                    "SELECT * FROM items WHERE type='task' AND status IN {open} \
+                    "SELECT * FROM items WHERE type='task' AND status IN {open} AND deleted_at IS NULL \
                      AND ((due_at IS NOT NULL AND datetime(due_at) > datetime(?1)) \
                        OR (due_at IS NULL AND start_at IS NOT NULL AND datetime(start_at) > datetime(?1))) \
                      ORDER BY COALESCE(due_at, start_at) ASC LIMIT 100"
@@ -1150,14 +1206,14 @@ impl Store {
             ),
             TaskView::All => (
                 &format!(
-                    "SELECT * FROM items WHERE type='task' AND status IN {open} \
+                    "SELECT * FROM items WHERE type='task' AND status IN {open} AND deleted_at IS NULL \
                      ORDER BY due_at IS NULL, due_at ASC"
                 ),
                 false,
             ),
             TaskView::Done => (
                 &format!(
-                    "SELECT * FROM items WHERE type='task' AND status IN {closed} \
+                    "SELECT * FROM items WHERE type='task' AND status IN {closed} AND deleted_at IS NULL \
                      ORDER BY COALESCE(completed_at, updated_at) DESC LIMIT 200"
                 ),
                 false,
@@ -1187,7 +1243,8 @@ impl Store {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT i.* FROM items i \
-             WHERE (?2 IS NULL OR i.type = ?2) \
+             WHERE i.deleted_at IS NULL \
+               AND (?2 IS NULL OR i.type = ?2) \
                AND ( \
                  i.title LIKE ?1 ESCAPE '\\' OR i.note LIKE ?1 ESCAPE '\\' \
                  OR EXISTS ( \
@@ -1467,10 +1524,88 @@ impl Store {
         self.get_item(id)
     }
 
-    /// 删除条目，级联清理数据库关联行与附件文件。
-    /// 返回被删除的条目（供撤销 / 提示）。
+    /// 删除条目 = 移入回收站（软删 deleted_at，数据库行与附件文件原封不动）。
+    /// 返回被删除的条目（供撤销 / 提示）。彻底删除见 [`Store::purge_item`]。
     pub fn delete_item(&self, id: &str) -> Result<Item> {
         let item = self.get_item(id)?;
+        if item.deleted_at.is_none() {
+            let conn = self.lock()?;
+            conn.execute(
+                "UPDATE items SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, dt(Utc::now())],
+            )?;
+        }
+        Ok(item)
+    }
+
+    /// 从回收站恢复（deleted_at 置 NULL）。未删除的条目原样返回（幂等）。
+    pub fn restore_item(&self, id: &str) -> Result<Item> {
+        let item = self.get_item(id)?;
+        if item.deleted_at.is_some() {
+            let conn = self.lock()?;
+            conn.execute(
+                "UPDATE items SET deleted_at = NULL WHERE id = ?1",
+                params![id],
+            )?;
+        }
+        self.get_item(id)
+    }
+
+    /// 彻底删除（不可逆）：数据库行级联清理（提醒 / 标签 / 附件行）+ 附件文件删除。
+    /// 只对已在回收站的条目生效——活跃条目须经 [`Store::delete_item`] 先软删
+    /// （GUI 与 CLI 的两步确认语义由调用方保证）。
+    pub fn purge_item(&self, id: &str) -> Result<Item> {
+        let item = self.get_item(id)?;
+        if item.deleted_at.is_none() {
+            return Err(MyDayError::Invalid(
+                "条目不在回收站；请先删除（软删）再彻底删除".into(),
+            ));
+        }
+        self.hard_delete_row(&item.id)?;
+        Ok(item)
+    }
+
+    /// 回收站列表（按删除时刻倒序）。附件 / 提醒 / 标签一并带出（恢复零成本）。
+    pub fn list_trash(&self) -> Result<Vec<Item>> {
+        let conn = self.lock()?;
+        let mut stmt =
+            conn.prepare("SELECT * FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")?;
+        let mut items = stmt
+            .query_map([], item_mapper)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for item in items.iter_mut() {
+            Self::hydrate(&conn, item)?;
+        }
+        items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+        Ok(items)
+    }
+
+    /// 清空回收站（不可逆），返回彻底删除的条数。
+    pub fn empty_trash(&self) -> Result<usize> {
+        let trash = self.list_trash()?;
+        for item in &trash {
+            self.hard_delete_row(&item.id)?;
+        }
+        Ok(trash.len())
+    }
+
+    /// 清理过期回收站：删除超过 `days` 天的条目彻底删除（GUI 启动时调用；
+    /// CLI 直写路径不清理——后台清理不该由一次读命令顺手触发）。
+    pub fn purge_expired_trash(&self, days: i64) -> Result<usize> {
+        let cutoff = Utc::now() - Duration::days(days);
+        let trash: Vec<Item> = self
+            .list_trash()?
+            .into_iter()
+            .filter(|it| it.deleted_at.is_some_and(|t| t <= cutoff))
+            .collect();
+        for item in &trash {
+            self.hard_delete_row(&item.id)?;
+        }
+        Ok(trash.len())
+    }
+
+    /// 硬删一行 + 级联（FK ON DELETE CASCADE）+ 附件文件清理。
+    fn hard_delete_row(&self, id: &str) -> Result<()> {
         let removed_paths: Vec<String> = {
             let conn = self.lock()?;
             let tx = conn.unchecked_transaction()?;
@@ -1491,13 +1626,102 @@ impl Store {
                 }
             }
         }
-        attachment::prune_item_dir(self, &item.id);
-        Ok(item)
+        attachment::prune_item_dir(self, id);
+        Ok(())
+    }
+
+    /// 单次例外（SPRINT-SPEC §2 扩展）：把重复条目的某一次发生拆为独立条目——
+    /// 新建一条无规则的条目承接该期时间与内容（标题/备注/标签/字段/附件引用时间），
+    /// 并把该期锚点记入原条目 `recurrence_exdates`（展开时跳过，系列其余期不受影响）。
+    /// `anchor` 必须精确对应一次发生：event = 开始时刻、task = 截止时刻。
+    /// 附件复制为独立副本；`@daily` 期间提醒不随拆分（单次条目上语义错误）。
+    pub fn detach_occurrence(&self, id: &str, anchor: DateTime<Utc>) -> Result<Item> {
+        let base = self.get_item(id)?;
+        let occ = self.checked_occurrence(&base, anchor)?;
+        let reminders: Vec<NewReminder> = base
+            .reminders
+            .iter()
+            .filter(|r| !r.spec.starts_with("@daily"))
+            .map(|r| NewReminder { spec: r.spec.clone(), channel: r.channel.clone() })
+            .collect();
+        // 记账键（重复完成回拨）不属于拆分出的单次条目
+        let mut extra = base.extra.clone();
+        if let Some(obj) = extra.as_object_mut() {
+            obj.remove(RECURRED_DONE_KEY);
+        }
+        let new = self.add_item(NewItem {
+            item_type: Some(base.item_type),
+            title: base.title.clone(),
+            note: base.note.clone(),
+            start_at: occ.start,
+            end_at: occ.end,
+            all_day: base.item_type == ItemType::Event && base.all_day,
+            due_at: occ.due,
+            due_all_day: base.due_all_day,
+            recurrence: None,
+            reminders,
+            tags: base.tags.clone(),
+            extra,
+            ..Default::default()
+        })?;
+        let _ = self.add_occurrence_exdate(id, anchor)?;
+        self.get_item(&new.id)
+    }
+
+    /// 仅删除重复条目的某一次发生（记入 `recurrence_exdates`，系列其余期不变）。
+    pub fn skip_occurrence(&self, id: &str, anchor: DateTime<Utc>) -> Result<Item> {
+        let base = self.get_item(id)?;
+        self.checked_occurrence(&base, anchor)?;
+        self.add_occurrence_exdate(id, anchor)
+    }
+
+    /// 校验 `anchor` 精确对应 base 的一次发生，返回该发生。
+    fn checked_occurrence(
+        &self,
+        base: &Item,
+        anchor: DateTime<Utc>,
+    ) -> Result<crate::recurrence::Occurrence> {
+        if base.recurrence.is_none() {
+            return Err(MyDayError::Invalid("条目不是重复条目".into()));
+        }
+        if base.deleted_at.is_some() {
+            return Err(MyDayError::Invalid("回收站条目不可拆分".into()));
+        }
+        let a = anchor.trunc_subsecs(0);
+        let matches = |o: &crate::recurrence::Occurrence| match base.item_type {
+            ItemType::Event => o.start == Some(a),
+            ItemType::Task => o.due == Some(a),
+            ItemType::Log => false,
+        };
+        crate::recurrence::occurrences_between(base, a - Duration::hours(36), a + Duration::hours(36))
+            .iter()
+            .find(|o| matches(o))
+            .copied()
+            .ok_or_else(|| {
+                MyDayError::Invalid("时刻不对应任何一次发生（event=开始 / task=截止）".into())
+            })
+    }
+
+    /// 追加单次例外（去重、按时间排序），更新 updated_at。
+    fn add_occurrence_exdate(&self, id: &str, anchor: DateTime<Utc>) -> Result<Item> {
+        let base = self.get_item(id)?;
+        let mut ex = base.recurrence_exdates.clone();
+        ex.push(anchor.trunc_subsecs(0));
+        ex.sort();
+        ex.dedup();
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE items SET recurrence_exdates = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, exdates_json(&ex), dt(Utc::now())],
+        )?;
+        drop(conn);
+        self.get_item(id)
     }
 
     /// 完成待办：置 done + 完成时间。
     /// 重复待办（SPRINT-SPEC §2.3）不同：完成 = 截止推进到下一期（status 保持
-    /// todo，系列不结束），`extra.recurred_done_at` 记下完成前的截止供回拨。
+    /// todo，系列不结束），`extra.recurred_done_at` 记下完成前的截止供回拨；
+    /// 结束条件耗尽（until/count 到头）无法推进时，本次完成 = 正常完成（系列终结）。
     pub fn complete_task(&self, id: &str) -> Result<Item> {
         let item = self.get_item(id)?;
         if item.item_type != ItemType::Task {
@@ -1512,29 +1736,39 @@ impl Store {
             let Some(due) = item.due_at else {
                 return Err(MyDayError::Invalid("重复待办必须有截止时间".into()));
             };
-            // 逾期完成也推进到「现在之后」的下一期
-            let Some(next) = rec.next_after(due, now.max(due)) else {
-                return Err(MyDayError::Invalid("无法计算重复待办的下一期".into()));
-            };
-            let delta = next - due;
-            let mut extra = item.extra.clone();
-            if let Some(obj) = extra.as_object_mut() {
-                obj.insert(RECURRED_DONE_KEY.into(), serde_json::json!(dt(due)));
+            // count 语义 = 剩余期数（含当前截止这一期）：只剩 1 期时完成 = 系列终结
+            if rec.count != Some(1) {
+                // 逾期完成也推进到「现在之后」的下一期
+                if let Some(next) = rec.next_after(due, now.max(due)) {
+                    let delta = next - due;
+                    // 推进后 count 递减；无 count（永续 / until）规则原样保留
+                    let new_spec = match rec.count {
+                        Some(n) => crate::recurrence::Recurrence { count: Some(n - 1), ..rec }.as_str(),
+                        None => spec.to_string(),
+                    };
+                    let mut extra = item.extra.clone();
+                    if let Some(obj) = extra.as_object_mut() {
+                        obj.insert(RECURRED_DONE_KEY.into(), serde_json::json!(dt(due)));
+                        obj.insert(RECURRED_SPEC_KEY.into(), serde_json::json!(spec));
+                    }
+                    {
+                        let conn = self.lock()?;
+                        conn.execute(
+                            "UPDATE items SET due_at=?2, start_at=?3, extra=?4, recurrence=?5, updated_at=?6 WHERE id=?1",
+                            params![
+                                id,
+                                dt(next),
+                                opt_dt(item.start_at.map(|s| s + delta)),
+                                extra.to_string(),
+                                new_spec,
+                                dt(now),
+                            ],
+                        )?;
+                    }
+                    return self.get_item(id);
+                }
+                // until 耗尽 / 推不动：落到下方正常完成路径（系列终结）
             }
-            {
-                let conn = self.lock()?;
-                conn.execute(
-                    "UPDATE items SET due_at=?2, start_at=?3, extra=?4, updated_at=?5 WHERE id=?1",
-                    params![
-                        id,
-                        dt(next),
-                        opt_dt(item.start_at.map(|s| s + delta)),
-                        extra.to_string(),
-                        dt(now),
-                    ],
-                )?;
-            }
-            return self.get_item(id);
         }
         {
             let conn = self.lock()?;
@@ -1559,21 +1793,34 @@ impl Store {
                     .and_then(|v| v.as_str())
                     .and_then(parse_dt);
                 if let Some(prev) = prev {
-                    // 回拨：due 回到完成前值，start 保持与 due 的差值
+                    // 回拨：due 回到完成前值，start 保持与 due 的差值；
+                    // count 递减过的 spec 一并恢复（剩余期数回到推进前）
                     let delta = item.due_at.map(|d| d - prev);
                     let new_start = match (item.start_at, delta) {
                         (Some(s), Some(d)) => Some(s - d),
                         _ => None,
                     };
                     let mut extra = item.extra.clone();
+                    let prev_spec = extra
+                        .get(RECURRED_SPEC_KEY)
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
                     if let Some(obj) = extra.as_object_mut() {
                         obj.remove(RECURRED_DONE_KEY);
+                        obj.remove(RECURRED_SPEC_KEY);
                     }
                     let now = Utc::now();
                     let conn = self.lock()?;
                     conn.execute(
-                        "UPDATE items SET due_at=?2, start_at=?3, extra=?4, updated_at=?5 WHERE id=?1",
-                        params![id, dt(prev), opt_dt(new_start), extra.to_string(), dt(now)],
+                        "UPDATE items SET due_at=?2, start_at=?3, extra=?4, recurrence=?5, updated_at=?6 WHERE id=?1",
+                        params![
+                            id,
+                            dt(prev),
+                            opt_dt(new_start),
+                            extra.to_string(),
+                            prev_spec.as_deref().unwrap_or_else(|| item.recurrence.as_deref().unwrap_or("@daily")),
+                            dt(now),
+                        ],
                     )?;
                     drop(conn);
                     return self.get_item(id);
@@ -1628,6 +1875,7 @@ impl Store {
             occurred_at: None,
             status: None,
             recurrence: task.recurrence.clone(),
+            recurrence_exdates: Vec::new(), // 转类型后锚点语义变化，例外不随迁（全新系列）
             template_id: None,
             anchor_day: None,
             reminders,
@@ -1756,8 +2004,9 @@ impl Store {
 
         let mut out = Vec::new();
         for rem in reminders {
+            // 回收站条目不再触发提醒（彻底删除前也静默；恢复后照常）
             let Ok(mut item) = conn.query_row(
-                "SELECT * FROM items WHERE id = ?1",
+                "SELECT * FROM items WHERE id = ?1 AND deleted_at IS NULL",
                 params![rem.item_id],
                 item_mapper,
             ) else {
@@ -1803,6 +2052,7 @@ impl Store {
             "SELECT rl.remind_at, i.id FROM reminder_log rl \
              JOIN reminders r ON r.id = rl.reminder_id \
              JOIN items i ON i.id = r.item_id \
+             WHERE i.deleted_at IS NULL \
              ORDER BY rl.remind_at DESC LIMIT ?1",
         )?;
         let rows: Vec<(String, String)> = stmt
@@ -2612,6 +2862,14 @@ fn item_mapper(row: &Row) -> rusqlite::Result<Item> {
             .as_deref()
             .and_then(ItemStatus::parse),
         recurrence: row.get::<_, Option<String>>("recurrence")?,
+        recurrence_exdates: row
+            .get::<_, Option<String>>("recurrence_exdates")?
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|s| parse_dt(s))
+            .collect(),
         template_id: row.get("template_id")?,
         completed_at: row
             .get::<_, Option<String>>("completed_at")?
@@ -2623,6 +2881,10 @@ fn item_mapper(row: &Row) -> rusqlite::Result<Item> {
         idempotency_key: row.get("idempotency_key")?,
         created_at: parse_dt(&row.get::<_, String>("created_at")?).unwrap_or_else(Utc::now),
         updated_at: parse_dt(&row.get::<_, String>("updated_at")?).unwrap_or_else(Utc::now),
+        deleted_at: row
+            .get::<_, Option<String>>("deleted_at")?
+            .as_deref()
+            .and_then(parse_dt),
         extra: row
             .get::<_, Option<String>>("extra")?
             .as_deref()
@@ -2732,6 +2994,15 @@ fn extra_for_type(
 
 pub(crate) fn opt_dt(t: Option<DateTime<Utc>>) -> Option<String> {
     t.map(dt)
+}
+
+/// 单次例外列存库格式：RFC3339 字符串的 JSON 数组；空集存 NULL。
+fn exdates_json(v: &[DateTime<Utc>]) -> Option<String> {
+    if v.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = v.iter().map(|t| dt(*t)).collect();
+    serde_json::to_string(&list).ok()
 }
 
 pub(crate) fn parse_dt(s: &str) -> Option<DateTime<Utc>> {

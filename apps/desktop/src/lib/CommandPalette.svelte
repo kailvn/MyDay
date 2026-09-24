@@ -17,6 +17,7 @@
     type SearchHit,
   } from "./api";
   import { openCreate, openDetail } from "./panel.svelte";
+  import { highlightText } from "./highlight";
   import { t, type MessageKey } from "./i18n";
 
   let {
@@ -34,6 +35,7 @@
   let q = $state("");
   let idx = $state(0);
   let hits = $state<SearchHit[]>([]);
+  let searchT: ReturnType<typeof setTimeout> | undefined;
   let recents = $state<Item[]>([]);
   let input: HTMLInputElement | null = $state(null);
 
@@ -180,9 +182,25 @@
       .then((r) => (recents = r))
       .catch(() => {});
   });
+  // 输入即出（即时搜索）：防抖 140ms 联 searchItems 前 8 条；动词快路径时跳过结果区
   $effect(() => {
     if (!open) return;
-    if (!q.trim()) hits = [];
+    const kw = q.trim();
+    clearTimeout(searchT);
+    if (!kw || verb) {
+      hits = [];
+      return;
+    }
+    searchT = setTimeout(() => {
+      void api
+        .searchItems(kw)
+        .then((r) => {
+          // 过期响应守卫：输入已变化（当前词不再是发起查询的词）就丢弃
+          if (q.trim() !== kw) return;
+          hits = r.slice(0, 8);
+        })
+        .catch(() => {});
+    }, 140);
   });
   // 输入/结果变化后高亮保持在有效范围，Enter 永远有明确目标
   $effect(() => {
@@ -244,7 +262,9 @@
               <span class="label">{row.label}</span>
               {#if row.dim}<span class="dim">{row.dim}</span>{/if}
             {:else}
-              <span class="label">{row.label}</span>
+              <span class="label">
+                {#each highlightText(row.label, q) as seg, i (i)}{#if seg.hit}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+              </span>
               <span class="dim">{row.dim}</span>
             {/if}
           </li>
@@ -322,6 +342,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  mark {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
   }
 
   .dim {

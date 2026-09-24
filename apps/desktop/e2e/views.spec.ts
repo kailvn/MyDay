@@ -307,3 +307,43 @@ test("V8 待办：无日期内置视图 = 未排期池同口径，批量条无�
   await expect(page.getByRole("status")).toContainText(/已完成 1 条/);
   await expect(page.locator(".rows li")).toHaveCount(0);
 });
+
+test("V9 标签过滤：今天页与日历按标签收窄，全部 = 原样", async ({ page }) => {
+  // 今天页：无标签的「买牛奶」在 #工作 下消失，带标签行保留
+  const sel = page.getByTestId("today-tag-filter");
+  await expect(sel).toBeVisible();
+  await sel.selectOption("工作");
+  await expect(page.locator("li", { hasText: "买牛奶" })).toHaveCount(0);
+  await expect(page.locator("li", { hasText: "产品评审" })).toBeVisible();
+  await sel.selectOption("");
+  await expect(page.locator("li", { hasText: "买牛奶" })).toBeVisible();
+
+  // 日历月视图：#运动 → 网格只剩晨跑 chip，当天面板的到期行也同步隐藏
+  await page.getByRole("navigation").getByRole("button", { name: /日历/ }).click();
+  const cal = page.getByTestId("cal-tag-filter");
+  await expect(cal).toBeVisible();
+  await page.locator(".month").getByRole("button", { name: "今天" }).click(); // 选中今天，面板显示当天
+  await cal.selectOption("运动");
+  await expect(page.locator(".cell-ev", { hasText: "晨跑" }).first()).toBeVisible();
+  await expect(page.locator(".cell-ev", { hasText: "买牛奶" })).toHaveCount(0);
+  await expect(page.locator(".day-panel li", { hasText: "买牛奶" })).toHaveCount(0);
+  await cal.selectOption("");
+  // 复原：当天面板到期节重新出现（面板行无月格 chip 预算截断，断言确定）
+  await expect(page.locator(".day-panel li", { hasText: "买牛奶" })).toBeVisible();
+});
+
+test("V10 即时搜索：Ctrl+K 与搜索页输入即出 + 命中高亮（不回车）", async ({ page }) => {
+  // Ctrl+K 命令面板：输入即出结果，命中段高亮
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "命令面板" });
+  await palette.getByRole("textbox").fill("牛奶");
+  await expect(palette.getByText("买牛奶")).toBeVisible();
+  await expect(palette.locator("mark")).toContainText("牛奶");
+  await page.keyboard.press("Escape");
+
+  // 搜索页：输入即出（无回车），标题命中段 <mark> 高亮
+  await page.getByRole("navigation").getByRole("button", { name: /搜索/ }).click();
+  await page.locator("#global-search").fill("周报");
+  await expect(page.getByTestId("search-hit-title").filter({ hasText: "周报" }).first()).toBeVisible();
+  await expect(page.locator("mark").first()).toContainText("周报");
+});

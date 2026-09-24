@@ -6,7 +6,7 @@
  */
 import type { Item, ItemPatch } from "./api";
 import { t } from "./i18n";
-import { parseRecurrence, weekdayLabel } from "./recurrence";
+import { parseRecurrence, recurrenceToString, weekdayLabel } from "./recurrence";
 
 /** 15 分钟吸附 */
 export const SNAP_MIN = 15;
@@ -83,7 +83,7 @@ export function moveEventOccurrence(
       next = {
         start_at: newStart,
         end_at: new Date(newStart.getTime() + durMs),
-        recurrence: `@weekly:${target}`,
+        recurrence: recurrenceToString({ kind: "weekly", n: target, until: rec.until, count: rec.count }),
       };
       ruleNote = t("reschedule.rule_weekly", { day: weekdayLabel(target) });
     }
@@ -94,7 +94,7 @@ export function moveEventOccurrence(
       next = {
         start_at: newStart,
         end_at: new Date(newStart.getTime() + durMs),
-        recurrence: `@monthly:${newStart.getDate()}`,
+        recurrence: recurrenceToString({ kind: "monthly", d: newStart.getDate(), until: rec.until, count: rec.count }),
       };
       ruleNote = t("reschedule.rule_monthly", { d: newStart.getDate() });
     }
@@ -157,10 +157,10 @@ export function moveTaskDue(item: Item, targetDay: Date): RescheduleResult {
   let recurrence: string | null = item.recurrence ?? null;
   let ruleNote = "";
   if (rec?.kind === "weekly" && deltaDays % 7 !== 0) {
-    recurrence = `@weekly:${weekdayNo(newDue)}`;
+    recurrence = recurrenceToString({ kind: "weekly", n: weekdayNo(newDue), until: rec.until, count: rec.count });
     ruleNote = t("reschedule.rule_weekly", { day: weekdayLabel(weekdayNo(newDue)) });
   } else if (rec?.kind === "monthly" && newDue.getDate() !== due.getDate()) {
-    recurrence = `@monthly:${newDue.getDate()}`;
+    recurrence = recurrenceToString({ kind: "monthly", d: newDue.getDate(), until: rec.until, count: rec.count });
     ruleNote = t("reschedule.rule_monthly", { d: newDue.getDate() });
   }
   const patch: ItemPatch = { due_at: newDue.toISOString() };

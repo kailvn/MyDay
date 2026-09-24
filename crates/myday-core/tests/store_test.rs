@@ -37,6 +37,11 @@ fn seeds_priority_field_and_generic_pinned_templates() {
     let store = t.store();
     let defs = store.list_field_defs(Some(ItemType::Task)).unwrap();
     assert!(defs.iter().any(|d| d.id == "fd_priority" && d.builtin), "内置优先级字段");
+    assert!(
+        defs.iter()
+            .any(|d| d.id == "fd_est_min" && d.builtin && d.kind == FieldKind::Number),
+        "内置预计分钟字段（时间块排期）"
+    );
 
     let templates = store.list_templates().unwrap();
     for id in ["tpl_water", "tpl_weight"] {
@@ -60,6 +65,29 @@ fn seeds_priority_field_and_generic_pinned_templates() {
     assert!(
         !store.list_field_defs(Some(ItemType::Log)).unwrap().iter().any(|d| d.id == "fd_weight_kg"),
         "软删字段不因重开复活"
+    );
+}
+
+#[test]
+fn builtin_seed_upgrade_adds_new_fields_to_old_dbs() {
+    let t = TempDir::new();
+    {
+        // 模拟旧版库：seed_version 停在 v2（fd_est_min 引入前），且字段行不存在
+        let store = t.store();
+        let conn = store.raw_conn().unwrap();
+        conn.execute("DELETE FROM field_defs WHERE id = 'fd_est_min'", []).unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('seed_version', '2') \
+             ON CONFLICT(key) DO UPDATE SET value = '2'",
+            [],
+        )
+        .unwrap();
+    }
+    let store = Store::open(&t.db_path(), t.0.path()).unwrap();
+    let defs = store.list_field_defs(Some(ItemType::Task)).unwrap();
+    assert!(
+        defs.iter().any(|d| d.id == "fd_est_min"),
+        "升级路径为旧库补种新增内置字段"
     );
 }
 
@@ -1298,13 +1326,14 @@ fn changed_on_filters_by_creation_or_modification_day() {
 }
 
 #[test]
-fn delete_item_removes_attachments_and_rows() {
+fn delete_trash_restore_purge_lifecycle() {
     let t = TempDir::new();
     let store = t.store();
     let item = store
         .add_item(NewItem {
             title: Some("客户沟通".into()),
             start_at: Some(Utc::now() + Duration::hours(1)),
+            tags: vec!["工作".into()],
             ..Default::default()
         })
         .unwrap();
@@ -1313,11 +1342,41 @@ fn delete_item_removes_attachments_and_rows() {
         .unwrap();
     let abs = store.attachment_abs_path(&att);
     assert!(abs.exists());
-    assert!(att.id > 0);
 
+    // 删除 = 进回收站：行与附件文件原封不动，列表 / 视图 / 窗口查询不再可见
     store.delete_item(&item.id).unwrap();
-    assert!(!abs.exists(), "附件文件应随条目删除");
+    assert!(store.get_item(&item.id).is_ok(), "软删后行仍在（回收站）");
+    assert!(abs.exists(), "附件文件随回收站保留");
+    assert!(store.get_item(&item.id).unwrap().deleted_at.is_some());
+    assert!(store.list_items(&ListFilter::default()).unwrap().is_empty());
+    assert!(store
+        .tasks_view(TaskView::All, None)
+        .unwrap()
+        .iter()
+        .all(|i| i.id != item.id));
+    assert!(store.search("客户沟通", None).unwrap().is_empty());
+    assert_eq!(store.list_trash().unwrap().len(), 1);
+
+    // 恢复：回到原位（同 id、附件与标签仍在）
+    let restored = store.restore_item(&item.id).unwrap();
+    assert!(restored.deleted_at.is_none());
+    assert_eq!(restored.tags, vec!["工作"]);
+    assert!(!restored.attachments.is_empty());
+    assert!(store.list_trash().unwrap().is_empty());
+
+    // 再删 → 彻底删除：级联清理行与附件文件
+    store.delete_item(&item.id).unwrap();
+    let purged = store.purge_item(&item.id).unwrap();
+    assert_eq!(purged.id, item.id);
+    assert!(!abs.exists(), "彻底删除应清理附件文件");
     assert!(store.get_item(&item.id).is_err());
+    assert!(store.list_trash().unwrap().is_empty());
+
+    // 对活跃条目彻底删除被拒绝（必须先软删）
+    let active = store
+        .add_item(NewItem { title: Some("活跃".into()), ..Default::default() })
+        .unwrap();
+    assert!(store.purge_item(&active.id).is_err());
 }
 
 #[test]
@@ -1492,8 +1551,12 @@ fn baseline_db_migrates_in_place_without_rebuild() {
         .unwrap()
         .id;
     {
-        // 把 user_version 降到基线，模拟上一版本库；重开必须走迁移链
+        // 模拟 v5 库：去掉 v6/v7 新增列（先删引用 deleted_at 的索引）后把
+        // user_version 降到基线，重开必须沿迁移链 4→…→当前版本逐级升级
         let conn = store.raw_conn().unwrap();
+        conn.execute("DROP INDEX IF EXISTS idx_items_trash", []).unwrap();
+        conn.execute("ALTER TABLE items DROP COLUMN deleted_at", []).unwrap();
+        conn.execute("ALTER TABLE items DROP COLUMN recurrence_exdates", []).unwrap();
         conn.pragma_update(None, "user_version", 4).unwrap();
     }
     drop(store);
@@ -1504,7 +1567,7 @@ fn baseline_db_migrates_in_place_without_rebuild() {
         conn.query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap()
     };
-    assert_eq!(version, 5, "迁移链把库升到当前版本");
+    assert_eq!(version, 7, "迁移链把库升到当前版本");
     let builtin_views: i64 = {
         let conn = store2.raw_conn().unwrap();
         conn.query_row(
@@ -1515,6 +1578,18 @@ fn baseline_db_migrates_in_place_without_rebuild() {
         .unwrap()
     };
     assert!(builtin_views > 0, "v4→v5 迁移补齐视图种子");
+    for col in ["deleted_at", "recurrence_exdates"] {
+        let ok: String = {
+            let conn = store2.raw_conn().unwrap();
+            conn.query_row(
+                "SELECT COALESCE((SELECT 'ok' FROM pragma_table_info('items') WHERE name = ?1), 'missing')",
+                [col],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(ok, "ok", "迁移补上列 {col}");
+    }
 }
 
 
@@ -2108,4 +2183,139 @@ fn backup_zip_contains_db_and_attachments_and_rotates() {
     names.sort();
     assert!(names.iter().any(|n| n == "myday.db"));
     assert!(names.iter().any(|n| n.starts_with("attachments/")), "附件入包: {names:?}");
+}
+
+// ----------------------------------------------------------------------
+// 重复规则补全：结束条件（until/count）与单次例外（拆分 / 跳过）
+// ----------------------------------------------------------------------
+
+#[test]
+fn recurrence_end_conditions_full_flow() {
+    let t = TempDir::new();
+    let store = t.store();
+    use chrono::TimeZone;
+    let day = |offset: i64, h: u32| -> chrono::DateTime<Utc> {
+        let d = (chrono::Local::now().date_naive() + chrono::Duration::days(offset))
+            .and_hms_opt(h, 0, 0)
+            .unwrap();
+        chrono::Local
+            .from_local_datetime(&d)
+            .single()
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    };
+    // 从明天起每天 09:00，共 3 次（未来锚点：完成推进到 now 之后的下一期）
+    let task = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Task),
+            title: Some("连喝三天水".into()),
+            due_at: Some(day(1, 9)),
+            recurrence: Some("@daily;count=3".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    // 完成一次 = 推进一期，count 递减（3→2）；取消完成回拨：due 与 count 都恢复
+    store.complete_task(&task.id).unwrap();
+    let once = store.get_item(&task.id).unwrap();
+    assert_eq!(once.due_at.unwrap(), day(2, 9));
+    assert_eq!(once.recurrence.as_deref(), Some("@daily;count=2"), "剩余期数递减");
+    store.uncomplete_task(&once.id).unwrap();
+    let rewound = store.get_item(&task.id).unwrap();
+    assert_eq!(rewound.due_at.unwrap(), day(1, 9), "回拨到完成前那期");
+    assert_eq!(rewound.recurrence.as_deref(), Some("@daily;count=3"), "剩余期数恢复");
+    assert!(rewound.extra.get("recurred_done_at").is_none());
+
+    // 完成两次 = 推进两期
+    store.complete_task(&task.id).unwrap();
+    store.complete_task(&task.id).unwrap();
+    let after = store.get_item(&task.id).unwrap();
+    assert_eq!(after.due_at.unwrap(), day(3, 9), "第三次（最后一期）截止");
+    // 第三次完成：次数耗尽 → 正常完成（done），不再推进也不报错
+    store.complete_task(&task.id).unwrap();
+    let done = store.get_item(&task.id).unwrap();
+    eprintln!("DEBUG after 3rd: status={:?} due={:?} recurred={:?}", done.status, done.due_at, done.extra.get("recurred_done_at"));
+    assert_eq!(done.status, Some(ItemStatus::Done), "耗尽后完成 = 系列终结");
+    assert!(done.completed_at.is_some());
+
+    // until 结束条件：日程系列在 until（= 明天，含）之后无展开
+    let until_day = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let ev = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Event),
+            title: Some("冲刺站会".into()),
+            start_at: Some(day(0, 9)),
+            recurrence: Some(format!("@daily;until={until_day}")),
+            ..Default::default()
+        })
+        .unwrap();
+    let from = day(2, 0);
+    let to = day(2, 23);
+    assert!(
+        myday_core::recurrence::occurrences_between(&ev, from, to).is_empty(),
+        "until 之后不再展开"
+    );
+}
+
+#[test]
+fn detach_and_skip_occurrence() {
+    let t = TempDir::new();
+    let store = t.store();
+    // 每周三 09:00 站会（2026-09-16 恰是周三）
+    let ev = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Event),
+            title: Some("周会".into()),
+            start_at: Some(utc_date_at(2026, 9, 16, 9)),
+            tags: vec!["工作".into()],
+            recurrence: Some("@weekly:3".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    let next_wed = utc_date_at(2026, 9, 23, 9);
+
+    // 拆分 9/23 这期为独立条目：新条目无规则、时间对齐；原系列记入例外
+    let detached = store.detach_occurrence(&ev.id, next_wed).unwrap();
+    assert_eq!(detached.title.as_deref(), Some("周会"));
+    assert!(detached.recurrence.is_none());
+    assert_eq!(detached.start_at.unwrap(), next_wed);
+    assert_eq!(detached.tags, vec!["工作"]);
+    let base = store.get_item(&ev.id).unwrap();
+    assert_eq!(base.recurrence_exdates, vec![next_wed], "例外锚点已记录");
+
+    // 展开不再含 9/23，但 9/30 照常
+    let in_excluded = myday_core::recurrence::occurrences_between(
+        &base,
+        utc_date_at(2026, 9, 23, 0),
+        utc_date_at(2026, 9, 23, 23),
+    );
+    assert!(in_excluded.is_empty());
+    let still_there = myday_core::recurrence::occurrences_between(
+        &base,
+        utc_date_at(2026, 9, 30, 0),
+        utc_date_at(2026, 9, 30, 23),
+    );
+    assert_eq!(still_there.len(), 1);
+
+    // skip：仅删除 9/30 这期（不新建条目）
+    let skipped = store.skip_occurrence(&ev.id, utc_date_at(2026, 9, 30, 9)).unwrap();
+    assert_eq!(skipped.recurrence_exdates.len(), 2);
+
+    // 不对应任何发生的时刻被拒绝；非重复条目被拒绝
+    assert!(store.skip_occurrence(&ev.id, utc_date_at(2026, 9, 24, 9)).is_err());
+    let plain = store
+        .add_item(NewItem { title: Some("单次".into()), ..Default::default() })
+        .unwrap();
+    assert!(store.skip_occurrence(&plain.id, utc_date_at(2026, 9, 24, 9)).is_err());
+}
+
+/// 本地时区某日某点的 UTC 时刻（与 next_after 的本地钟点语义一致）
+fn utc_date_at(y: i32, m: u32, d: u32, h: u32) -> chrono::DateTime<Utc> {
+    use chrono::TimeZone;
+    chrono::Local
+        .with_ymd_and_hms(y, m, d, h, 0, 0)
+        .single()
+        .unwrap()
+        .with_timezone(&chrono::Utc)
 }

@@ -102,6 +102,90 @@ pub fn delete_item(
     Ok(item)
 }
 
+// ----------------------------------------------------------------------
+// 回收站：软删条目的恢复 / 彻底删除 / 清空
+// ----------------------------------------------------------------------
+
+#[tauri::command]
+pub fn list_trash(state: State<'_, AppState>) -> std::result::Result<Vec<Item>, String> {
+    state.store.list_trash().map_err(err_string)
+}
+
+#[tauri::command]
+pub fn restore_item(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> std::result::Result<Item, String> {
+    let item = state.store.restore_item(&id).map_err(err_string)?;
+    notify_changed(&app);
+    Ok(item)
+}
+
+/// 重复条目单次例外：拆某次发生为独立条目（原系列记入例外，展开时跳过该期）。
+#[tauri::command]
+pub fn detach_occurrence(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    at: chrono::DateTime<chrono::Utc>,
+) -> std::result::Result<Item, String> {
+    let item = state.store.detach_occurrence(&id, at).map_err(err_string)?;
+    notify_changed(&app);
+    Ok(item)
+}
+
+/// 重复条目单次例外：仅删除某一次发生。
+#[tauri::command]
+pub fn skip_occurrence(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    at: chrono::DateTime<chrono::Utc>,
+) -> std::result::Result<Item, String> {
+    let item = state.store.skip_occurrence(&id, at).map_err(err_string)?;
+    notify_changed(&app);
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn purge_item(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> std::result::Result<Item, String> {
+    let item = state.store.purge_item(&id).map_err(err_string)?;
+    notify_changed(&app);
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn empty_trash(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<usize, String> {
+    let n = state.store.empty_trash().map_err(err_string)?;
+    if n > 0 {
+        notify_changed(&app);
+    }
+    Ok(n)
+}
+
+/// 导入 ICS 文件（本地一次性导入），返回导入报告。
+#[tauri::command]
+pub fn import_ics(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> std::result::Result<myday_core::ics::ImportReport, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("[IO] {e}"))?;
+    let report = myday_core::ics::import_ics(&state.store, &text).map_err(err_string)?;
+    if report.events + report.tasks > 0 {
+        notify_changed(&app);
+    }
+    Ok(report)
+}
+
 #[tauri::command]
 pub fn complete_task(
     app: tauri::AppHandle,

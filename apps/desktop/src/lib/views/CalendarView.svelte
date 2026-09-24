@@ -38,6 +38,18 @@
   /** 未排期池原始集（load 时过滤好），展示层再排除待删行 */
   let poolRaw = $state<Item[]>([]);
   let error = $state("");
+  /** 标签过滤（"" = 全部）：作用于网格 / 当天面板 / 池与周/日网格 */
+  let tagFilter = $state("");
+
+  /** 标签下拉选项：当前加载条目（含池）中出现过的标签 */
+  let allTags = $derived.by(() => {
+    const set = new Set<string>();
+    for (const it of [...monthItems, ...poolRaw]) {
+      for (const tg of it.tags) set.add(tg);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, i18n.locale === "en" ? "en" : "zh"));
+  });
+  const matchTag = (it: Item) => !tagFilter || it.tags.includes(tagFilter);
 
   // 记住上次浏览状态（Anytype 用户高频诉求：切回日历不要弹回当月）
   $effect(() => {
@@ -195,7 +207,7 @@
       monthItems,
       new Date(gridBounds.start.getFullYear(), gridBounds.start.getMonth(), gridBounds.start.getDate(), 0, 0, 0, 0),
       new Date(gridBounds.end.getFullYear(), gridBounds.end.getMonth(), gridBounds.end.getDate(), 23, 59, 59, 999),
-    ),
+    ).filter(matchTag),
   );
 
   type Section = { title: string; items: Item[] };
@@ -203,6 +215,7 @@
   let poolItems = $derived(
     poolRaw
       .filter((it) => !deletions.pendingIds.includes(it.id))
+      .filter(matchTag)
       .sort((a, b) => a.created_at.localeCompare(b.created_at)),
   );
   /** 已完成沉底（与今天页一致），同组内按时间升序 */
@@ -485,12 +498,18 @@
       <button class:active={mode === m.id} onclick={() => (mode = m.id)}>{t(m.label)}</button>
     {/each}
   </span>
+  <label class="tag-filter" title={t("calendar.tag_filter")}>
+    <select data-testid="cal-tag-filter" bind:value={tagFilter}>
+      <option value="">{t("calendar.tag_all")}</option>
+      {#each allTags as tg (tg)}<option value={tg}>#{tg}</option>{/each}
+    </select>
+  </label>
 </h1>
 
 <svelte:window onkeydown={onKeydown} onpointermove={onRowDragMove} onpointerup={onRowDragEnd} />
 
 {#if mode !== "month"}
-  <WeekGrid {dataVersion} days={mode === "week" ? 7 : 1} pool={poolItems} />
+  <WeekGrid {dataVersion} days={mode === "week" ? 7 : 1} pool={poolItems} tagFilter={tagFilter} />
 {:else}
 
 {#if error}<p class="error">{error}</p>{/if}
@@ -709,6 +728,18 @@
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 2px;
+  }
+
+  /* 标签过滤下拉（月/周/日共用）：吸着模式切换右侧 */
+  .tag-filter {
+    font-size: 13px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  .tag-filter select {
+    max-width: 140px;
+    font-size: 13px;
   }
 
   .mode-tabs button {

@@ -27,6 +27,8 @@ interface MockItem {
   status: "todo" | "done" | null;
   completed_at: string | null;
   recurrence: string | null;
+  /** 单次例外锚点（RFC3339）——与 core schema v7 同语义 */
+  recurrence_exdates: string[] | null;
   template_id: string | null;
   reminders: { id: number; item_id: string; spec: string; channel: string }[];
   tags: string[];
@@ -34,6 +36,8 @@ interface MockItem {
   idempotency_key: string | null;
   created_at: string;
   updated_at: string;
+  /** 回收站软删时刻（null = 活跃）——与 core schema v6 同语义 */
+  deleted_at: string | null;
   extra: Record<string, unknown>;
 }
 
@@ -75,6 +79,7 @@ export function installE2eMock() {
     status: null,
     completed_at: null,
     recurrence: null,
+    recurrence_exdates: null,
     template_id: null,
     reminders: [],
     tags: [],
@@ -82,6 +87,7 @@ export function installE2eMock() {
     idempotency_key: null,
     created_at: utc(now),
     updated_at: utc(now),
+    deleted_at: null,
     extra: {},
     ...o,
   });
@@ -129,7 +135,8 @@ export function installE2eMock() {
       title: "买牛奶",
       due_at: utc(dayShift(now, 0, 18, 0)),
       status: "todo",
-      extra: { fd_priority: "高" },
+      // 预计 45 分钟：周/日网格渲染时间块（截止时刻起占位 45min）
+      extra: { fd_priority: "高", fd_est_min: 45 },
       reminders: [{ id: 2, item_id: "tsk_milk", spec: "@due-30m", channel: "notify" }],
     }),
     mk({
@@ -148,13 +155,15 @@ export function installE2eMock() {
       status: "done",
       completed_at: utc(dayShift(now, -1, 13, 0)),
     }),
-    // 无任何日期的待办：日历「未排期池」用例的种子（list_items 可查到，窗口查询查不到）
+    // 无任何日期的待办：日历「未排期池」用例的种子（list_items 可查到，窗口查询查不到）；
+    // 带预计分钟（时间块走查：池行 chip + 拖入时段格按 60 分钟占位）
     mk({
       id: "tsk_shelf",
       type: "task",
       title: "整理书架",
       status: "todo",
       tags: ["家务"],
+      extra: { fd_est_min: 60 },
     }),
     ...Array.from({ length: 6 }, (_, i) =>
       mk({
@@ -189,6 +198,7 @@ export function installE2eMock() {
     { id: "fd_priority", name: "优先级", kind: "select", options: { choices: ["低", "中", "高"] }, scope: "task", sort: 0, builtin: true },
     { id: "fd_weight_kg", name: "体重(kg)", kind: "number", options: { unit: "kg" }, scope: "log", sort: 1, builtin: true },
     { id: "fd_med_name", name: "药品", kind: "text", options: {}, scope: "log", sort: 2, builtin: true },
+    { id: "fd_est_min", name: "预计分钟", kind: "number", options: { unit: "分钟" }, scope: "task", sort: 3, builtin: true },
   ];
   const templates = [
     { id: "tpl_health", name: "服药", tag: "健康", icon: "💊", item_type: "log", defaults: { title: "服药" }, fields: [], note: null, sort: 0, pinned: true, builtin: true },
@@ -231,6 +241,12 @@ export function installE2eMock() {
     const from = Date.parse(fromIso);
     const to = Date.parse(toIso);
     return items.filter((it) => {
+      if (it.deleted_at) return false; // 回收站行不进窗口
+      // 重复系列：锚点早于窗口末即可能展开到窗口内（与 core list_items_window 同口径）
+      if (it.recurrence) {
+        const anchor = it.start_at ?? it.due_at ?? it.occurred_at ?? it.created_at;
+        if (anchor && Date.parse(anchor) <= to) return true;
+      }
       if (it.type === "event" && it.start_at && it.end_at) {
         return Date.parse(it.start_at) <= to && Date.parse(it.end_at) >= from;
       }
@@ -244,6 +260,7 @@ export function installE2eMock() {
     list_items: (a) => {
       const f = (a.filter ?? {}) as Record<string, unknown>;
       let out = [...items];
+      out = out.filter((i) => !i.deleted_at); // 活跃条目专用（core query_items 同口径）
       if (f.item_type) out = out.filter((i) => i.type === f.item_type);
       if (f.status) out = out.filter((i) => i.status === f.status);
       if (f.changed_on) out = out.slice(0, 20);
@@ -257,7 +274,7 @@ export function installE2eMock() {
       const view = String(a.view ?? "today");
       const endToday = dayShift(now, 0, 23, 59).getTime();
       const anchor = (i: MockItem) => Date.parse(i.due_at ?? i.start_at ?? "");
-      const open = items.filter((i) => i.type === "task" && i.status === "todo");
+      const open = items.filter((i) => i.type === "task" && i.status === "todo" && !i.deleted_at);
       if (view === "today")
         return clone(
           open.filter((i) =>
@@ -269,7 +286,7 @@ export function installE2eMock() {
           open.filter((i) => i.due_at && Date.parse(i.due_at) > endToday || !i.due_at && !!i.start_at && Date.parse(i.start_at) > endToday),
         );
       if (view === "all") return clone(open);
-      return clone(items.filter((i) => i.type === "task" && i.status === "done"));
+      return clone(items.filter((i) => i.type === "task" && i.status === "done" && !i.deleted_at));
     },
     get_item: (a) => {
       const it = byId(String(a.id));
@@ -318,11 +335,90 @@ export function installE2eMock() {
       return clone(it);
     },
     delete_item: (a) => {
-      const idx = items.findIndex((i) => i.id === String(a.id));
-      if (idx === -1) throw new Error(`[NOT_FOUND] ${a.id}`);
-      const [it] = items.splice(idx, 1);
+      const it = byId(String(a.id));
+      if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
+      if (a.hard === true) {
+        const idx = items.findIndex((i) => i.id === it.id);
+        items.splice(idx, 1);
+      } else {
+        it.deleted_at = utc(new Date()); // 软删 = 进回收站
+        it.updated_at = utc(new Date());
+      }
       return clone(it);
     },
+    detach_occurrence: (a) => {
+      const it = byId(String(a.id));
+      if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
+      if (!it.recurrence) throw new Error("[INVALID] 条目不是重复条目");
+      const at = String(a.at);
+      const anchor = new Date(at);
+      // 用共享展开逻辑定位该期（与 core checked_occurrence 同口径）
+      const occ = expandItems(
+        [it] as unknown as Parameters<typeof expandItems>[0],
+        new Date(anchor.getTime() - 86_400_000),
+        new Date(anchor.getTime() + 86_400_000),
+      ).find(
+        (x) =>
+          x.id === it.id &&
+          (it.type === "task" ? x.due_at === at : x.start_at === at),
+      );
+      if (!occ) throw new Error("[INVALID] 时刻不对应任何一次发生");
+      const copy = mk({
+        ...it,
+        id: uid(it.type.slice(0, 3)),
+        recurrence: null,
+        recurrence_exdates: null,
+        start_at: occ.start_at,
+        end_at: occ.end_at,
+        due_at: occ.due_at,
+        created_at: utc(new Date()),
+        updated_at: utc(new Date()),
+      });
+      items.push(copy);
+      it.recurrence_exdates = [...(it.recurrence_exdates ?? []), at].sort();
+      it.updated_at = utc(new Date());
+      return clone(copy);
+    },
+    skip_occurrence: (a) => {
+      const it = byId(String(a.id));
+      if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
+      if (!it.recurrence) throw new Error("[INVALID] 条目不是重复条目");
+      const at = String(a.at);
+      it.recurrence_exdates = [...(it.recurrence_exdates ?? []), at].sort();
+      it.updated_at = utc(new Date());
+      return clone(it);
+    },
+    restore_item: (a) => {
+      const it = byId(String(a.id));
+      if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
+      it.deleted_at = null;
+      return clone(it);
+    },
+    purge_item: (a) => {
+      const it = byId(String(a.id));
+      if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
+      if (!it.deleted_at) throw new Error("[INVALID] 条目不在回收站；请先删除（软删）再彻底删除");
+      const idx = items.findIndex((i) => i.id === it.id);
+      items.splice(idx, 1);
+      return clone(it);
+    },
+    list_trash: () =>
+      clone(
+        items
+          .filter((i) => i.deleted_at)
+          .sort((x, y) => (y.deleted_at ?? "").localeCompare(x.deleted_at ?? "")),
+      ),
+    empty_trash: () => {
+      let n = 0;
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i].deleted_at) {
+          items.splice(i, 1);
+          n++;
+        }
+      }
+      return n;
+    },
+    import_ics: () => ({ events: 0, tasks: 0, reminders: 0, skipped_duplicates: 0, warnings: [] }),
     complete_task: (a) => {
       const it = byId(String(a.id));
       if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
@@ -345,7 +441,7 @@ export function installE2eMock() {
     search_items: (a) => {
       const q = String(a.query ?? "");
       return items
-        .filter((i) => (i.title ?? "").includes(q) || (i.note ?? "").includes(q))
+        .filter((i) => !i.deleted_at && ((i.title ?? "").includes(q) || (i.note ?? "").includes(q)))
         .map((item) => ({ item: clone(item), matched_in: ["title"] }));
     },
     list_templates: () => clone(templates),
@@ -379,14 +475,14 @@ export function installE2eMock() {
         const key = iso(d).slice(0, 10);
         return {
           day: key,
-          count: items.filter((it) => it.type === "log" && (it.occurred_at ?? "").slice(0, 10) === key).length,
+          count: items.filter((it) => it.type === "log" && !it.deleted_at && (it.occurred_at ?? "").slice(0, 10) === key).length,
         };
       });
       // 连续天数与 core/stats_summary 同款语义：记录日集合 → 最长连续 + 存活当前连续
       const daySetOf = (tid: string) => {
         const set = new Set<string>();
         for (const it of items) {
-          if (it.type === "log" && it.template_id === tid && it.occurred_at) {
+          if (it.type === "log" && !it.deleted_at && it.template_id === tid && it.occurred_at) {
             set.add(it.occurred_at.slice(0, 10));
           }
         }
@@ -418,7 +514,7 @@ export function installE2eMock() {
         return { current, longest };
       };
       const wpts = items
-        .filter((i) => i.type === "log" && typeof i.extra.fd_weight_kg === "number")
+        .filter((i) => i.type === "log" && !i.deleted_at && typeof i.extra.fd_weight_kg === "number")
         .sort((x, y) => Date.parse(x.occurred_at!) - Date.parse(y.occurred_at!))
         .map((i) => [i.occurred_at!, i.extra.fd_weight_kg as number] as [string, number]);
       return {
@@ -434,7 +530,7 @@ export function installE2eMock() {
               current,
               longest,
               recent: items.filter(
-                (i) => i.template_id === t.id && (i.occurred_at ?? "").slice(0, 10) >= cutoffKey,
+                (i) => !i.deleted_at && i.template_id === t.id && (i.occurred_at ?? "").slice(0, 10) >= cutoffKey,
               ).length,
             };
           }),
@@ -447,7 +543,7 @@ export function installE2eMock() {
         .sort((x, y) => Date.parse(y.remind_at) - Date.parse(x.remind_at))
         .slice(0, Number(a.limit ?? 50))
         .map((r) => ({ remind_at: r.remind_at, item: clone(byId(r.item_id)) }))
-        .filter((r) => r.item),
+        .filter((r) => r.item && !r.item.deleted_at),
     reminder_unread: () => {
       const seen = settings.reminder_seen_at;
       if (!seen) return 0;
@@ -529,7 +625,7 @@ export function installE2eMock() {
       const t0 = day0.getTime();
       const t1 = day1.getTime();
       const events = expandItems(
-        items.filter((i) => i.type === "event") as unknown as Parameters<typeof expandItems>[0],
+        items.filter((i) => i.type === "event" && !i.deleted_at) as unknown as Parameters<typeof expandItems>[0],
         day0,
         day1,
       )
@@ -554,7 +650,7 @@ export function installE2eMock() {
           };
         })
         .sort((a, b) => Date.parse(a.start_at!) - Date.parse(b.start_at!) || a.created_at.localeCompare(b.created_at));
-      const openTasks = items.filter((i) => i.type === "task" && i.status === "todo");
+      const openTasks = items.filter((i) => i.type === "task" && i.status === "todo" && !i.deleted_at);
       const taskEntry = (i: (typeof openTasks)[number]) => ({
         id: i.id,
         kind: "task" as const,
@@ -644,6 +740,11 @@ export function installE2eMock() {
     "add_item",
     "update_item",
     "delete_item",
+    "restore_item",
+    "purge_item",
+    "empty_trash",
+    "detach_occurrence",
+    "skip_occurrence",
     "complete_task",
     "snooze",
     "convert_task_to_event",

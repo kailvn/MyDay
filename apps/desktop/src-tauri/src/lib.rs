@@ -27,6 +27,9 @@ pub struct AppState {
     pub store: Arc<Store>,
 }
 
+/// 回收站保留天数：删除超过该天数的条目在启动时彻底删除。
+const TRASH_RETENTION_DAYS: i64 = 30;
+
 /// 托盘菜单句柄：设置页改配置后同步勾选状态（OVERLAY-SPEC §8）；
 /// 切换界面语言时整组 `set_text` 重写（i18n）。
 pub struct OverlayTrayMenu {
@@ -57,6 +60,14 @@ pub fn run() {
         store.data_root().display()
     ));
 
+    // 回收站过期清理：删除超过 30 天的条目彻底删除（GUI 常驻是唯一清理时机；
+    // 失败只影响本次，下次启动重试）
+    match store.purge_expired_trash(TRASH_RETENTION_DAYS) {
+        Ok(0) => {}
+        Ok(n) => logging::log(&format!("myday: 已清理回收站 {n} 条（超 {TRASH_RETENTION_DAYS} 天）")),
+        Err(e) => logging::log(&format!("myday: 回收站清理失败: {e}")),
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(single_instance_handler))
         .plugin(tauri_plugin_autostart::init(
@@ -72,6 +83,13 @@ pub fn run() {
             commands::add_item,
             commands::update_item,
             commands::delete_item,
+            commands::list_trash,
+            commands::restore_item,
+            commands::purge_item,
+            commands::empty_trash,
+            commands::import_ics,
+            commands::detach_occurrence,
+            commands::skip_occurrence,
             commands::complete_task,
             commands::snooze,
             commands::search_items,

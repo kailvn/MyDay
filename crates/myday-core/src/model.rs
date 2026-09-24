@@ -237,9 +237,14 @@ pub struct Item {
     /// 仅 task 有值
     pub status: Option<ItemStatus>,
     pub completed_at: Option<DateTime<Utc>>,
-    /// 重复规则（SPRINT-SPEC §2）：@daily / @weekly:n / @monthly:d；
+    /// 重复规则（SPRINT-SPEC §2）：@daily / @weekly:n / @monthly:d，
+    /// 可带 `;until=YYYY-MM-DD` 或 `;count=N` 结束条件（互斥）；
     /// 仅 event / task 允许（DB CHECK 兜底）。None = 不重复。
     pub recurrence: Option<String>,
+    /// 单次例外（v7）：被剔除的发生锚点（RFC3339，序列化为 JSON 数组存库）。
+    /// 展开时跳过该期；「拆为单次 / 仅删除这一期」由存储层维护。
+    #[serde(default)]
+    pub recurrence_exdates: Vec<DateTime<Utc>>,
     pub template_id: Option<String>,
     pub reminders: Vec<Reminder>,
     pub tags: Vec<String>,
@@ -247,6 +252,10 @@ pub struct Item {
     pub idempotency_key: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// 回收站软删时刻（None = 活跃条目）。删除 = 先进回收站，
+    /// 彻底删除（purge）才级联清理提醒/标签/附件。
+    #[serde(default)]
+    pub deleted_at: Option<DateTime<Utc>>,
     /// 类型扩展字段（JSON 对象）：key = field_defs.id（保留键除外）。
     /// 类型不可变，不存在"转换时保留"的问题。
     #[serde(default = "empty_extra")]
@@ -281,6 +290,9 @@ pub struct NewItem {
     /// 重复规则（@daily / @weekly:n / @monthly:d），None = 不重复
     #[serde(default)]
     pub recurrence: Option<String>,
+    /// 单次例外锚点（仅重复条目有意义；非重复时被忽略）
+    #[serde(default)]
+    pub recurrence_exdates: Vec<DateTime<Utc>>,
     #[serde(default)]
     pub template_id: Option<String>,
     /// 模板时间占位 token 的解析锚点日（本地时区；缺省今天）。

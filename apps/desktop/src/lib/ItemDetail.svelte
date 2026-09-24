@@ -13,6 +13,7 @@
     fmtDate,
     fmtDateTime,
     typeLabel,
+    type Item,
     type ItemStatus,
   } from "./api";
   import { recurrenceLabel } from "./recurrence";
@@ -24,6 +25,54 @@
   // Shell 仅在 mode=detail 时挂载本组件
   const req = panelRequest() as DetailRequest;
   const src = req.item;
+
+  // ---- 单次例外（重复系列的虚拟实例）--------------------------------------
+  // 展开实例与系列锚点时刻不同 → 提供仅针对这一期的操作（拆为单次 / 仅删除此期）
+  let base = $state<Item | null>(null);
+  $effect(() => {
+    api.getItem(src.id).then((b) => (base = b)).catch(() => {});
+  });
+  const occAnchor = $derived(src.type === "task" ? src.due_at : src.start_at);
+  const baseAnchor = $derived(base ? (src.type === "task" ? base.due_at : base.start_at) : null);
+  const isVirtualInstance = $derived(
+    !!base?.recurrence && !!occAnchor && occAnchor !== baseAnchor,
+  );
+  let confirmDetach = $state(false);
+  let confirmSkip = $state(false);
+
+  async function detachThis() {
+    if (!occAnchor) return;
+    if (!confirmDetach) {
+      confirmDetach = true;
+      confirmSkip = false;
+      setTimeout(() => (confirmDetach = false), 8000);
+      return;
+    }
+    try {
+      const item = await api.detachOccurrence(src.id, occAnchor);
+      toast.show(t("detail.occ_detached", { name: q(displayTitle(item)) }));
+      openDetail(item);
+    } catch (e) {
+      toast.show(t("detail.occ_failed", { e: String(e) }));
+    }
+  }
+
+  async function skipThis() {
+    if (!occAnchor) return;
+    if (!confirmSkip) {
+      confirmSkip = true;
+      confirmDetach = false;
+      setTimeout(() => (confirmSkip = false), 8000);
+      return;
+    }
+    try {
+      await api.skipOccurrence(src.id, occAnchor);
+      toast.show(t("detail.occ_skipped"));
+      closePanel();
+    } catch (e) {
+      toast.show(t("detail.occ_failed", { e: String(e) }));
+    }
+  }
 
   /** 状态徽标文案（随界面语言） */
   const statusLabel = (s: ItemStatus) => t(s === "done" ? "detail.status.done" : "detail.status.todo");
@@ -172,6 +221,18 @@
 
     {#if src.recurrence}
       <p class="recurrence">{t("detail.recurrence_line", { rule: recurrenceLabel(src.recurrence) })}</p>
+    {/if}
+
+    {#if isVirtualInstance && occAnchor}
+      <div class="row occ" data-testid="occ-actions">
+        <span class="dt">{t("detail.occ_this")}</span>
+        <button class="occ-btn" data-testid="occ-detach" onclick={detachThis}>
+          {confirmDetach ? t("detail.occ_detach_confirm") : t("detail.occ_detach")}
+        </button>
+        <button class="occ-btn danger" data-testid="occ-skip" onclick={skipThis}>
+          {confirmSkip ? t("detail.occ_skip_confirm") : t("detail.occ_skip")}
+        </button>
+      </div>
     {/if}
 
     {#if images.length}
@@ -373,6 +434,25 @@
     margin: 4px 0 0;
     color: var(--text-dim);
     font-size: 13px;
+  }
+
+  .occ {
+    align-items: center;
+  }
+
+  .occ-btn {
+    font-size: 12.5px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-radius: 999px;
+    padding: 3px 12px;
+  }
+
+  .occ-btn.danger {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
   }
 
   .imgs {

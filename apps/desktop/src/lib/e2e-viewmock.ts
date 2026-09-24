@@ -384,7 +384,7 @@ export function initViewEngine(
   function evalPanelView(r: Row, keyword: string | null, limitOverride: number | null): AnyRec {
     const cfg = effective(r);
     const ds = cfg.dataset;
-    let list = getItems().filter((it) => ds.item_type === "all" || it.type === ds.item_type);
+    let list = getItems().filter((it) => !it.deleted_at && (ds.item_type === "all" || it.type === ds.item_type));
     let filter = ds.filter;
     const kw = keyword?.trim();
     if (kw) {
@@ -450,7 +450,7 @@ export function initViewEngine(
   // ---- 挂件 ----------------------------------------------------------------
 
   function widgetAgg(ds: AnyRec, windowDays: number | null, ctx: { today: Date }, cfg: AnyRec): AnyRec {
-    let list = getItems().filter((it) => (ds.item_type === "all" || it.type === ds.item_type) && evalFilter(it, ds.filter));
+    let list = getItems().filter((it) => !it.deleted_at && (ds.item_type === "all" || it.type === ds.item_type) && evalFilter(it, ds.filter));
     // window 过滤（时间列 = agg.time_field 或锚点）
     const winCol = cfg.agg?.group?.by === "time" ? cfg.agg.group.time_field
       : ds.item_type === "task" ? "col:due_at" : ds.item_type === "event" ? "col:start_at" : "col:occurred_at";
@@ -540,7 +540,7 @@ export function initViewEngine(
     // derived streak（全历史 day 计数）
     let derived: AnyRec = {};
     if (cfg.derived?.kind === "streak") {
-      const full = getItems().filter((it) => (ds.item_type === "all" || it.type === ds.item_type) && evalFilter(it, ds.filter));
+      const full = getItems().filter((it) => !it.deleted_at && (ds.item_type === "all" || it.type === ds.item_type) && evalFilter(it, ds.filter));
       const days = new Map<string, number>();
       for (const it of full) {
         const t = it.occurred_at ? Date.parse(it.occurred_at) : null;

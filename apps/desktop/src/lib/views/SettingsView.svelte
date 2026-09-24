@@ -117,6 +117,36 @@
     }
   }
 
+  /** 导入 ICS 文件：VEVENT → 日程、VTODO → 待办；报告以 toast + 提示行展示 */
+  let icsPath = $state("");
+  let importingIcs = $state(false);
+  let icsReport = $state("");
+  let icsError = $state("");
+
+  async function importIcs() {
+    if (!icsPath.trim()) return;
+    importingIcs = true;
+    icsError = "";
+    icsReport = "";
+    try {
+      const r = await api.importIcs(icsPath.trim());
+      icsReport = t("settings.icsImported", {
+        events: r.events,
+        tasks: r.tasks,
+        reminders: r.reminders,
+        skipped: r.skipped_duplicates,
+      });
+      for (const w of r.warnings.slice(0, 5)) {
+        icsReport += `\n· ${w}`;
+      }
+      if (r.events + r.tasks > 0) toast.show(icsReport.split("\n")[0]);
+    } catch (e) {
+      icsError = String(e);
+    } finally {
+      importingIcs = false;
+    }
+  }
+
   /** 导入节假日 JSON：校验通过才写数据目录并即时生效（日历/今天页角标随之刷新） */
   async function importHolidays() {
     holidayError = "";
@@ -196,6 +226,27 @@
     <p class="hint">
       {t("settings.dataHint")}
     </p>
+    <label class="col ics-import">
+      {t("settings.icsImport")}
+      <input
+        data-testid="ics-import-path"
+        bind:value={icsPath}
+        placeholder="/home/you/calendar.ics"
+        spellcheck="false"
+      />
+    </label>
+    {#if icsError}
+      <p class="import-error">{t("settings.icsImportFailed", { e: icsError })}</p>
+    {/if}
+    {#if icsReport}
+      <p class="hint ics-report" data-testid="ics-import-report">{icsReport}</p>
+    {/if}
+    <div class="actions">
+      <button class="primary" disabled={importingIcs || !icsPath.trim()} onclick={importIcs}>
+        {importingIcs ? t("settings.icsImporting") : t("settings.icsImportBtn")}
+      </button>
+    </div>
+    <p class="hint">{t("settings.icsImportHint")}</p>
   </section>
 {/if}
 
@@ -440,6 +491,16 @@
   .import-error {
     color: var(--danger);
     font-size: 12.5px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .ics-import input {
+    font-family: ui-monospace, monospace;
+    font-size: 12.5px;
+  }
+
+  .ics-report {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

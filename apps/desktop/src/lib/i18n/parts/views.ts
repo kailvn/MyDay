@@ -126,6 +126,20 @@ export const part_views = {
   'stats.restored': '已恢复默认统计页',
   'stats.container_created': '容器已创建',
   'stats.widget_added': '挂件已添加',
+
+  // ---- trash.*（回收站）----
+  'trash.title': '回收站',
+  'trash.hint': '删除的条目在这里保留 30 天，期间可恢复；附件与提醒一并保留。',
+  'trash.empty': '回收站是空的。',
+  'trash.deleted_at': '删除于',
+  'trash.purge_btn': '彻底删除',
+  'trash.purge_confirm': '彻底删除？不可恢复。',
+  'trash.empty_btn': '清空回收站',
+  'trash.empty_confirm': '彻底删除全部条目？不可恢复。',
+  'trash.restored': '已恢复 {name}',
+  'trash.purged': '已彻底删除 {name}',
+  'trash.emptied': '已清空回收站（{n} 条）',
+  'trash.failed': '操作失败：{e}',
 } as const;
 
 export const part_views_en: Record<string, string> = {
@@ -253,4 +267,16 @@ export const part_views_en: Record<string, string> = {
   'stats.restored': 'Default stats page restored',
   'stats.container_created': 'Container created',
   'stats.widget_added': 'Widget added',
+  'trash.title': 'Trash',
+  'trash.hint': 'Deleted items stay here for 30 days and can be restored; attachments and reminders are kept.',
+  'trash.empty': 'Trash is empty.',
+  'trash.deleted_at': 'Deleted',
+  'trash.purge_btn': 'Delete forever',
+  'trash.purge_confirm': 'Delete forever? This cannot be undone.',
+  'trash.empty_btn': 'Empty trash',
+  'trash.empty_confirm': 'Delete everything forever? This cannot be undone.',
+  'trash.restored': 'Restored {name}',
+  'trash.purged': 'Deleted forever: {name}',
+  'trash.emptied': 'Trash emptied ({n} items)',
+  'trash.failed': 'Operation failed: {e}',
 };

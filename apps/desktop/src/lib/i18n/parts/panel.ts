@@ -76,6 +76,11 @@ export const part_panel = {
   'panel.rec.dows': '一,二,三,四,五,六,日',
   'panel.rec.monthDay': '日（当月不足取月末）',
   'panel.rec.editAll': '编辑即改整个系列',
+  'panel.rec.end': '结束条件（until / count）',
+  'panel.rec.end_none': '永不结束',
+  'panel.rec.end_until': '至某日',
+  'panel.rec.end_count': 'N 次后',
+  'panel.rec.end_times': '次后结束',
 
   // ---- 自定义字段 ----
   'panel.label.fields': '字段',
@@ -219,6 +224,11 @@ export const part_panel_en: Record<string, string> = {
   'panel.rec.daily': 'Daily',
   'panel.rec.weekly': 'Weekly…',
   'panel.rec.monthly': 'Monthly…',
+  'panel.rec.end': 'End condition (until / count)',
+  'panel.rec.end_none': 'Never ends',
+  'panel.rec.end_until': 'Until date',
+  'panel.rec.end_count': 'After N times',
+  'panel.rec.end_times': 'occurrences',
   'panel.rec.dows': 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
   'panel.rec.monthDay': 'day (clamped to month end)',
   'panel.rec.editAll': 'edits apply to the whole series',

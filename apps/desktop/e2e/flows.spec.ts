@@ -419,3 +419,104 @@ test("T9 快速添加快捷日期档：侧栏 今天/明天/后天 直达预填�
   await page.getByRole("button", { name: "前天" }).click();
   await expect(page.getByTestId("tp-occurred")).toContainText(dayStr(-2));
 });
+
+test("T8.8 时间块：预计分钟待办在周网格按时长占位，池行带预计 chip", async ({ page }) => {
+  await gotoWeek(page);
+
+  // 种子 tsk_milk：今天 18:00 截止 + 预计 45 分钟 → 网格渲染虚线时间块
+  //（高度 = 45min × HOUR_H/60，±2px 几何容差）
+  const block = page.locator(".event.timeblock", { hasText: "买牛奶" });
+  await block.scrollIntoViewIfNeeded();
+  await expect(block).toBeVisible();
+  await expect(block).toContainText("18:00");
+  const box = (await block.boundingBox())!;
+  expect(Math.abs(box.height - (45 / 60) * HOUR_H)).toBeLessThanOrEqual(2);
+
+  // 池行带「预计分钟」chip（拖入时段格时 ghost 按此时长占位）
+  const pool = page.locator(".pool-panel");
+  await expect(pool).toContainText("未排期待办");
+  await expect(pool.locator("li", { hasText: "整理书架" })).toContainText("60分钟");
+});
+
+test("T10 回收站：删除入站 → 恢复 → 彻底删除，与活跃列表口径一致", async ({ page }) => {
+  // 今天页两步确认删除「买牛奶」；提示改为「移入回收站」，5 秒宽限期后写库
+  const todayRow = () => page.locator("li", { hasText: "买牛奶" });
+  await expect(todayRow()).toBeVisible();
+  const del = todayRow().locator('button[title="删除"]');
+  await del.click();
+  await del.click(); // 「确认？」
+  await page.waitForTimeout(5_600);
+  await expect(todayRow()).toHaveCount(0);
+
+  // 回收站页：行可见（类型 + 删除时刻），恢复 → 回到今天页
+  await navButton(page, /回收站/).click();
+  const trashRow = page.getByTestId("trash-row").filter({ hasText: "买牛奶" });
+  await expect(trashRow).toBeVisible();
+  await trashRow.getByTestId("trash-restore").click();
+  await expect(page.getByRole("status")).toContainText(/已恢复/);
+  await expect(trashRow).toHaveCount(0);
+  await navButton(page, /今天/).click();
+  await expect(todayRow()).toBeVisible();
+
+  // 再删 → 彻底删除（两步确认）→ 活跃与回收站都不再有
+  await del.click();
+  await del.click();
+  await page.waitForTimeout(5_600);
+  await expect(todayRow()).toHaveCount(0);
+  await navButton(page, /回收站/).click();
+  const again = page.getByTestId("trash-row").filter({ hasText: "买牛奶" });
+  await expect(again).toBeVisible();
+  await again.getByTestId("trash-purge").click();
+  await again.getByRole("button", { name: "确认" }).click();
+  await expect(page.getByTestId("trash-empty")).toBeVisible();
+  await navButton(page, /今天/).click();
+  await expect(todayRow()).toHaveCount(0);
+});
+
+test("T11 重复结束条件：面板设「N 次后」保存，详情徽标带「共 N 次」", async ({ page }) => {
+  await page.getByRole("button", { name: /＋ 快速添加/ }).click();
+  const panel = page.getByRole("dialog", { name: "新建条目" });
+  // 激活截止（识别待办）→ 重复每周…
+  await panel.getByRole("button", { name: "＋ 截止" }).waitFor();
+  await panel.getByPlaceholder("记点什么…").fill("重复三次的事");
+  await page.getByTestId("entry-due-今天").click();
+  await panel.getByRole("button", { name: "每周…" }).click();
+  // 结束条件 = N 次后，3 次
+  await page.getByTestId("rec-end").selectOption("count");
+  const countInput = page.getByTestId("rec-end-count");
+  await countInput.fill("3");
+  await countInput.blur();
+  await panel.getByRole("button", { name: "保存" }).click();
+
+  // 详情徽标：重复规则带结束条件后缀
+  await page.locator("main li", { hasText: "重复三次的事" }).first().click();
+  await expect(page.locator(".modal")).toContainText("共 3 次");
+});
+
+test("T12 单次例外：虚拟实例详情「拆为单次」，系列其余周不变", async ({ page }) => {
+  await gotoWeek(page);
+
+  // 锚点周（本周四 14:00）：实例即系列锚点，不出现「此期操作」
+  await eventBlock(page, "团队周会").click();
+  await expect(page.locator(".modal")).toContainText(/重复/);
+  await expect(page.getByTestId("occ-actions")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // 下一周的实例 = 虚拟实例：拆为单次条目（两步确认）。→ 键盘翻周（› 被表头遮挡）
+  await page.keyboard.press("ArrowRight");
+  const nextBlock = eventBlock(page, "团队周会");
+  await nextBlock.scrollIntoViewIfNeeded();
+  await nextBlock.click();
+  await expect(page.getByTestId("occ-actions")).toBeVisible();
+  await page.getByTestId("occ-detach").click();
+  await page.getByTestId("occ-detach").click();
+  await expect(page.getByRole("status")).toContainText(/已拆为单次条目/);
+  // 详情已切换到新条目：无重复行、无此期操作
+  await expect(page.locator(".modal").getByText(/🔁 重复/)).toHaveCount(0);
+  await expect(page.getByTestId("occ-actions")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // 该周周四：系列实例被例外剔除，替代为无 🔁 的单次块
+  await expect(page.locator(".event", { hasText: "团队周会" })).toHaveCount(1);
+  await expect(page.locator(".event", { hasText: "团队周会" }).locator(".ev-flag", { hasText: "🔁" })).toHaveCount(0);
+});

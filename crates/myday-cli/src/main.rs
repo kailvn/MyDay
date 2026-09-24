@@ -90,6 +90,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: ExportCmd,
     },
+    /// 导入（本地文件一次性导入）
+    Import {
+        #[command(subcommand)]
+        cmd: ImportCmd,
+    },
     /// 一键备份 zip（db + attachments，保留最近 7 份；SPRINT2-SPEC §6）
     Backup,
 }
@@ -101,6 +106,19 @@ enum ExportCmd {
         /// 输出路径；缺省写到数据目录 exports/
         #[arg(long)]
         output: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ImportCmd {
+    /// 导入 ICS 日历文件：VEVENT→日程、VTODO→待办；重复导入自动跳过
+    /// （myday 回链 / UID 幂等键）；无法映射的部分（结束条件、YEARLY 等）降级为告警
+    Ics {
+        /// .ics 文件路径
+        path: String,
+        /// 只解析不写库，输出导入报告预览
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -177,6 +195,9 @@ enum ItemCmd {
         status: Option<String>,
         #[arg(long = "tag")]
         tags: Vec<String>,
+        /// 过滤条件列表；--trash 改看回收站（按删除时刻倒序）
+        #[arg(long)]
+        trash: bool,
         /// 单日，如 2026-09-16
         #[arg(long)]
         date: Option<String>,
@@ -230,8 +251,28 @@ enum ItemCmd {
         #[arg(long, conflicts_with = "remind")]
         no_remind: bool,
     },
-    /// 删除（级联清理提醒 / 标签 / 附件）
-    Delete { id: String },
+    /// 删除：先进回收站（软删，可恢复）；--hard 彻底删除（级联清理，不可逆）
+    Delete {
+        id: String,
+        #[arg(long)]
+        hard: bool,
+    },
+    /// 从回收站恢复
+    Restore { id: String },
+    /// 重复条目单次例外：把某次发生拆为独立条目（--at = 该期锚点时刻）
+    Detach {
+        id: String,
+        /// 该期锚点：event=开始时刻、task=截止时刻（RFC3339 / 本地时间）
+        #[arg(long)]
+        at: String,
+    },
+    /// 重复条目单次例外：仅删除某一次发生（系列其余期不变）
+    Skip {
+        id: String,
+        /// 该期锚点：event=开始时刻、task=截止时刻
+        #[arg(long)]
+        at: String,
+    },
     /// 待办标记完成（自动写一条完成记录，可在设置关闭）
     Complete { id: String },
     /// 待办取消完成（回到 todo，completed_at 置空）
@@ -363,6 +404,7 @@ fn dispatch(cmd: &Commands, mode: JsonMode) -> Result<()> {
         Commands::Stats { days } => stats_cmd(*days, mode),
         Commands::Reminders { limit } => reminders_cmd(*limit, mode),
         Commands::Export { cmd } => export_cmd(cmd, mode),
+        Commands::Import { cmd } => import_cmd(cmd, mode),
         Commands::Backup => backup_cmd(mode),
     }
 }
@@ -544,11 +586,16 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             to,
             status,
             tags,
+            trash,
             date,
             asc,
             limit,
         } => {
             let store = open_store()?;
+            if *trash {
+                let items = store.list_trash()?;
+                return print_list(mode, items);
+            }
             if let Some(v) = view.as_deref() {
                 let tv = parse_view(v)?;
                 let items = store.tasks_view(tv, None)?;
@@ -656,9 +703,36 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 Ok(serde_json::to_value(&item)?)
             })
         }
-        ItemCmd::Delete { id } => {
-            run_mutation(mode, IpcRequest::DeleteItem { id: id.clone() }, |store| {
-                let item = store.delete_item(id)?;
+        ItemCmd::Delete { id, hard } => {
+            if *hard {
+                run_mutation(mode, IpcRequest::DeleteItem { id: id.clone(), hard: true }, |store| {
+                    let item = store.purge_item(id)?;
+                    Ok(serde_json::to_value(&item)?)
+                })
+            } else {
+                run_mutation(mode, IpcRequest::DeleteItem { id: id.clone(), hard: false }, |store| {
+                    let item = store.delete_item(id)?;
+                    Ok(serde_json::to_value(&item)?)
+                })
+            }
+        }
+        ItemCmd::Restore { id } => {
+            run_mutation(mode, IpcRequest::RestoreItem { id: id.clone() }, |store| {
+                let item = store.restore_item(id)?;
+                Ok(serde_json::to_value(&item)?)
+            })
+        }
+        ItemCmd::Detach { id, at } => {
+            let at = parse_dt_arg(at)?;
+            run_mutation(mode, IpcRequest::DetachOccurrence { id: id.clone(), at }, |store| {
+                let item = store.detach_occurrence(id, at)?;
+                Ok(serde_json::to_value(&item)?)
+            })
+        }
+        ItemCmd::Skip { id, at } => {
+            let at = parse_dt_arg(at)?;
+            run_mutation(mode, IpcRequest::SkipOccurrence { id: id.clone(), at }, |store| {
+                let item = store.skip_occurrence(id, at)?;
                 Ok(serde_json::to_value(&item)?)
             })
         }
@@ -1036,6 +1110,40 @@ fn backup_cmd(mode: JsonMode) -> Result<()> {
         &serde_json::json!({ "path": path.to_string_lossy() }),
         |_| println!("已备份 {}", path.display()),
     )
+}
+
+/// ICS 导入（本地文件一次性导入）。
+fn import_cmd(cmd: &ImportCmd, mode: JsonMode) -> Result<()> {
+    match cmd {
+        ImportCmd::Ics { path, dry_run } => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|e| MyDayError::Internal(format!("读取 ICS 文件失败: {e}")))?;
+            let report = if *dry_run {
+                // 只解析预览：导入落在一次性临时库，不触碰真实数据
+                let dir = std::env::temp_dir().join(format!(
+                    "myday-import-dry-{}",
+                    chrono::Local::now().timestamp_millis()
+                ));
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| MyDayError::Internal(format!("创建临时目录失败: {e}")))?;
+                let store = Store::open(&dir.join("myday.db"), &dir)?;
+                let r = myday_core::ics::import_ics(&store, &text);
+                let _ = std::fs::remove_dir_all(&dir);
+                r?
+            } else {
+                myday_core::ics::import_ics(&open_store()?, &text)?
+            };
+            print_json_envelope(mode, &serde_json::to_value(&report)?, |_| {
+                println!(
+                    "已导入 日程 {} · 待办 {}（提醒 {} 条）；跳过重复 {}",
+                    report.events, report.tasks, report.reminders, report.skipped_duplicates
+                );
+                for w in &report.warnings {
+                    println!("· {w}");
+                }
+            })
+        }
+    }
 }
 
 // ----------------------------------------------------------------------

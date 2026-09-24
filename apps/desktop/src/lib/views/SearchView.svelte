@@ -5,6 +5,7 @@
    * 类型 / 标签 / 日期筛选经工具条（共享筛选编辑器）表达。
    */
   import { anchorTime, api, displayTitle, fmtDateTime, typeLabel, type FieldDef, type Item, type ViewDef, type ViewResult, fileLinksOf } from "../api";
+  import { highlightText } from "../highlight";
   import { deletions } from "../deletion.svelte";
   import DeleteButton from "../DeleteButton.svelte";
   import EditButton from "../EditButton.svelte";
@@ -64,6 +65,13 @@
     }
   }
 
+  // 输入即出：轻防抖（120ms）避免逐键 IPC 风暴；回车仍立即搜索
+  let debounceT: ReturnType<typeof setTimeout> | undefined;
+  function onInput() {
+    clearTimeout(debounceT);
+    debounceT = setTimeout(() => void search(), 120);
+  }
+
   function switchView(id: string) {
     activeId = id;
     if (searched) void search();
@@ -84,12 +92,12 @@
 
 <h1>{t("common.search")}</h1>
 
-<form class="bar" onsubmit={(e) => { e.preventDefault(); search(); }}>
+<form class="bar" onsubmit={(e) => { e.preventDefault(); clearTimeout(debounceT); search(); }}>
   <input
     id="global-search"
     placeholder={t("search.placeholder")}
     bind:value={q}
-    oninput={() => search()}
+    oninput={onInput}
   />
   <button class="primary" type="submit">{t("common.search")}</button>
 </form>
@@ -117,11 +125,17 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <li onclick={rowDetail(it)}>
         <span class="kind">{typeLabel(it.type)}</span>
-        <span class="title">{displayTitle(it)}</span>
+        <span class="title" data-testid="search-hit-title">
+          {#each highlightText(displayTitle(it), q) as seg, i (i)}{#if seg.hit}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+        </span>
         {#if result?.matched?.[it.id]?.some((m) => m !== "title")}
           <span class="match">{result.matched[it.id].join("·")}</span>
         {/if}
-        {#if it.note}<span class="note">{it.note.slice(0, 40)}</span>{/if}
+        {#if it.note}
+          <span class="note">
+            {#each highlightText(it.note.slice(0, 60), q) as seg, i (i)}{#if seg.hit}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+          </span>
+        {/if}
         <span class="time">{fmtDateTime(anchorTime(it) ?? it.created_at)}</span>
         {#each it.tags as tag (tag)}<span class="tag">#{tag}</span>{/each}
         {#if it.attachments.length}<span class="att">🖼 {it.attachments.length}</span>{/if}
@@ -180,6 +194,13 @@
 
   .title {
     font-weight: 600;
+  }
+
+  mark {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
   }
 
   .note {

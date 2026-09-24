@@ -50,7 +50,18 @@ pub enum IpcRequest {
     /// 由 GUI 代为执行创建（GUI 运行时的写路径）
     AddItem { new: NewItem },
     UpdateItem { id: String, patch: ItemPatch },
-    DeleteItem { id: String },
+    /// 删除：hard = false 进回收站（软删），true = 彻底删除（级联清理，不可逆）
+    DeleteItem {
+        id: String,
+        #[serde(default)]
+        hard: bool,
+    },
+    /// 从回收站恢复
+    RestoreItem { id: String },
+    /// 重复条目单次例外：把某次发生拆为独立条目（at = 该期锚点，RFC3339）
+    DetachOccurrence { id: String, at: chrono::DateTime<chrono::Utc> },
+    /// 重复条目单次例外：仅删除某一次发生
+    SkipOccurrence { id: String, at: chrono::DateTime<chrono::Utc> },
     CompleteTask { id: String },
     Snooze { id: String, until: chrono::DateTime<chrono::Utc> },
     /// 类型间转换（SPRINT2-SPEC §7）：to = event / log

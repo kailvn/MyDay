@@ -14,6 +14,15 @@ export type ItemStatus = "todo" | "done";
 /** 文件链接保留键：extra 中唯一不要求是字段 id 的键（值 = 路径字符串数组） */
 export const FILE_LINKS_KEY = "文件";
 
+/** 内置「预计分钟」字段 id（时间块排期）：number，scope = task */
+export const EST_FIELD_ID = "fd_est_min";
+
+/** 待办预估耗时（分钟）：未排期池拖入周/日时段格按它占位时间块 */
+export function estMinutesOf(item: Pick<Item, "extra">): number | null {
+  const v = item.extra?.[EST_FIELD_ID];
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+}
+
 export interface Attachment {
   id: number;
   item_id: string;
@@ -77,6 +86,8 @@ export interface Item {
   completed_at: string | null;
   /** 重复规则（SPRINT-SPEC §2）：@daily / @weekly:n / @monthly:d；null = 不重复 */
   recurrence: string | null;
+  /** 单次例外锚点（RFC3339）：重复展开时跳过这些期（拆为单次 / 仅删除这一期） */
+  recurrence_exdates: string[];
   template_id: string | null;
   reminders: Reminder[];
   tags: string[];
@@ -84,6 +95,8 @@ export interface Item {
   idempotency_key: string | null;
   created_at: string;
   updated_at: string;
+  /** 回收站软删时刻（null = 活跃条目）；删除先进回收站，彻底删除才级联清理 */
+  deleted_at: string | null;
   /** 字段值（键 = 字段 id；保留键 FILE_LINKS_KEY 除外） */
   extra: Record<string, unknown>;
 }
@@ -561,6 +574,25 @@ export const api = {
   /** 类型转换（SPRINT2-SPEC §7）：待办转日程（替换）/ 日程生成记录（保留原日程） */
   convertTaskToEvent: (id: string) => invoke<Item>("convert_task_to_event", { id }),
   eventToLog: (id: string) => invoke<Item>("event_to_log", { id }),
+  // ---- 回收站与 ICS 导入 ------------------------------------------------
+  /** 回收站列表（按删除时刻倒序） */
+  listTrash: () => invoke<Item[]>("list_trash"),
+  /** 从回收站恢复 */
+  restoreItem: (id: string) => invoke<Item>("restore_item", { id }),
+  /** 重复条目单次例外：拆某次发生为独立条目（at = 该期锚点，RFC3339） */
+  detachOccurrence: (id: string, at: string) => invoke<Item>("detach_occurrence", { id, at }),
+  /** 重复条目单次例外：仅删除某一次发生 */
+  skipOccurrence: (id: string, at: string) => invoke<Item>("skip_occurrence", { id, at }),
+  /** 彻底删除（级联清理提醒/标签/附件文件，不可逆） */
+  purgeItem: (id: string) => invoke<Item>("purge_item", { id }),
+  /** 清空回收站，返回清理条数 */
+  emptyTrash: () => invoke<number>("empty_trash"),
+  /** 导入 ICS 文件（本地一次性导入），返回导入报告 */
+  importIcs: (path: string) =>
+    invoke<{ events: number; tasks: number; reminders: number; skipped_duplicates: number; warnings: string[] }>(
+      "import_ics",
+      { path },
+    ),
   /** 导出 ICS 到数据目录 exports/，返回路径 */
   exportIcs: () => invoke<string>("export_ics"),
   /** 一键备份 zip（保留最近 7 份），返回路径 */

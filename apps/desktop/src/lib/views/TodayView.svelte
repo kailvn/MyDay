@@ -27,6 +27,18 @@
   let tasks = $state<Item[]>([]);
   let activity = $state<Item[]>([]);
   let error = $state("");
+  /** 标签过滤（"" = 全部）：今日安排 / 今日活动统一生效 */
+  let tagFilter = $state("");
+
+  /** 标签下拉选项：今日加载条目中出现过的标签 */
+  let allTags = $derived.by(() => {
+    const set = new Set<string>();
+    for (const it of [...events, ...tasks, ...activity]) {
+      for (const tg of it.tags) set.add(tg);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, i18n.locale === "en" ? "en" : "zh"));
+  });
+  const matchTag = (it: Item) => !tagFilter || it.tags.includes(tagFilter);
 
   /** 进行中 / 下一个标记的基准时刻（30 秒自刷） */
   let now = $state(new Date());
@@ -64,15 +76,15 @@
   );
 
   let pending = $derived(deletions.pendingIds);
-  let visibleEvents = $derived(events.filter((i) => !pending.includes(i.id)));
-  let visibleTasks = $derived(tasks.filter((i) => !pending.includes(i.id)));
+  let visibleEvents = $derived(events.filter((i) => !pending.includes(i.id) && matchTag(i)));
+  let visibleTasks = $derived(tasks.filter((i) => !pending.includes(i.id) && matchTag(i)));
   // 已完成沉底（Notion 式）：进行中的事保持在视野顶部
   let sortedEvents = $derived([...visibleEvents].sort(bySchedule));
   let sortedTasks = $derived([...visibleTasks].sort(bySchedule));
   // 今日活动与今日安排去重：同一条目不在两个列表重复出现
   let shownIds = $derived(new Set([...visibleEvents, ...visibleTasks].map((i) => i.id)));
   let visibleActivity = $derived(
-    activity.filter((i) => !pending.includes(i.id) && !shownIds.has(i.id)),
+    activity.filter((i) => !pending.includes(i.id) && !shownIds.has(i.id) && matchTag(i)),
   );
 
   onMount(() => {
@@ -122,7 +134,15 @@
   });
 </script>
 
-<h1>{t("common.today")} · {dayLabel}{#if holidayLabelToday()}<span class="holiday">{holidayLabelToday()}</span>{/if}</h1>
+<h1>
+  {t("common.today")} · {dayLabel}{#if holidayLabelToday()}<span class="holiday">{holidayLabelToday()}</span>{/if}
+  <label class="tag-filter" title={t("calendar.tag_filter")}>
+    <select data-testid="today-tag-filter" bind:value={tagFilter}>
+      <option value="">{t("calendar.tag_all")}</option>
+      {#each allTags as tg (tg)}<option value={tg}>#{tg}</option>{/each}
+    </select>
+  </label>
+</h1>
 {#if error}<p class="error">{error}</p>{/if}
 
 <section>
@@ -217,6 +237,21 @@
   h1 {
     margin: 0 0 16px;
     font-size: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .tag-filter {
+    margin-left: auto;
+    align-self: center;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .tag-filter select {
+    max-width: 140px;
+    font-size: 13px;
   }
 
   .holiday {

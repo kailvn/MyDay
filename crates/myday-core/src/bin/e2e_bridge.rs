@@ -82,6 +82,28 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
             Ok(serde_json::to_value(store.update_item(&arg_str(args, &["id"]).ok_or("missing id")?, patch).map_err(e10s)?).unwrap())
         }
         "delete_item" => Ok(serde_json::to_value(store.delete_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "restore_item" => Ok(serde_json::to_value(store.restore_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "purge_item" => Ok(serde_json::to_value(store.purge_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "list_trash" => Ok(serde_json::to_value(store.list_trash().map_err(e10s)?).unwrap()),
+        "empty_trash" => Ok(serde_json::to_value(store.empty_trash().map_err(e10s)?).unwrap()),
+        "detach_occurrence" => Ok(serde_json::to_value(
+            store
+                .detach_occurrence(
+                    &arg_str(args, &["id"]).ok_or("missing id")?,
+                    arg_time(args, "at")?,
+                )
+                .map_err(e10s)?,
+        )
+        .unwrap()),
+        "skip_occurrence" => Ok(serde_json::to_value(
+            store
+                .skip_occurrence(
+                    &arg_str(args, &["id"]).ok_or("missing id")?,
+                    arg_time(args, "at")?,
+                )
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "complete_task" => Ok(serde_json::to_value(store.complete_task(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
         "snooze" => Ok(serde_json::to_value(
             store
@@ -394,6 +416,7 @@ fn route(store: &Arc<Store>, body: &str) -> String {
     let is_mutation = matches!(
         cmd.as_str(),
         "add_item" | "update_item" | "delete_item" | "complete_task" | "snooze"
+            | "restore_item" | "purge_item" | "empty_trash" | "detach_occurrence" | "skip_occurrence"
             | "add_template" | "update_template" | "delete_template" | "move_template"
             | "set_template_pinned" | "add_field_def" | "update_field_def" | "delete_field_def"
             | "purge_deleted_field_defs"

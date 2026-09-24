@@ -23,9 +23,10 @@
   import TemplatesView from "./views/TemplatesView.svelte";
   import SettingsView from "./views/SettingsView.svelte";
   import HelpView from "./views/HelpView.svelte";
+  import TrashView from "./views/TrashView.svelte";
   import { t, type MessageKey } from "./i18n";
 
-  type ViewId = "today" | "calendar" | "tasks" | "logs" | "stats" | "search" | "templates" | "help" | "settings";
+  type ViewId = "today" | "calendar" | "tasks" | "logs" | "stats" | "search" | "templates" | "trash" | "help" | "settings";
 
   let view = $state("today");
   let searchQuery = $state("");
@@ -52,6 +53,7 @@
     { id: "stats", labelKey: "shell.nav.stats", icon: "📈" },
     { id: "search", labelKey: "shell.nav.search", icon: "🔍" },
     { id: "templates", labelKey: "shell.nav.templates", icon: "🗂" },
+    { id: "trash", labelKey: "shell.nav.trash", icon: "🗑" },
     { id: "help", labelKey: "shell.nav.help", icon: "？" },
     { id: "settings", labelKey: "shell.nav.settings", icon: "⚙" },
   ];
@@ -181,6 +183,8 @@
       <SearchView {dataVersion} {clockVersion} query={searchQuery} />
     {:else if view === "templates"}
       <TemplatesView {dataVersion} />
+    {:else if view === "trash"}
+      <TrashView {dataVersion} />
     {:else if view === "help"}
       <HelpView />
     {:else if view === "settings"}

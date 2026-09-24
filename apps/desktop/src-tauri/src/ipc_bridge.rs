@@ -70,7 +70,38 @@ impl IpcHandler for IpcBridge {
                 Err(e) => IpcResponse::from_error(&e),
             },
 
-            IpcRequest::DeleteItem { id } => match self.store.delete_item(&id) {
+            IpcRequest::DeleteItem { id, hard } => {
+                let result = if hard {
+                    self.store.purge_item(&id)
+                } else {
+                    self.store.delete_item(&id)
+                };
+                match result {
+                    Ok(item) => {
+                        broadcast_changed(&self.app);
+                        IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))
+                    }
+                    Err(e) => IpcResponse::from_error(&e),
+                }
+            }
+
+            IpcRequest::RestoreItem { id } => match self.store.restore_item(&id) {
+                Ok(item) => {
+                    broadcast_changed(&self.app);
+                    IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))
+                }
+                Err(e) => IpcResponse::from_error(&e),
+            },
+
+            IpcRequest::DetachOccurrence { id, at } => match self.store.detach_occurrence(&id, at) {
+                Ok(item) => {
+                    broadcast_changed(&self.app);
+                    IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))
+                }
+                Err(e) => IpcResponse::from_error(&e),
+            },
+
+            IpcRequest::SkipOccurrence { id, at } => match self.store.skip_occurrence(&id, at) {
                 Ok(item) => {
                     broadcast_changed(&self.app);
                     IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))

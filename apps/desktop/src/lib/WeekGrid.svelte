@@ -15,7 +15,15 @@
    * - 列头显示节假日 休/班 角标（holidays.ts，数据年外自动隐藏）
    */
   import { onMount } from "svelte";
-  import { api, displayTitle, fmtTime, toDateInput, typeLabel, type Item } from "./api";
+  import {
+    api,
+    displayTitle,
+    estMinutesOf,
+    fmtTime,
+    toDateInput,
+    typeLabel,
+    type Item,
+  } from "./api";
   import { expandItems } from "./recurrence";
   import { deletions } from "./deletion.svelte";
   import { openCreate, openDetail, openEdit } from "./panel.svelte";
@@ -33,7 +41,12 @@
   } from "./reschedule";
   import { t, i18n } from "./i18n";
 
-  let { dataVersion = 0, days = 7, pool = [] }: { dataVersion?: number; days?: number; pool?: Item[] } = $props();
+  let {
+    dataVersion = 0,
+    days = 7,
+    pool = [],
+    tagFilter = "",
+  }: { dataVersion?: number; days?: number; pool?: Item[]; tagFilter?: string } = $props();
 
   const HOUR_H = 44;
   /** 星期 / 月份名随 locale（规则：走 Intl，不建 key）；星期一为一周开始（2023-01-02 恰是周一） */
@@ -70,7 +83,11 @@
   let todayKey = $derived(toDateInput(new Date()));
 
   let displayItems = $derived(expandItems(items, windowStart, windowEnd));
-  let visible = $derived(displayItems.filter((i) => !deletions.pendingIds.includes(i.id)));
+  /** 标签过滤（日历页下拉；"" = 全部）：网格块、到期行与池行统一生效 */
+  let visible = $derived(
+    displayItems.filter((i) => !deletions.pendingIds.includes(i.id) && (!tagFilter || i.tags.includes(tagFilter))),
+  );
+  let poolShown = $derived(pool.filter((it) => !tagFilter || it.tags.includes(tagFilter)));
 
   function dayKey(d: Date): string {
     return toDateInput(d);
@@ -91,8 +108,13 @@
   function allDayOn(d: Date): Item[] {
     return eventsOn(d).filter((it) => it.all_day);
   }
+  /** 网格块 = 非全天日程 + 时间块待办（预计分钟），按块起点排序 */
   function gridOn(d: Date): Item[] {
-    return eventsOn(d).filter((it) => !it.all_day);
+    const isBlock = timedBlockOn(d);
+    return [
+      ...eventsOn(d).filter((it) => !it.all_day),
+      ...visible.filter(isBlock),
+    ].sort((a, b) => Date.parse(blockStart(a) ?? "") - Date.parse(blockStart(b) ?? ""));
   }
   function duesOn(d: Date): Item[] {
     const key = dayKey(d);
@@ -101,11 +123,38 @@
     );
   }
 
-  /** 可见段几何：返回相对当天 00:00 的起止分钟 */
+  /**
+   * 时间块（预估时长）：带「预计分钟」且截止带钟点的待办，从截止时刻起
+   * 占据 est 分钟的时间块（TickTick 式 time blocking）；全天截止不落格。
+   */
+  function timedBlockOn(d: Date): (it: Item) => boolean {
+    const key = dayKey(d);
+    return (it) =>
+      it.type === "task" &&
+      !it.all_day &&
+      !!it.due_at &&
+      dayKey(new Date(it.due_at)) === key &&
+      estMinutesOf(it) !== null;
+  }
+
+  /** 块的时间标签：日程用 start_at，时间块待办用 due_at（同为块起点） */
+  function blockStart(it: Item): string | null {
+    return it.start_at ?? it.due_at;
+  }
+
+  /** 可见段几何：返回相对当天 00:00 的起止分钟。
+   *  日程按 start/end；时间块待办按 [due, due + est]。 */
   function segment(it: Item, d: Date): { top: number; height: number } {
     const from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const s = Math.max(Date.parse(it.start_at!), from);
-    const e = Math.min(it.end_at ? Date.parse(it.end_at) : s, from + 86_400_000);
+    let startIso = it.start_at;
+    let endIso = it.end_at;
+    if (it.type === "task" && !startIso) {
+      startIso = it.due_at;
+      const est = estMinutesOf(it) ?? 0;
+      endIso = startIso ? new Date(Date.parse(startIso) + est * 60_000).toISOString() : null;
+    }
+    const s = Math.max(Date.parse(startIso!), from);
+    const e = Math.min(endIso ? Date.parse(endIso) : s, from + 86_400_000);
     const top = ((s - from) / 3_600_000) * HOUR_H;
     const height = Math.max(((e - s) / 3_600_000) * HOUR_H, 20);
     return { top, height };
@@ -512,7 +561,7 @@
 
 <svelte:window onkeydown={onKeydown} onpointermove={onDragMove} onpointerup={onDragEnd} />
 
-<div class="week" class:with-pool={pool.length > 0}>
+<div class="week" class:with-pool={poolShown.length > 0}>
   <div class="week-main">
   <div class="bar">
     <h2>{rangeLabel}</h2>
@@ -577,8 +626,9 @@
               class="event"
               class:grab={draggable(ev)}
               class:compact={seg.height < 38}
+              class:timeblock={ev.type === "task"}
               style={`top:${seg.top}px;height:${seg.height}px;left:${(geo.col / geo.cols) * 100}%;width:${(1 / geo.cols) * 100}%`}
-              title={`${displayTitle(ev)}\n${fmtTime(ev.start_at)}–${fmtTime(ev.end_at)}${ev.recurrence ? "\n🔁 " + ev.recurrence : ""}${draggable(ev) ? `\n${t("week.event_drag_tip")}` : ""}`}
+              title={`${displayTitle(ev)}\n${fmtTime(blockStart(ev))}${ev.type === "task" && estMinutesOf(ev) ? `–${fmtTime(new Date(Date.parse(ev.due_at!) + estMinutesOf(ev)! * 60_000).toISOString())}` : ev.end_at ? `–${fmtTime(ev.end_at)}` : ""}${ev.recurrence ? "\n🔁 " + ev.recurrence : ""}${draggable(ev) ? `\n${t("week.event_drag_tip")}` : ""}`}
               onclick={(e) => {
                 if (Date.now() < suppressClickUntil) return;
                 e.stopPropagation();
@@ -588,7 +638,7 @@
             >
               <!-- 重叠分列时宽度不够：短块只留标题（时间在 tooltip / 详情里） -->
               {#if !(geo.cols >= 2 && seg.height < 38)}
-                <span class="ev-time">{fmtTime(ev.start_at)}</span>
+                <span class="ev-time">{fmtTime(blockStart(ev))}</span>
               {/if}
               <span class="ev-title">{displayTitle(ev)}</span>
               {#if ev.recurrence}<span class="ev-flag">🔁</span>{/if}
@@ -606,11 +656,12 @@
       {#if drag && drag.moved && drag.kind === "pool"}
         {@const col = colCache[drag.dayIdx]}
         {#if drag.min !== null}
+          {@const est = estMinutesOf(drag.base) ?? 0}
           <div
             class="ghost"
-            style={`top:${(drag.min / 60) * HOUR_H}px;height:20px;left:${col?.left ?? 0}px;width:${col?.width ?? 0}px`}
+            style={`top:${(drag.min / 60) * HOUR_H}px;height:${Math.max((est / 60) * HOUR_H, 20)}px;left:${col?.left ?? 0}px;width:${col?.width ?? 0}px`}
           >
-            <span class="ev-time">{fmtMin(drag.min)}</span>
+            <span class="ev-time">{fmtMin(drag.min)}{est ? `–${fmtMin(Math.min(drag.min + est, 24 * 60))}` : ""}</span>
             <span class="ev-title">{drag.label}</span>
           </div>
         {/if}
@@ -635,11 +686,11 @@
   </div>
 
   <!-- 未排期池：无日期待办的排期入口（拖到任意时段格 = 截止那天那个钟点，可撤销） -->
-  {#if pool.length}
+  {#if poolShown.length}
     <aside class="pool-panel" title={t("calendar.pool_week_tip")}>
-      <h3>{t("calendar.pool_title")} · {pool.length}</h3>
+      <h3>{t("calendar.pool_title")} · {poolShown.length}</h3>
       <ul>
-        {#each pool as it (it.id)}
+        {#each poolShown as it (it.id)}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li
@@ -658,6 +709,9 @@
               onchange={() => togglePoolDone(it)}
             />
             <span class="title">{displayTitle(it)}</span>
+            {#if estMinutesOf(it)}
+              <span class="est" title={t("calendar.est_tip", { n: estMinutesOf(it)! })}>{estMinutesOf(it)}{t("calendar.est_unit")}</span>
+            {/if}
             {#each it.tags as tg (tg)}<span class="tag">#{tg}</span>{/each}
             <EditButton onedit={() => openEdit(it)} />
             <DeleteButton onconfirm={() => deletions.request(it)} />
@@ -781,6 +835,19 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 预计分钟 chip（时间块排期） */
+  .pool-panel .est {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    line-height: 1;
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 
@@ -927,6 +994,12 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
+  }
+
+  /* 时间块待办：虚线描边区别于日程实心块（同占格、不可拖，点击进详情） */
+  .event.timeblock {
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+    border-style: dashed;
   }
 
   .event.grab {

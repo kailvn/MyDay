@@ -71,6 +71,8 @@ function fakeItem(patch: Partial<Item>): Item {
     status: null,
     completed_at: null,
     recurrence: null,
+    recurrence_exdates: [],
+    deleted_at: null,
     template_id: null,
     reminders: [],
     tags: [],
@@ -134,5 +136,43 @@ const dailies = expanded.filter((i) => i.id === "evt_x");
 assert.equal(dailies.length, 3, `应展开 3 天，实际 ${dailies.length}`);
 assert.equal(dailies[0].start_at, new Date(date(2026, 9, 16, 9)).toISOString() || dailies[0].start_at);
 assert.ok(dailies.every((i) => i.recurrence === "@daily"));
+
+// ---- 结束条件：until / count（与 Rust parse_end_conditions 同源） ----------
+assert.deepEqual(parseRecurrence("@daily;until=2026-12-31"), { kind: "daily", until: "2026-12-31" });
+assert.deepEqual(parseRecurrence("@weekly:3;count=12"), { kind: "weekly", n: 3, count: 12 });
+assert.equal(parseRecurrence("@daily;until=2026-01-01;count=2"), null, "until 与 count 互斥");
+assert.equal(parseRecurrence("@daily;count=0"), null);
+assert.equal(parseRecurrence("@daily;until=2026-13-01"), null);
+assert.equal(parseRecurrence("@daily;freq=x"), null);
+assert.equal(recurrenceToString({ kind: "daily", until: "2026-12-31" }), "@daily;until=2026-12-31");
+assert.equal(recurrenceToString({ kind: "weekly", n: 3, count: 12 }), "@weekly:3;count=12");
+assert.equal(recurrenceLabel("@daily;until=2026-12-31"), "每天 · 至 2026-12-31");
+assert.equal(recurrenceLabel("@daily;count=3"), "每天 · 共 3 次");
+
+// until（含当天）：9/20 是最后一期，之后无下一期
+const untilRec = parseRecurrence("@daily;until=2026-09-20")!;
+assert.equal(key(nextAfter(date(2026, 9, 18, 9), date(2026, 9, 18, 9), untilRec)!), "2026-09-19 09:00");
+assert.equal(nextAfter(date(2026, 9, 20, 9), date(2026, 9, 20, 9), untilRec), null);
+
+// count（剩余期数含锚点期）：3 次 → 锚点后还有两期，第三期之后耗尽
+const countRec = parseRecurrence("@daily;count=3")!;
+const cAnchor = date(2026, 9, 16, 9);
+assert.equal(key(nextAfter(cAnchor, cAnchor, countRec)!), "2026-09-17 09:00");
+assert.equal(key(nextAfter(cAnchor, date(2026, 9, 17, 9), countRec)!), "2026-09-18 09:00");
+assert.equal(nextAfter(cAnchor, date(2026, 9, 18, 9), countRec), null, "3 次已用尽");
+
+// ---- 单次例外：exdates 展开跳过 --------------------------------------------
+const withExdate = fakeItem({
+  recurrence: "@daily",
+  start_at: anchor.toISOString(),
+  end_at: new Date(anchor.getTime() + 15 * 60_000).toISOString(),
+  recurrence_exdates: [date(2026, 9, 17, 9).toISOString()],
+});
+assert.equal(occurrencesBetween(withExdate, date(2026, 9, 17, 0), date(2026, 9, 17, 23)).length, 0, "被剔除的期不展开");
+assert.equal(occurrencesBetween(withExdate, date(2026, 9, 18, 0), date(2026, 9, 18, 23)).length, 1, "其余期照常");
+
+// expandItems 同口径：窗口 9/16–9/18 只出 2 条（9/17 被剔除）
+const expandedEx = expandItems([withExdate], date(2026, 9, 16, 0), date(2026, 9, 18, 23));
+assert.equal(expandedEx.filter((i) => i.id === "evt_x").length, 2);
 
 console.log("recurrence.golden: 全部通过 ✓");

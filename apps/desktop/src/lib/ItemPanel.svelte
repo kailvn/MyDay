@@ -48,7 +48,7 @@
     validateForColumn,
     type ResolveCtx,
   } from "./tpltime";
-  import { parseRecurrence, recurrenceLabel, recurrenceToString } from "./recurrence";
+  import { parseRecurrence, recurrenceLabel, recurrenceToString, type ParsedRecurrence } from "./recurrence";
   import { parseTimeHint, type TimeHint } from "./timewords";
   import { toast } from "./toast.svelte";
   import TimePopover, { timePopoverOpen } from "./TimePopover.svelte";
@@ -438,13 +438,21 @@
       return;
     }
     const cur = parseRecurrence(recurrenceSpec);
-    if (mode === "daily") recurrenceSpec = "@daily";
+    // 换频率 / 换日：结束条件跟随保留
+    const end = { until: cur?.until, count: cur?.count };
+    if (mode === "daily") recurrenceSpec = recurrenceToString({ kind: "daily", ...end });
     else if (mode === "weekly")
       recurrenceSpec = recurrenceToString({
         kind: "weekly",
         n: cur?.kind === "weekly" ? cur.n : anchorWeekday(),
+        ...end,
       });
-    else recurrenceSpec = recurrenceToString({ kind: "monthly", d: cur?.kind === "monthly" ? cur.d : 1 });
+    else
+      recurrenceSpec = recurrenceToString({
+        kind: "monthly",
+        d: cur?.kind === "monthly" ? cur.d : 1,
+        ...end,
+      });
   }
   /** 「每周…」的默认星期 = 当前开始/截止日期的星期（无值则周一） */
   function anchorWeekday(): number {
@@ -454,11 +462,48 @@
     return wd === 0 ? 7 : wd;
   }
   function setWeeklyDay(n: number) {
-    recurrenceSpec = recurrenceToString({ kind: "weekly", n });
+    const cur = parseRecurrence(recurrenceSpec);
+    recurrenceSpec = recurrenceToString({ kind: "weekly", n, until: cur?.until, count: cur?.count });
   }
   function setMonthlyDay(d: number) {
     const clamped = Math.min(31, Math.max(1, Math.round(d) || 1));
-    recurrenceSpec = recurrenceToString({ kind: "monthly", d: clamped });
+    const cur = parseRecurrence(recurrenceSpec);
+    recurrenceSpec = recurrenceToString({ kind: "monthly", d: clamped, until: cur?.until, count: cur?.count });
+  }
+
+  // ---- 重复结束条件（until=本地最后日 / count=剩余期数，互斥） ----
+  let recEnd = $derived.by(() => {
+    const cur = parseRecurrence(recurrenceSpec);
+    if (!cur) return { mode: "" as "" | "until" | "count", until: "", count: 10 };
+    if (cur.until) return { mode: "until" as const, until: cur.until, count: 10 };
+    if (cur.count != null) return { mode: "count" as const, until: "", count: cur.count };
+    return { mode: "" as const, until: "", count: 10 };
+  });
+  /** 结束条件的默认日期 = 当前锚点日 + 1 个月 */
+  function defaultUntil(): string {
+    const v = startLocal || dueLocal;
+    const d: Date = v ? new Date(fromLocalInput(v)) : new Date();
+    d.setMonth(d.getMonth() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function setRecEnd(mode: "" | "until" | "count") {
+    const cur = parseRecurrence(recurrenceSpec);
+    if (!cur) return;
+    if (mode === "") {
+      recurrenceSpec = recurrenceToString({ kind: cur.kind, n: cur.n, d: cur.d });
+    } else if (mode === "until") {
+      recurrenceSpec = recurrenceToString({ kind: cur.kind, n: cur.n, d: cur.d, until: cur.until || defaultUntil() });
+    } else {
+      recurrenceSpec = recurrenceToString({ kind: cur.kind, n: cur.n, d: cur.d, count: cur.count ?? 10 });
+    }
+  }
+  function applyRecEnd(patch: { until?: string; count?: number }) {
+    const cur = parseRecurrence(recurrenceSpec);
+    if (!cur) return;
+    const next: ParsedRecurrence = { kind: cur.kind, n: cur.n, d: cur.d };
+    if (recEnd.mode === "until") next.until = patch.until ?? recEnd.until;
+    else if (recEnd.mode === "count") next.count = patch.count ?? recEnd.count;
+    recurrenceSpec = recurrenceToString(next);
   }
 
   // ---- 受控 NL 时间提示（SPRINT-SPEC §8）：只出 chip，Tab/点击才应用 --------
@@ -1604,6 +1649,38 @@
       <span class="dim">{t("panel.rec.monthDay")}</span>
     {:else if recKind === "daily"}
       <span class="dim">{recLabel} · {t("panel.rec.editAll")}</span>
+    {/if}
+    {#if recKind}
+      <select
+        class="rec-end"
+        data-testid="rec-end"
+        title={t("panel.rec.end")}
+        value={recEnd.mode}
+        onchange={(e) => setRecEnd((e.currentTarget.value as "" | "until" | "count"))}
+      >
+        <option value="">{t("panel.rec.end_none")}</option>
+        <option value="until">{t("panel.rec.end_until")}</option>
+        <option value="count">{t("panel.rec.end_count")}</option>
+      </select>
+      {#if recEnd.mode === "until"}
+        <input
+          type="date"
+          data-testid="rec-end-until"
+          value={recEnd.until}
+          onchange={(e) => applyRecEnd({ until: e.currentTarget.value })}
+        />
+      {:else if recEnd.mode === "count"}
+        <input
+          type="number"
+          min="1"
+          max="9999"
+          data-testid="rec-end-count"
+          class="month-day"
+          value={recEnd.count}
+          onchange={(e) => applyRecEnd({ count: Math.max(1, Math.round(Number(e.currentTarget.value)) || 1) })}
+        />
+        <span class="dim">{t("panel.rec.end_times")}</span>
+      {/if}
     {/if}
   </div>
   {/if}
