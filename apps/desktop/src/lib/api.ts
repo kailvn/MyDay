@@ -705,6 +705,25 @@ export function fmtDateTime(iso: string | null): string {
   return `${fmtDate(iso)} ${fmtTime(iso)}`;
 }
 
+/** 审计时间戳（列表行用）：月日 时:分:秒——只有时分难区分同日先后；跨年补年份 */
+export function fmtStamp(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const loc = i18n.locale === "en" ? "en-US" : "zh-CN";
+  const datePart = d.toLocaleDateString(loc, {
+    ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timePart = d.toLocaleTimeString(loc, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  return `${datePart} ${timePart}`;
+}
+
 /** 类型显示名（随界面语言）。 */
 export function typeLabel(type: ItemType): string {
   return t(`type.${type}` as MessageKey);
