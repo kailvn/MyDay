@@ -76,9 +76,10 @@ impl MyDayError {
             MyDayError::Conflict(_) => ErrorCode::Conflict,
             MyDayError::Unsupported(_) => ErrorCode::Unsupported,
             MyDayError::Internal(_) => ErrorCode::Internal,
-            MyDayError::Storage(_) | MyDayError::Io(_) | MyDayError::Serde(_) | MyDayError::Zip(_) => {
-                ErrorCode::Internal
-            }
+            MyDayError::Storage(_)
+            | MyDayError::Io(_)
+            | MyDayError::Serde(_)
+            | MyDayError::Zip(_) => ErrorCode::Internal,
         }
     }
 }

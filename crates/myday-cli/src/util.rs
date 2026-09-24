@@ -14,10 +14,19 @@ pub fn parse_dt_arg(s: &str) -> Result<DateTime<Utc>> {
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
         return Ok(dt.with_timezone(&Utc));
     }
-    let naive = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
-        .iter()
-        .find_map(|fmt| NaiveDateTime::parse_from_str(s, fmt).ok())
-        .or_else(|| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().map(|d| d.and_hms_opt(0, 0, 0).unwrap()));
+    let naive = [
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+    ]
+    .iter()
+    .find_map(|fmt| NaiveDateTime::parse_from_str(s, fmt).ok())
+    .or_else(|| {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .ok()
+            .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+    });
     let Some(naive) = naive else {
         return Err(MyDayError::Invalid(format!(
             "无法解析时间 \"{s}\"（支持 2026-09-16T14:30 / 2026-09-16 14:30 / 2026-09-16 / RFC3339）"
@@ -79,8 +88,7 @@ pub fn parse_reminder_spec(s: &str) -> Result<String> {
     if s.starts_with('@') {
         return Ok(s.to_string());
     }
-    Ok(parse_dt_arg(s)?
-        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    Ok(parse_dt_arg(s)?.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 /// 重复规则参数：@daily / @weekly:1-7（1=周一）/ @monthly:1-31（SPRINT-SPEC §2）。

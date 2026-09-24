@@ -64,7 +64,7 @@ export const part_chrome = {
   "timepop.keys": "方向键移动 · Enter 应用 · Esc 关闭",
 } as const;
 
-export const part_chrome_en: Record<string, string> = {
+export const part_chrome_en = {
   // ---- palette.*（CommandPalette.svelte）----
   "palette.title": "Command palette",
   "palette.placeholder": 'Type a command or search… ("task buy milk" creates a task)',

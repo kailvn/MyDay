@@ -108,7 +108,7 @@ export const part_settings = {
   'onboarding.start': '开始使用',
 } as const;
 
-export const part_settings_en: Record<string, string> = {
+export const part_settings_en = {
   // ---- SettingsView: data & IPC ----
   'settings.title': 'Settings',
   'settings.dataIpc': 'Data & IPC',

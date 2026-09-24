@@ -77,10 +77,7 @@ pub fn print_json_envelope(
 /// 输出单条 Item。
 pub fn print_item(mode: JsonMode, item: &Item) -> Result<()> {
     if mode.0 {
-        println!(
-            "{}",
-            serde_json::json!({ "ok": true, "data": item })
-        );
+        println!("{}", serde_json::json!({ "ok": true, "data": item }));
     } else {
         println!("{}", human_line(item));
     }

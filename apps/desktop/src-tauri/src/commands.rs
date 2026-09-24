@@ -4,10 +4,10 @@
 
 use base64::Engine;
 use std::path::{Path, PathBuf};
-#[cfg(not(target_os = "windows"))]
-use std::process::{Command, Stdio};
 #[cfg(target_os = "windows")]
 use std::process::Command;
+#[cfg(not(target_os = "windows"))]
+use std::process::{Command, Stdio};
 use tauri::{Manager, State};
 
 use myday_core::model::*;
@@ -351,8 +351,7 @@ pub fn add_field_def(
     options: serde_json::Value,
     scope: Option<ItemType>,
 ) -> std::result::Result<FieldDef, String> {
-    let kind = FieldKind::parse(&kind)
-        .ok_or_else(|| format!("[INVALID] 未知字段类型: {kind}"))?;
+    let kind = FieldKind::parse(&kind).ok_or_else(|| format!("[INVALID] 未知字段类型: {kind}"))?;
     let def = state
         .store
         .add_field_def(&name, kind, &options, scope)
@@ -401,7 +400,9 @@ pub fn count_items_with_field(
 
 /// 已软删的字段定义（展示层：旧条目带出历史值的字段名）。
 #[tauri::command]
-pub fn list_deleted_field_defs(state: State<'_, AppState>) -> std::result::Result<Vec<FieldDef>, String> {
+pub fn list_deleted_field_defs(
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<FieldDef>, String> {
     state.store.list_deleted_field_defs().map_err(err_string)
 }
 
@@ -454,7 +455,10 @@ pub fn stats_summary(
     state: State<'_, AppState>,
     days: Option<i64>,
 ) -> std::result::Result<serde_json::Value, String> {
-    let s = state.store.stats_summary(days.unwrap_or(365)).map_err(err_string)?;
+    let s = state
+        .store
+        .stats_summary(days.unwrap_or(365))
+        .map_err(err_string)?;
     serde_json::to_value(s).map_err(|e| format!("[INTERNAL] {e}"))
 }
 
@@ -470,7 +474,9 @@ pub fn view_list(
     let panel = panel
         .as_deref()
         .map(myday_core::view::Panel::parse)
-        .map(|p| p.ok_or_else(|| format!("[INVALID] 未知面板（可用 logs / tasks / search / stats）")))
+        .map(|p| {
+            p.ok_or_else(|| "[INVALID] 未知面板（可用 logs / tasks / search / stats）".to_string())
+        })
         .transpose()?;
     state.store.list_views(panel).map_err(err_string)
 }
@@ -493,7 +499,10 @@ pub fn view_create(
 ) -> std::result::Result<myday_core::view::ViewDef, String> {
     let panel = myday_core::view::Panel::parse(&panel)
         .ok_or_else(|| format!("[INVALID] 未知面板: {panel}"))?;
-    let view = state.store.create_view(&name, panel, &config).map_err(err_string)?;
+    let view = state
+        .store
+        .create_view(&name, panel, &config)
+        .map_err(err_string)?;
     notify_changed(&app);
     Ok(view)
 }
@@ -559,7 +568,10 @@ pub fn query_view(
     keyword: Option<String>,
     limit: Option<i64>,
 ) -> std::result::Result<myday_core::view::ViewResult, String> {
-    state.store.query_view(&id, keyword.as_deref(), limit).map_err(err_string)
+    state
+        .store
+        .query_view(&id, keyword.as_deref(), limit)
+        .map_err(err_string)
 }
 
 /// 恢复默认统计页：重新铺缺失的预置容器（按当前数据），返回新建容器名。
@@ -602,7 +614,11 @@ pub fn reminder_unread(state: State<'_, AppState>) -> std::result::Result<i64, S
         .store
         .get_setting("reminder_seen_at")
         .map_err(err_string)?
-        .and_then(|v| chrono::DateTime::parse_from_rfc3339(&v).map(|d| d.with_timezone(&chrono::Utc)).ok());
+        .and_then(|v| {
+            chrono::DateTime::parse_from_rfc3339(&v)
+                .map(|d| d.with_timezone(&chrono::Utc))
+                .ok()
+        });
     state.store.reminder_unread_count(seen).map_err(err_string)
 }
 
@@ -670,7 +686,9 @@ fn holidays_path(state: &AppState) -> PathBuf {
 
 /// 读取用户自定义节假日 JSON；无文件返回 None。
 #[tauri::command]
-pub fn load_holidays_json(state: State<'_, AppState>) -> std::result::Result<Option<String>, String> {
+pub fn load_holidays_json(
+    state: State<'_, AppState>,
+) -> std::result::Result<Option<String>, String> {
     match std::fs::read_to_string(holidays_path(&state)) {
         Ok(text) => Ok(Some(text)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -680,9 +698,12 @@ pub fn load_holidays_json(state: State<'_, AppState>) -> std::result::Result<Opt
 
 /// 保存用户自定义节假日 JSON（仅做 JSON 语法校验；结构校验在前端导入入口）。
 #[tauri::command]
-pub fn save_holidays_json(state: State<'_, AppState>, text: String) -> std::result::Result<(), String> {
-    let _: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("[INVALID] JSON 语法错误: {e}"))?;
+pub fn save_holidays_json(
+    state: State<'_, AppState>,
+    text: String,
+) -> std::result::Result<(), String> {
+    let _: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("[INVALID] JSON 语法错误: {e}"))?;
     std::fs::write(holidays_path(&state), text).map_err(|e| format!("[IO] {e}"))
 }
 
@@ -937,7 +958,10 @@ const OVERLAY_MAX_W: f64 = 1200.0;
 const OVERLAY_MAX_H: f64 = 1600.0;
 
 fn clamp_overlay_size(w: f64, h: f64) -> OverlaySize {
-    OverlaySize { w: w.clamp(OVERLAY_MIN_W, OVERLAY_MAX_W), h: h.clamp(OVERLAY_MIN_H, OVERLAY_MAX_H) }
+    OverlaySize {
+        w: w.clamp(OVERLAY_MIN_W, OVERLAY_MAX_W),
+        h: h.clamp(OVERLAY_MIN_H, OVERLAY_MAX_H),
+    }
 }
 
 /// 悬浮窗配置（整体读写 JSON，§6；缺省值见 [`OverlayConfig::default`]）。
@@ -980,35 +1004,60 @@ impl Default for OverlayConfig {
 const OVERLAY_SHOW: [&str; 3] = ["all", "events", "tasks"];
 
 fn normalize_overlay_show(v: &str) -> String {
-    if OVERLAY_SHOW.contains(&v) { v.to_string() } else { "all".to_string() }
+    if OVERLAY_SHOW.contains(&v) {
+        v.to_string()
+    } else {
+        "all".to_string()
+    }
 }
 
 pub(crate) fn overlay_config(store: &Store) -> std::result::Result<OverlayConfig, String> {
     let get = |k: &str| store.get_setting(k).map_err(err_string).unwrap_or(None);
     Ok(OverlayConfig {
-        enabled: get("overlay.enabled").map(|v| v == "true" || v == "1").unwrap_or(false),
-        corner: if get("overlay.corner").as_deref() == Some("tl") { "tl" } else { "tr" }.into(),
+        enabled: get("overlay.enabled")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false),
+        corner: if get("overlay.corner").as_deref() == Some("tl") {
+            "tl"
+        } else {
+            "tr"
+        }
+        .into(),
         custom_pos: get("overlay.custom_pos").and_then(|v| serde_json::from_str(&v).ok()),
         size: get("overlay.size").and_then(|v| serde_json::from_str(&v).ok()),
         opacity: get("overlay.opacity")
             .and_then(|v| v.parse::<f64>().ok())
             .map(|v| v.clamp(0.30, 1.00))
             .unwrap_or(0.90),
-        locked: get("overlay.locked").map(|v| v == "true" || v == "1").unwrap_or(false),
+        locked: get("overlay.locked")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false),
         show: normalize_overlay_show(get("overlay.show").as_deref().unwrap_or("all")),
-        expand_summary: get("overlay.expand_summary").map(|v| v == "true" || v == "1").unwrap_or(false),
+        expand_summary: get("overlay.expand_summary")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false),
     })
 }
 
 fn save_overlay_config(store: &Store, cfg: &OverlayConfig) -> std::result::Result<(), String> {
-    store.set_setting("overlay.enabled", &cfg.enabled.to_string()).map_err(err_string)?;
     store
-        .set_setting("overlay.corner", if cfg.corner == "tl" { "tl" } else { "tr" })
+        .set_setting("overlay.enabled", &cfg.enabled.to_string())
         .map_err(err_string)?;
     store
-        .set_setting("overlay.opacity", &cfg.opacity.clamp(0.30, 1.00).to_string())
+        .set_setting(
+            "overlay.corner",
+            if cfg.corner == "tl" { "tl" } else { "tr" },
+        )
         .map_err(err_string)?;
-    store.set_setting("overlay.locked", &cfg.locked.to_string()).map_err(err_string)?;
+    store
+        .set_setting(
+            "overlay.opacity",
+            &cfg.opacity.clamp(0.30, 1.00).to_string(),
+        )
+        .map_err(err_string)?;
+    store
+        .set_setting("overlay.locked", &cfg.locked.to_string())
+        .map_err(err_string)?;
     store
         .set_setting("overlay.show", &normalize_overlay_show(&cfg.show))
         .map_err(err_string)?;
@@ -1018,18 +1067,24 @@ fn save_overlay_config(store: &Store, cfg: &OverlayConfig) -> std::result::Resul
     match cfg.custom_pos {
         Some(p) => {
             let json = serde_json::to_string(&p).map_err(|e| format!("[INTERNAL] {e}"))?;
-            store.set_setting("overlay.custom_pos", &json).map_err(err_string)?;
+            store
+                .set_setting("overlay.custom_pos", &json)
+                .map_err(err_string)?;
         }
         // 清除自定义位置 = 置空串（读取端解析失败按 None 处理）
         None => {
-            store.set_setting("overlay.custom_pos", "").map_err(err_string)?;
+            store
+                .set_setting("overlay.custom_pos", "")
+                .map_err(err_string)?;
         }
     }
     match cfg.size {
         Some(s) => {
             let json = serde_json::to_string(&clamp_overlay_size(s.w, s.h))
                 .map_err(|e| format!("[INTERNAL] {e}"))?;
-            store.set_setting("overlay.size", &json).map_err(err_string)?;
+            store
+                .set_setting("overlay.size", &json)
+                .map_err(err_string)?;
         }
         None => {
             store.set_setting("overlay.size", "").map_err(err_string)?;
@@ -1077,7 +1132,10 @@ fn overlay_target_position(
     let wa = monitor.work_area();
     let to_l = |px: i32| px as f64 / scale;
     let (x0, y0) = (to_l(wa.position.x), to_l(wa.position.y));
-    let (x1, y1) = (x0 + to_l(wa.size.width as i32), y0 + to_l(wa.size.height as i32));
+    let (x1, y1) = (
+        x0 + to_l(wa.size.width as i32),
+        y0 + to_l(wa.size.height as i32),
+    );
 
     let (mut x, mut y) = match cfg.custom_pos {
         Some(p) => (p.x, p.y),
@@ -1101,16 +1159,19 @@ fn apply_overlay_window_state(
     let Some(win) = overlay_window(app) else {
         return Err("[NOT_FOUND] 无 overlay 窗口".into());
     };
-    win.set_ignore_cursor_events(cfg.locked).map_err(|e| format!("[INTERNAL] {e}"))?;
+    win.set_ignore_cursor_events(cfg.locked)
+        .map_err(|e| format!("[INTERNAL] {e}"))?;
     if let Some(s) = cfg.size {
         let c = clamp_overlay_size(s.w, s.h);
-        win.set_size(tauri::LogicalSize::new(c.w, c.h)).map_err(|e| format!("[INTERNAL] {e}"))?;
+        win.set_size(tauri::LogicalSize::new(c.w, c.h))
+            .map_err(|e| format!("[INTERNAL] {e}"))?;
     }
     if crate::platform::native_wayland() {
         return Ok(());
     }
     let (x, y) = overlay_target_position(&win, cfg)?;
-    win.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| format!("[INTERNAL] {e}"))
+    win.set_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|e| format!("[INTERNAL] {e}"))
 }
 
 /// 配置变更后的共同收尾：托盘同步 + 窗口状态落地 + 前端广播。
@@ -1135,7 +1196,9 @@ pub fn overlay_today(
 }
 
 #[tauri::command]
-pub fn get_overlay_config(state: State<'_, AppState>) -> std::result::Result<OverlayConfig, String> {
+pub fn get_overlay_config(
+    state: State<'_, AppState>,
+) -> std::result::Result<OverlayConfig, String> {
     overlay_config(&state.store)
 }
 
@@ -1173,7 +1236,8 @@ pub(crate) fn set_overlay_visible(
         let cfg = overlay_config(store)?;
         // 只 show 不 set_focus：出现 / 刷新永不抢焦点（§3）
         if let Some(win) = overlay_window(app) {
-            win.set_ignore_cursor_events(cfg.locked).map_err(|e| format!("[INTERNAL] {e}"))?;
+            win.set_ignore_cursor_events(cfg.locked)
+                .map_err(|e| format!("[INTERNAL] {e}"))?;
             win.show().map_err(|e| format!("[INTERNAL] {e}"))?;
         }
         // show 之后再定位：窗口 realize 后 outer_size / 工作区才可靠
@@ -1212,9 +1276,14 @@ pub fn overlay_save_drag_pos(
         return Ok(());
     };
     let scale = win.scale_factor().map_err(|e| format!("[INTERNAL] {e}"))?;
-    let pos = win.outer_position().map_err(|e| format!("[INTERNAL] {e}"))?;
+    let pos = win
+        .outer_position()
+        .map_err(|e| format!("[INTERNAL] {e}"))?;
     let mut cfg = overlay_config(&state.store)?;
-    cfg.custom_pos = Some(OverlayPos { x: pos.x as f64 / scale, y: pos.y as f64 / scale });
+    cfg.custom_pos = Some(OverlayPos {
+        x: pos.x as f64 / scale,
+        y: pos.y as f64 / scale,
+    });
     save_overlay_config(&state.store, &cfg)?;
     use tauri::Emitter;
     let _ = app.emit("overlay-config", &cfg);
@@ -1236,7 +1305,10 @@ pub fn overlay_save_resize_size(
     let scale = win.scale_factor().map_err(|e| format!("[INTERNAL] {e}"))?;
     let size = win.outer_size().map_err(|e| format!("[INTERNAL] {e}"))?;
     let mut cfg = overlay_config(&state.store)?;
-    cfg.size = Some(clamp_overlay_size(size.width as f64 / scale, size.height as f64 / scale));
+    cfg.size = Some(clamp_overlay_size(
+        size.width as f64 / scale,
+        size.height as f64 / scale,
+    ));
     save_overlay_config(&state.store, &cfg)?;
     use tauri::Emitter;
     let _ = app.emit("overlay-config", &cfg);

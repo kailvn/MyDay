@@ -324,7 +324,9 @@
   let drag = $state<Drag | null>(null);
   /** 拖拽后短暂抑制 click / dblclick（pointerup 后浏览器仍会派发 click） */
   let suppressClickUntil = 0;
-  /** 列几何缓存（拖拽开始时取一次；left 相对 grid-wrap） */
+  /** 列几何缓存（拖拽开始时取一次；left 相对 grid-wrap）。
+   *  刻意非响应式：重渲染由 drag 状态驱动，代理化只会给 pointermove 添开销 */
+  // svelte-ignore non_reactive_update
   let colCache: { left: number; width: number }[] = [];
 
   /** 跨天可见段 / 全天 / 非日程块不参与拖拽 */
@@ -609,6 +611,8 @@
       {#each days_ as d, di (dayKey(d))}
         <div class="day-col" class:today={dayKey(d) === todayKey} class:weekend={d.getDay() === 0 || d.getDay() === 6}>
           {#each Array(24) as _, h (h)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="slot"
               class:sel={selected?.day.getTime() === d.getTime() && selected?.hour === h}
@@ -665,7 +669,7 @@
             <span class="ev-title">{drag.label}</span>
           </div>
         {/if}
-      {:else if drag && drag.moved && drag.kind !== "select"}
+      {:else if drag && drag.moved && (drag.kind === "move" || drag.kind === "resize-start" || drag.kind === "resize-end")}
         {@const col = colCache[drag.dayIdx]}
         <div
           class="ghost"

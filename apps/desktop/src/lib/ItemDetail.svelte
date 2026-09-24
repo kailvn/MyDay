@@ -195,7 +195,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
 <div class="overlay" onclick={closePanel} role="presentation">
   <div
     class="modal"
@@ -358,7 +358,7 @@
 
 {#if previewUrl}
   <!-- 图片大图预览：点任意处 / Esc 关闭 -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="preview" role="presentation" onclick={() => (previewUrl = "")}>
     <img src={previewUrl} alt={t("detail.preview_alt")} />
   </div>

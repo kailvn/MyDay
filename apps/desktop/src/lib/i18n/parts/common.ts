@@ -25,7 +25,7 @@ export const part_common = {
   "type.log": "记录",
 } as const;
 
-export const part_common_en: Record<string, string> = {
+export const part_common_en = {
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.delete": "Delete",

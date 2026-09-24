@@ -39,7 +39,12 @@ pub fn export_ics(store: &Store) -> Result<String> {
         }
     }
     lines.push("END:VCALENDAR".into());
-    Ok(lines.iter().map(|l| fold_line(l)).collect::<Vec<_>>().join("\r\n") + "\r\n")
+    Ok(lines
+        .iter()
+        .map(|l| fold_line(l))
+        .collect::<Vec<_>>()
+        .join("\r\n")
+        + "\r\n")
 }
 
 fn event_block(item: &Item, now: DateTime<Utc>, out: &mut Vec<String>) {
@@ -77,7 +82,10 @@ fn event_block(item: &Item, now: DateTime<Utc>, out: &mut Vec<String>) {
         if let Some(prop) = valarm_prop(&r.spec, false) {
             out.push("BEGIN:VALARM".into());
             out.push("ACTION:DISPLAY".into());
-            out.push(format!("DESCRIPTION:{}", escape(&crate::model::display_title(item))));
+            out.push(format!(
+                "DESCRIPTION:{}",
+                escape(&crate::model::display_title(item))
+            ));
             out.push(prop);
             out.push("END:VALARM".into());
         }
@@ -91,13 +99,22 @@ fn todo_block(item: &Item, now: DateTime<Utc>, out: &mut Vec<String>) {
     out.push(format!("UID:{}@myday", item.id));
     out.push(format!("DTSTAMP:{}", fmt_utc(now)));
     if item.due_all_day {
-        out.push(format!("DUE;VALUE=DATE:{}", due.with_timezone(&chrono::Local).date_naive().format("%Y%m%d")));
+        out.push(format!(
+            "DUE;VALUE=DATE:{}",
+            due.with_timezone(&chrono::Local)
+                .date_naive()
+                .format("%Y%m%d")
+        ));
     } else {
         out.push(format!("DUE:{}", fmt_utc(due)));
     }
     out.push(format!(
         "STATUS:{}",
-        if item.status == Some(crate::model::ItemStatus::Done) { "COMPLETED" } else { "NEEDS-ACTION" }
+        if item.status == Some(crate::model::ItemStatus::Done) {
+            "COMPLETED"
+        } else {
+            "NEEDS-ACTION"
+        }
     ));
     if let Some(done) = item.completed_at {
         out.push(format!("COMPLETED:{}", fmt_utc(done)));
@@ -121,7 +138,10 @@ fn todo_block(item: &Item, now: DateTime<Utc>, out: &mut Vec<String>) {
         if let Some(prop) = valarm_prop(&r.spec, true) {
             out.push("BEGIN:VALARM".into());
             out.push("ACTION:DISPLAY".into());
-            out.push(format!("DESCRIPTION:{}", escape(&crate::model::display_title(item))));
+            out.push(format!(
+                "DESCRIPTION:{}",
+                escape(&crate::model::display_title(item))
+            ));
             out.push(prop);
             out.push("END:VALARM".into());
         }
@@ -131,12 +151,22 @@ fn todo_block(item: &Item, now: DateTime<Utc>, out: &mut Vec<String>) {
 
 /// SUMMARY / DESCRIPTION / CATEGORIES / URL 公共行。
 fn push_common(item: &Item, out: &mut Vec<String>) {
-    out.push(format!("SUMMARY:{}", escape(&crate::model::display_title(item))));
+    out.push(format!(
+        "SUMMARY:{}",
+        escape(&crate::model::display_title(item))
+    ));
     let mut desc = item.note.clone().unwrap_or_default();
     desc.push_str(&format!("\nmyday://item/{}", item.id));
     out.push(format!("DESCRIPTION:{}", escape(&desc)));
     if !item.tags.is_empty() {
-        out.push(format!("CATEGORIES:{}", item.tags.iter().map(|t| escape(t)).collect::<Vec<_>>().join(",")));
+        out.push(format!(
+            "CATEGORIES:{}",
+            item.tags
+                .iter()
+                .map(|t| escape(t))
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
     }
 }
 
@@ -158,7 +188,8 @@ fn rrule_of(spec: &str, all_day: bool) -> Option<String> {
         if all_day {
             out.push_str(&format!(";UNTIL={}", u.format("%Y%m%d")));
         } else {
-            let local_end = crate::tpltime::local_to_utc(u.and_hms_opt(23, 59, 59).expect("valid clock"));
+            let local_end =
+                crate::tpltime::local_to_utc(u.and_hms_opt(23, 59, 59).expect("valid clock"));
             out.push_str(&format!(";UNTIL={}", local_end.format("%Y%m%dT%H%M%SZ")));
         }
     }
@@ -296,10 +327,17 @@ fn parse_prop(line: &str) -> Option<Prop> {
     let mut params = Vec::new();
     for seg in segs {
         if let Some((k, v)) = seg.split_once('=') {
-            params.push((k.trim().to_ascii_uppercase(), v.trim().trim_matches('"').to_string()));
+            params.push((
+                k.trim().to_ascii_uppercase(),
+                v.trim().trim_matches('"').to_string(),
+            ));
         }
     }
-    Some(Prop { name, params, value: value.to_string() })
+    Some(Prop {
+        name,
+        params,
+        value: value.to_string(),
+    })
 }
 
 /// RFC 5545 TEXT 反转义。
@@ -358,7 +396,9 @@ fn parse_ics_dt(p: &Prop) -> Option<IcsDt> {
         .is_some_and(|v| v.eq_ignore_ascii_case("date"))
         || (v.len() == 8 && v.chars().all(|c| c.is_ascii_digit()));
     if is_date {
-        return chrono::NaiveDate::parse_from_str(v, "%Y%m%d").ok().map(IcsDt::Date);
+        return chrono::NaiveDate::parse_from_str(v, "%Y%m%d")
+            .ok()
+            .map(IcsDt::Date);
     }
     let dt = if let Some(stripped) = v.strip_suffix('Z') {
         chrono::NaiveDateTime::parse_from_str(stripped, "%Y%m%dT%H%M%S")
@@ -453,10 +493,7 @@ fn relative_spec(base: &str, d: Duration) -> String {
 /// RRULE → MyDay 重复文法。返回 None 表示放弃（附原因）；
 /// UNTIL/COUNT 映射为 `;until=` / `;count=`（RFC 双写非法 → 忽略并告警）；
 /// INTERVAL ≠ 1 无对应物：保留基础规则并告警（宁可少一条约束，不丢重复）。
-fn rrule_to_spec(
-    rrule: &str,
-    start: chrono::DateTime<Utc>,
-) -> (Option<String>, Vec<String>) {
+fn rrule_to_spec(rrule: &str, start: chrono::DateTime<Utc>) -> (Option<String>, Vec<String>) {
     let mut warnings = Vec::new();
     let mut freq = "";
     let mut byday: Vec<&str> = Vec::new();
@@ -464,7 +501,9 @@ fn rrule_to_spec(
     let mut until: Option<chrono::NaiveDate> = None;
     let mut count: Option<u32> = None;
     for part in rrule.split(';') {
-        let Some((k, v)) = part.split_once('=') else { continue };
+        let Some((k, v)) = part.split_once('=') else {
+            continue;
+        };
         match k.to_ascii_uppercase().as_str() {
             "FREQ" => freq = v,
             "BYDAY" => byday.extend(v.split(',').map(str::trim)),
@@ -489,7 +528,11 @@ fn rrule_to_spec(
             },
             "INTERVAL" if v != "1" => warnings.push(format!(
                 "RRULE 的 INTERVAL={v} 无对应物，已按每 1 {}/次导入",
-                if freq.eq_ignore_ascii_case("weekly") { "周" } else { "期" }
+                if freq.eq_ignore_ascii_case("weekly") {
+                    "周"
+                } else {
+                    "期"
+                }
             )),
             _ => {}
         }
@@ -522,7 +565,10 @@ fn rrule_to_spec(
                 .position(|x| x.eq_ignore_ascii_case(d))
                 .map(|i| format!("@weekly:{}", i + 1)),
             // RFC 默认 = DTSTART 的星期几
-            None => Some(format!("@weekly:{}", ((local_start.weekday().num_days_from_monday()) + 1))),
+            None => Some(format!(
+                "@weekly:{}",
+                ((local_start.weekday().num_days_from_monday()) + 1)
+            )),
         }
     } else if freq.eq_ignore_ascii_case("monthly") {
         match bymonthday {
@@ -567,7 +613,10 @@ fn alarms_to_reminders(
         if value_is_dt {
             match parse_ics_dt(trigger) {
                 Some(IcsDt::DateTime(at)) => {
-                    out.push(NewReminder { spec: crate::store::dt(at), channel: "notify".into() });
+                    out.push(NewReminder {
+                        spec: crate::store::dt(at),
+                        channel: "notify".into(),
+                    });
                 }
                 _ => warnings.push(format!("{label}: 绝对 TRIGGER 无法解析，已跳过该提醒")),
             }
@@ -594,7 +643,10 @@ fn alarms_to_reminders(
         } else {
             relative_spec("@start", off)
         };
-        out.push(NewReminder { spec, channel: "notify".into() });
+        out.push(NewReminder {
+            spec,
+            channel: "notify".into(),
+        });
     }
     (out, warnings)
 }
@@ -615,7 +667,11 @@ fn extract_backlink(note: &str) -> (Option<String>, String) {
             .take_while(|c| !c.is_whitespace())
             .collect();
         if !id.is_empty() {
-            let rest = format!("{}{}", &note[..pos], &note[pos + "myday://item/".len() + id.len()..]);
+            let rest = format!(
+                "{}{}",
+                &note[..pos],
+                &note[pos + "myday://item/".len() + id.len()..]
+            );
             return (Some(id), rest.trim().to_string());
         }
     }
@@ -652,7 +708,12 @@ pub fn import_ics(store: &Store, text: &str) -> Result<ImportReport> {
         if let Some(name) = upper.strip_prefix("BEGIN:") {
             match name.trim() {
                 "VEVENT" => cur = Some(Comp::default()),
-                "VTODO" => cur = Some(Comp { is_todo: true, ..Comp::default() }),
+                "VTODO" => {
+                    cur = Some(Comp {
+                        is_todo: true,
+                        ..Comp::default()
+                    })
+                }
                 "VALARM" if cur.is_some() => in_alarm = true,
                 _ => {}
             }
@@ -670,7 +731,9 @@ pub fn import_ics(store: &Store, text: &str) -> Result<ImportReport> {
             }
             continue;
         }
-        let Some(p) = parse_prop(trimmed) else { continue };
+        let Some(p) = parse_prop(trimmed) else {
+            continue;
+        };
         if in_alarm {
             if let Some(c) = cur.as_mut() {
                 if p.name == "TRIGGER" {
@@ -716,15 +779,25 @@ fn import_component(store: &Store, c: Comp, report: &mut ImportReport) -> Result
 
     let title = c.summary.clone().filter(|s| !s.trim().is_empty());
     if title.is_none() && note.trim().is_empty() {
-        report.warnings.push(format!("{label}: 无 SUMMARY 与 DESCRIPTION，已跳过"));
+        report
+            .warnings
+            .push(format!("{label}: 无 SUMMARY 与 DESCRIPTION，已跳过"));
         return Ok(());
     }
 
     // ---- 时间字段（组件的硬前提，缺失/非法 = 跳过组件） --------------------
     let mut new = NewItem {
-        item_type: Some(if c.is_todo { ItemType::Task } else { ItemType::Event }),
+        item_type: Some(if c.is_todo {
+            ItemType::Task
+        } else {
+            ItemType::Event
+        }),
         title,
-        note: if note.trim().is_empty() { None } else { Some(note) },
+        note: if note.trim().is_empty() {
+            None
+        } else {
+            Some(note)
+        },
         tags: c.categories,
         // 重复导入保护 2：外部 UID 幂等（同文件重导返回已有条目）
         idempotency_key: c.uid.as_deref().map(|u| format!("ics-{}", u)),
@@ -734,23 +807,24 @@ fn import_component(store: &Store, c: Comp, report: &mut ImportReport) -> Result
     let mut warnings: Vec<String> = Vec::new();
 
     if c.is_todo {
-        match &c.due {
-            Some(due) => match parse_ics_dt(due) {
+        if let Some(due) = &c.due {
+            match parse_ics_dt(due) {
                 Some(IcsDt::Date(d)) => {
                     new.due_all_day = true;
                     new.due_at = Some(local_day_range(d).1);
                 }
                 Some(IcsDt::DateTime(at)) => new.due_at = Some(at),
                 None => warnings.push(format!("{label}: DUE 无法解析，已按无截止导入")),
-            },
-            None => {}
+            }
         }
         if c.status.as_deref() == Some("COMPLETED") {
             new.status = Some(ItemStatus::Done);
         }
     } else {
         let Some(start_prop) = &c.dtstart else {
-            report.warnings.push(format!("{label}: 缺少 DTSTART，已跳过"));
+            report
+                .warnings
+                .push(format!("{label}: 缺少 DTSTART，已跳过"));
             return Ok(());
         };
         match parse_ics_dt(start_prop) {
@@ -771,14 +845,15 @@ fn import_component(store: &Store, c: Comp, report: &mut ImportReport) -> Result
             Some(IcsDt::DateTime(at)) => {
                 new.start_at = Some(at);
                 if let Some(p) = &c.dtend {
-                    match parse_ics_dt(p) {
-                        Some(IcsDt::DateTime(e)) => new.end_at = Some(e),
-                        _ => {}
+                    if let Some(IcsDt::DateTime(e)) = parse_ics_dt(p) {
+                        new.end_at = Some(e)
                     }
                 }
             }
             None => {
-                report.warnings.push(format!("{label}: DTSTART 无法解析，已跳过"));
+                report
+                    .warnings
+                    .push(format!("{label}: DTSTART 无法解析，已跳过"));
                 return Ok(());
             }
         }
@@ -786,11 +861,7 @@ fn import_component(store: &Store, c: Comp, report: &mut ImportReport) -> Result
 
     // ---- 重复规则（锚点 = DUE（task）/ DTSTART（event）） -------------------
     if let Some(rrule) = &c.rrule {
-        let anchor_at = if c.is_todo {
-            new.due_at
-        } else {
-            new.start_at
-        };
+        let anchor_at = if c.is_todo { new.due_at } else { new.start_at };
         match anchor_at {
             Some(at) => {
                 let (spec, mut w) = rrule_to_spec(rrule, at);
@@ -902,17 +973,32 @@ mod tests {
     #[test]
     fn rrule_mapping() {
         assert_eq!(rrule_of("@daily", false).as_deref(), Some("FREQ=DAILY"));
-        assert_eq!(rrule_of("@weekly:3", false).as_deref(), Some("FREQ=WEEKLY;BYDAY=WE"));
-        assert_eq!(rrule_of("@weekly:7", false).as_deref(), Some("FREQ=WEEKLY;BYDAY=SU"));
-        assert_eq!(rrule_of("@monthly:15", false).as_deref(), Some("FREQ=MONTHLY;BYMONTHDAY=15"));
+        assert_eq!(
+            rrule_of("@weekly:3", false).as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=WE")
+        );
+        assert_eq!(
+            rrule_of("@weekly:7", false).as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=SU")
+        );
+        assert_eq!(
+            rrule_of("@monthly:15", false).as_deref(),
+            Some("FREQ=MONTHLY;BYMONTHDAY=15")
+        );
         assert_eq!(rrule_of("bogus", false), None);
         // 结束条件：count 直接映射；until 全天用 DATE 形式
-        assert_eq!(rrule_of("@daily;count=10", false).as_deref(), Some("FREQ=DAILY;COUNT=10"));
+        assert_eq!(
+            rrule_of("@daily;count=10", false).as_deref(),
+            Some("FREQ=DAILY;COUNT=10")
+        );
         let all_day = rrule_of("@daily;until=2026-12-31", true).unwrap();
         assert!(all_day.ends_with(";UNTIL=20261231"), "{all_day}");
         let timed = rrule_of("@daily;until=2026-12-31", false).unwrap();
         // 该日本地 23:59:59 → UTC（时钟随时区变化，只断言日期与 DATE-TIME 形式）
-        assert!(timed.contains("UNTIL=20261231T") && timed.ends_with("Z"), "{timed}");
+        assert!(
+            timed.contains("UNTIL=20261231T") && timed.ends_with("Z"),
+            "{timed}"
+        );
     }
 
     #[test]
@@ -920,10 +1006,16 @@ mod tests {
         assert_eq!(parse_ics_duration("-PT10M"), Some(Duration::minutes(-10)));
         assert_eq!(parse_ics_duration("PT1H30M"), Some(Duration::minutes(90)));
         assert_eq!(parse_ics_duration("P1D"), Some(Duration::days(1)));
-        assert_eq!(parse_ics_duration("-P1WT1H"), Some(-Duration::days(7) - Duration::hours(1)));
+        assert_eq!(
+            parse_ics_duration("-P1WT1H"),
+            Some(-Duration::days(7) - Duration::hours(1))
+        );
         assert_eq!(parse_ics_duration("PT"), None);
         assert_eq!(parse_ics_duration("PX"), None);
-        assert_eq!(relative_spec("@start", Duration::minutes(-15)), "@start-15m");
+        assert_eq!(
+            relative_spec("@start", Duration::minutes(-15)),
+            "@start-15m"
+        );
         assert_eq!(relative_spec("@due", Duration::hours(-1)), "@due-1h");
         assert_eq!(relative_spec("@due", Duration::days(-2)), "@due-2d");
         assert_eq!(relative_spec("@start", Duration::minutes(30)), "@start+30m");
@@ -934,8 +1026,17 @@ mod tests {
     fn unfold_and_categories() {
         let lines = unfold_lines("SUMMARY:hello\r\n there\r\nDESCRIPTION:a\\,b\r\n");
         // RFC 5545 反折行 = 去掉 CRLF + 单个空白标记（折点本身不产生空格）
-        assert_eq!(lines, vec!["SUMMARY:hellothere".to_string(), "DESCRIPTION:a\\,b".to_string()]);
-        assert_eq!(split_categories("工作, a\\,b, 健康"), vec!["工作", "a,b", "健康"]);
+        assert_eq!(
+            lines,
+            vec![
+                "SUMMARY:hellothere".to_string(),
+                "DESCRIPTION:a\\,b".to_string()
+            ]
+        );
+        assert_eq!(
+            split_categories("工作, a\\,b, 健康"),
+            vec!["工作", "a,b", "健康"]
+        );
         assert_eq!(unescape("a\\nb\\\\c"), "a\nb\\c");
     }
 
@@ -956,15 +1057,22 @@ mod tests {
     #[test]
     fn import_roundtrip_of_myday_export() {
         let (_dir_a, a) = test_store();
-        let start =
-            crate::tpltime::local_to_utc(chrono::Local::now().date_naive().and_hms_opt(14, 0, 0).unwrap());
+        let start = crate::tpltime::local_to_utc(
+            chrono::Local::now()
+                .date_naive()
+                .and_hms_opt(14, 0, 0)
+                .unwrap(),
+        );
         a.add_item(NewItem {
             title: Some("周会".into()),
             note: Some("备注".into()),
             start_at: Some(start),
             tags: vec!["工作".into()],
             recurrence: Some("@weekly:3".into()),
-            reminders: vec![NewReminder { spec: "@start-30m".into(), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: "@start-30m".into(),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .expect("add");
@@ -1036,14 +1144,17 @@ mod tests {
             "END:VTODO\r\n",
             "END:VCALENDAR\r\n",
         );
-        let report = import_ics(&store, &ics).expect("import");
+        let report = import_ics(&store, ics).expect("import");
         assert_eq!(report.events, 2, "{:?}", report.warnings);
         assert_eq!(report.tasks, 2);
         // 营期与房租各带 1 条 VALARM；浮动时刻会无 VALARM → 按设置自动补默认提醒
         assert_eq!(report.reminders, 3, "{:?}", report.warnings);
 
         let items = store.list_items(&ListFilter::default()).expect("list");
-        let camp = items.iter().find(|i| i.title.as_deref() == Some("两天营期")).expect("camp");
+        let camp = items
+            .iter()
+            .find(|i| i.title.as_deref() == Some("两天营期"))
+            .expect("camp");
         assert!(camp.all_day);
         assert_eq!(camp.recurrence.as_deref(), Some("@weekly:4")); // 10-01 恰是周四，BYDAY=TH 一致
         assert_eq!(camp.reminders[0].spec, "@start-15m");
@@ -1053,20 +1164,29 @@ mod tests {
         assert_eq!(local_start.format("%m-%d %H:%M").to_string(), "10-01 00:00");
         assert_eq!(local_end.format("%m-%d %H:%M").to_string(), "10-02 23:59");
 
-        let rent = items.iter().find(|i| i.title.as_deref() == Some("交房租,别忘")).expect("rent");
+        let rent = items
+            .iter()
+            .find(|i| i.title.as_deref() == Some("交房租,别忘"))
+            .expect("rent");
         assert_eq!(rent.item_type, ItemType::Task);
         assert!(rent.due_all_day);
         // UNTIL=20271210T000000Z → 本地日 2027-12-10，映射进扩展文法
-        assert_eq!(rent.recurrence.as_deref(), Some("@monthly:10;until=2027-12-10"));
+        assert_eq!(
+            rent.recurrence.as_deref(),
+            Some("@monthly:10;until=2027-12-10")
+        );
         assert_eq!(rent.reminders[0].spec, "@due-1h");
         assert_eq!(rent.tags, vec!["生活", "财务"]);
 
-        let idea = items.iter().find(|i| i.title.as_deref() == Some("无截止想法")).expect("idea");
+        let idea = items
+            .iter()
+            .find(|i| i.title.as_deref() == Some("无截止想法"))
+            .expect("idea");
         assert!(idea.due_at.is_none());
         assert!(idea.recurrence.is_none());
 
         // 幂等重导：外部 UID 命中 idempotency_key → 按跳过计数，不新增
-        let again = import_ics(&store, &ics).expect("import again");
+        let again = import_ics(&store, ics).expect("import again");
         assert_eq!(again.skipped_duplicates, 4);
         assert_eq!(again.events, 0);
         let all = store.list_items(&ListFilter::default()).expect("list");
@@ -1087,7 +1207,7 @@ mod tests {
             "SUMMARY:重复无截止\r\n",
             "END:VTODO\r\n",
         );
-        let report = import_ics(&store, &ics).expect("import");
+        let report = import_ics(&store, ics).expect("import");
         assert_eq!(report.events, 0);
         assert_eq!(report.tasks, 1);
         assert!(report.warnings.iter().any(|w| w.contains("DTSTART")));

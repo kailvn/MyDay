@@ -29,8 +29,7 @@ pub fn backup_zip(store: &Store) -> Result<PathBuf> {
 
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&target)?);
     let options: zip::write::SimpleFileOptions =
-        zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     writer.start_file("myday.db", options)?;
     let db_bytes = std::fs::read(&snapshot)?;
     writer.write_all(&db_bytes)?;

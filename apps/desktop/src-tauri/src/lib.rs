@@ -64,7 +64,9 @@ pub fn run() {
     // 失败只影响本次，下次启动重试）
     match store.purge_expired_trash(TRASH_RETENTION_DAYS) {
         Ok(0) => {}
-        Ok(n) => logging::log(&format!("myday: 已清理回收站 {n} 条（超 {TRASH_RETENTION_DAYS} 天）")),
+        Ok(n) => logging::log(&format!(
+            "myday: 已清理回收站 {n} 条（超 {TRASH_RETENTION_DAYS} 天）"
+        )),
         Err(e) => logging::log(&format!("myday: 回收站清理失败: {e}")),
     }
 
@@ -74,7 +76,9 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .manage(AppState { store: store.clone() })
+        .manage(AppState {
+            store: store.clone(),
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_items,
             commands::list_items_window,
@@ -175,14 +179,20 @@ pub fn run() {
 
             // 悬浮窗随启动常驻（OVERLAY-SPEC §8）：enabled 时恢复显示（不重复持久化）
             let store_state = app.state::<AppState>();
-            if commands::overlay_config(&store_state.store).unwrap_or_default().enabled {
+            if commands::overlay_config(&store_state.store)
+                .unwrap_or_default()
+                .enabled
+            {
                 let _ = commands::set_overlay_visible(app.handle(), &store, true, false);
             }
 
             // 测试钩子：MYDAY_TEST_POS="x,y" 时把主窗口放到固定位置并重新 show+focus
             // （自动化 UI 测试中窗口管理器可能把新窗口放到屏外，需要确定几何）
             if let Ok(pos) = std::env::var("MYDAY_TEST_POS") {
-                let (x, y) = pos.split_once(',').map(|(a, b)| (a.trim(), b.trim())).unwrap_or(("", ""));
+                let (x, y) = pos
+                    .split_once(',')
+                    .map(|(a, b)| (a.trim(), b.trim()))
+                    .unwrap_or(("", ""));
                 if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.set_position(tauri::LogicalPosition::new(x, y));
@@ -296,7 +306,10 @@ pub fn apply_language(store: &Store, app: &tauri::AppHandle) {
         let _ = tray_menu.lock.set_text(s.tray_overlay_lock);
         let _ = tray_menu.quit.set_text(s.tray_quit);
     }
-    let titles = [("quick-add", s.quickadd_title), ("overlay", s.overlay_title)];
+    let titles = [
+        ("quick-add", s.quickadd_title),
+        ("overlay", s.overlay_title),
+    ];
     for (label, title) in titles {
         if let Some(win) = app.get_webview_window(label) {
             let _ = win.set_title(title);

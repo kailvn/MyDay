@@ -91,7 +91,7 @@
   {#if editMode}
     <button class="rm" aria-label={t("vm.widget.removeAria", { name: w.title })} title={t("vm.widget.remove")} onclick={() => onremove(w)}>×</button>
   {/if}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex -->
   <div
     class="body"
     class:clickable={editMode}

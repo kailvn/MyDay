@@ -238,9 +238,9 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="backdrop" onclick={onclose}>
-    <div class="palette" role="dialog" aria-label={t("palette.title")} onclick={(e) => e.stopPropagation()}>
+    <div class="palette" role="dialog" tabindex="-1" aria-label={t("palette.title")} onclick={(e) => e.stopPropagation()}>
       <input
         bind:this={input}
         bind:value={q}
@@ -252,6 +252,7 @@
           <li class="none">{t("palette.empty")}</li>
         {/if}
         {#each rows as row, i (row.id + i)}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
           <li
             class:cur={i === idx}
             class:hit={row.kind === "hit"}

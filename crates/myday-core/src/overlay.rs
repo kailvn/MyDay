@@ -60,7 +60,13 @@ fn local_midnight_utc(day: NaiveDate) -> DateTime<Utc> {
         .unwrap_or_else(|| Utc.from_utc_datetime(&day.and_hms_opt(0, 0, 0).unwrap()))
 }
 
-fn entry(item: &Item, kind: ItemType, start: Option<DateTime<Utc>>, end: Option<DateTime<Utc>>, now: DateTime<Utc>) -> OverlayEntry {
+fn entry(
+    item: &Item,
+    kind: ItemType,
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> OverlayEntry {
     OverlayEntry {
         id: item.id.clone(),
         kind,
@@ -124,7 +130,9 @@ pub fn today_overlay(store: &Store, day: NaiveDate) -> Result<TodayOverlay> {
                     Some(d) if open && d < day0 => {
                         overdue.push(entry(it, ItemType::Task, it.start_at, None, now))
                     }
-                    None if open => unscheduled.push(entry(it, ItemType::Task, it.start_at, None, now)),
+                    None if open => {
+                        unscheduled.push(entry(it, ItemType::Task, it.start_at, None, now))
+                    }
                     _ => {}
                 }
             }
@@ -133,10 +141,22 @@ pub fn today_overlay(store: &Store, day: NaiveDate) -> Result<TodayOverlay> {
 
     // §4.2：时间升序，同刻按 created_at 稳定排序；未安排无时刻，按创建 FIFO
     //（与月视图未排期池同口径）
-    events.sort_by(|a, b| a.start_at.cmp(&b.start_at).then(a.created_at.cmp(&b.created_at)));
-    tasks.sort_by(|a, b| a.due_at.cmp(&b.due_at).then(a.created_at.cmp(&b.created_at)));
-    overdue.sort_by(|a, b| a.due_at.cmp(&b.due_at).then(a.created_at.cmp(&b.created_at)));
-    unscheduled.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    events.sort_by(|a, b| {
+        a.start_at
+            .cmp(&b.start_at)
+            .then(a.created_at.cmp(&b.created_at))
+    });
+    tasks.sort_by(|a, b| {
+        a.due_at
+            .cmp(&b.due_at)
+            .then(a.created_at.cmp(&b.created_at))
+    });
+    overdue.sort_by(|a, b| {
+        a.due_at
+            .cmp(&b.due_at)
+            .then(a.created_at.cmp(&b.created_at))
+    });
+    unscheduled.sort_by_key(|a| a.created_at);
 
     Ok(TodayOverlay {
         date: day,
@@ -175,7 +195,14 @@ mod tests {
     }
 
     /// 普通日程（同日 start → end）
-    fn event(store: &Store, title: &str, day: (i32, u32, u32), h: u32, mi: u32, end_h: u32) -> Item {
+    fn event(
+        store: &Store,
+        title: &str,
+        day: (i32, u32, u32),
+        h: u32,
+        mi: u32,
+        end_h: u32,
+    ) -> Item {
         let (y, m, d) = day;
         add(
             store,
@@ -189,7 +216,12 @@ mod tests {
         )
     }
 
-    fn task_due(store: &Store, title: &str, due: Option<DateTime<Utc>>, status: Option<ItemStatus>) -> Item {
+    fn task_due(
+        store: &Store,
+        title: &str,
+        due: Option<DateTime<Utc>>,
+        status: Option<ItemStatus>,
+    ) -> Item {
         add(
             store,
             NewItem {
@@ -230,7 +262,12 @@ mod tests {
 
         let out = eval(&store, (2026, 9, 17));
         assert_eq!(out.events.len(), 2, "{:?}", out.events);
-        assert!(out.events.windows(2).all(|w| w[0].start_at <= w[1].start_at), "start 升序");
+        assert!(
+            out.events
+                .windows(2)
+                .all(|w| w[0].start_at <= w[1].start_at),
+            "start 升序"
+        );
         assert_eq!(out.events[0].title, "零点日程");
         // 9/18 视角：跨午夜日程不重复计入次日
         let out18 = eval(&store, (2026, 9, 18));
@@ -238,8 +275,18 @@ mod tests {
         assert_eq!(out18.events[0].title, "明日日程");
 
         // done 计数：今日到期已完成 +1；昨日到期已完成不计
-        task_due(&store, "今日完成", Some(local(2026, 9, 17, 9, 0)), Some(ItemStatus::Done));
-        task_due(&store, "昨日完成", Some(local(2026, 9, 16, 9, 0)), Some(ItemStatus::Done));
+        task_due(
+            &store,
+            "今日完成",
+            Some(local(2026, 9, 17, 9, 0)),
+            Some(ItemStatus::Done),
+        );
+        task_due(
+            &store,
+            "昨日完成",
+            Some(local(2026, 9, 16, 9, 0)),
+            Some(ItemStatus::Done),
+        );
         let out = eval(&store, (2026, 9, 17));
         assert_eq!(out.done_count, 1);
     }
@@ -251,7 +298,12 @@ mod tests {
         // 昨日 23:59:59 与今日 00:00 只差一秒：一条逾期、一条今日
         let today0 = local(2026, 9, 17, 0, 0);
         task_due(&store, "卡点今日", Some(today0), None);
-        task_due(&store, "差一秒逾期", Some(today0 - Duration::seconds(1)), None);
+        task_due(
+            &store,
+            "差一秒逾期",
+            Some(today0 - Duration::seconds(1)),
+            None,
+        );
         task_due(&store, "无截止", None, None);
 
         let out = eval(&store, (2026, 9, 17));

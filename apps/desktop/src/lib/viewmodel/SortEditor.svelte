@@ -22,7 +22,8 @@
     onchanged: () => void;
   } = $props();
 
-  const config = cloneConfig(effectiveConfig(view) as ViewConfig);
+  // svelte-ignore state_referenced_locally
+  const config = cloneConfig(effectiveConfig(view));
   let rows = $state<SortSpec[]>(
     (config.dataset?.sort ?? []).map((s) => ({ field: s.field, dir: s.dir })),
   );

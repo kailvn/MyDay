@@ -150,6 +150,7 @@
     // 已有字段值回填为「已激活」：extra 是整对象替换，不激活保存即丢值（编辑即所见）
     const activeDefs = fieldDefMap();
     for (const k of Object.keys(initialExtra)) {
+      // svelte-ignore state_referenced_locally
       if (activeDefs.has(k) && !picked.includes(k)) picked.push(k);
     }
     // 有值的时间字段默认展开；空的可选字段保持 chip
@@ -181,14 +182,14 @@
         setTimeValue(id, v); // 模板态存 token 原文
       }
     }
-    Object.assign(initialExtra, { ...t.defaults });
+    Object.assign(initialExtra, { ...tpl.defaults });
     // svelte-ignore state_referenced_locally
     for (const k of Object.keys(initialExtra)) {
       if (!byColumnKey(k)) picked.push(k);
     }
     // 随模板启用但未设默认值的字段：回填为「已激活未填值」（编辑时可补值，也可仅占位）
     // svelte-ignore state_referenced_locally
-    for (const f of (t.fields ?? []) as { id?: string }[]) {
+    for (const f of (tpl.fields ?? []) as { id?: string }[]) {
       if (f.id && fieldDefMap().has(f.id) && !picked.includes(f.id)) picked.push(f.id);
     }
   } else if (req.mode === "create") {
@@ -1062,7 +1063,7 @@
       extra: buildExtra(),
     };
     // 重复规则变更（编辑 = 修改整个系列）
-    if (recurrenceSpec !== (src.recurrence ?? "")) {
+    if (recurrenceSpec !== (src?.recurrence ?? "")) {
       if (recurrenceSpec) patch.recurrence = recurrenceSpec;
       else patch.clear_recurrence = true;
     }
@@ -1454,7 +1455,7 @@
         <select bind:value={typeMan}>
           <option value="">{t("panel.header.autoType", { type: typeLabel(inferred) })}</option>
           {#each [["event", "type.event"], ["task", "type.task"], ["log", "type.log"]] as [val, key] (val)}
-            <option value={val}>{t(key)}</option>
+            <option value={val}>{t(key as MessageKey)}</option>
           {/each}
         </select>
       </label>
@@ -1475,7 +1476,7 @@
         {t("panel.header.type")}
         <select bind:value={tplItemType}>
           {#each [["event", "type.event"], ["task", "type.task"], ["log", "type.log"]] as [val, key] (val)}
-            <option value={val}>{t(key)}</option>
+            <option value={val}>{t(key as MessageKey)}</option>
           {/each}
         </select>
       </label>
@@ -1641,7 +1642,7 @@
     <span class="label">{t("panel.label.repeat")}</span>
     {#each [["", "panel.rec.none"], ["daily", "panel.rec.daily"], ["weekly", "panel.rec.weekly"], ["monthly", "panel.rec.monthly"]] as [mode, key] (mode)}
       <button class="chip" class:active={recKind === mode} onclick={() => setRecKind(mode as "")}>
-        {t(key)}
+        {t(key as MessageKey)}
       </button>
     {/each}
     {#if recKind === "weekly"}
@@ -1847,7 +1848,7 @@
     {/each}
   </div>
 {:else}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
   <div class="overlay" onclick={cancel} role="presentation">
     <div
       class="modal"
@@ -1863,7 +1864,7 @@
 
 {#if previewUrl}
   <!-- 粘贴截图大图预览：点任意处 / Esc 关闭（独立窗口内即全窗口遮罩） -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="preview" role="presentation" onclick={() => (previewUrl = "")}>
     <img src={previewUrl} alt={t("panel.attach.previewAlt")} />
   </div>

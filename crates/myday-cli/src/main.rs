@@ -41,7 +41,7 @@ enum Commands {
     /// 条目（event / task / log 统一模型）完整读写
     Item {
         #[command(subcommand)]
-        cmd: ItemCmd,
+        cmd: Box<ItemCmd>,
     },
     /// 视图管理（FILTER-SPEC §12）：内置视图 seed 进库，可被定制 / 重置
     View {
@@ -387,7 +387,9 @@ fn dispatch(cmd: &Commands, mode: JsonMode) -> Result<()> {
         Commands::Item { cmd } => item_cmd(cmd, mode),
         Commands::View { cmd } => view_cmd(cmd, mode),
         Commands::Field { cmd } => field_cmd(cmd, mode),
-        Commands::QuickAdd { r#type, title } => quick_add(r#type.as_deref(), title.as_deref(), mode),
+        Commands::QuickAdd { r#type, title } => {
+            quick_add(r#type.as_deref(), title.as_deref(), mode)
+        }
         Commands::Search { query, r#type } => search(query, r#type.as_deref(), mode),
         Commands::Ping => ping(mode),
         Commands::Reveal => {
@@ -431,7 +433,10 @@ fn stats_cmd(days: Option<i64>, mode: JsonMode) -> Result<()> {
             println!(
                 "打卡 {}{}：连续 {} 天 · 最长 {} 天 · 近 {} 天 {} 次",
                 t.name,
-                t.icon.as_deref().map(|i| format!(" {i}")).unwrap_or_default(),
+                t.icon
+                    .as_deref()
+                    .map(|i| format!(" {i}"))
+                    .unwrap_or_default(),
                 t.current,
                 t.longest,
                 s.heatmap.len(),
@@ -443,13 +448,28 @@ fn stats_cmd(days: Option<i64>, mode: JsonMode) -> Result<()> {
         println!("趋势：暂无含 ≥2 个数值的 number 字段");
     } else {
         for x in &s.series {
-            let last = x.points.last().map(|(_, v)| v.to_string()).unwrap_or_default();
-            let min = x.points.iter().map(|(_, v)| v).fold(f64::INFINITY, |a, &b| a.min(b));
-            let max = x.points.iter().map(|(_, v)| v).fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            let last = x
+                .points
+                .last()
+                .map(|(_, v)| v.to_string())
+                .unwrap_or_default();
+            let min = x
+                .points
+                .iter()
+                .map(|(_, v)| v)
+                .fold(f64::INFINITY, |a, &b| a.min(b));
+            let max = x
+                .points
+                .iter()
+                .map(|(_, v)| v)
+                .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             println!(
                 "趋势 {}{}：{} 点 · 最新 {}（min {min} / max {max}）",
                 x.name,
-                x.unit.as_deref().map(|u| format!("({u})")).unwrap_or_default(),
+                x.unit
+                    .as_deref()
+                    .map(|u| format!("({u})"))
+                    .unwrap_or_default(),
                 x.points.len(),
                 last
             );
@@ -554,9 +574,7 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             }
             if let Some(s) = status.as_deref() {
                 new.status = Some(ItemStatus::parse(s).ok_or_else(|| {
-                    MyDayError::Invalid(format!(
-                        "未知状态: {s}（可用 todo / done）"
-                    ))
+                    MyDayError::Invalid(format!("未知状态: {s}（可用 todo / done）"))
                 })?);
             }
             new.reminders = match remind.as_deref() {
@@ -605,9 +623,7 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             let parsed_status = match status.as_deref() {
                 None => None,
                 Some(s) => Some(ItemStatus::parse(s).ok_or_else(|| {
-                    MyDayError::Invalid(format!(
-                        "未知状态: {s}（可用 todo / done）"
-                    ))
+                    MyDayError::Invalid(format!("未知状态: {s}（可用 todo / done）"))
                 })?),
             };
             let items = store.list_items(&ListFilter {
@@ -617,7 +633,11 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 status: parsed_status,
                 tag: tags.first().cloned(),
                 limit: *limit,
-                order: if *asc { ListOrder::Asc } else { ListOrder::Desc },
+                order: if *asc {
+                    ListOrder::Asc
+                } else {
+                    ListOrder::Desc
+                },
                 ..Default::default()
             })?;
             print_list(mode, items)
@@ -657,63 +677,86 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 }
                 None => (None, None),
             };
-            let patch = ItemPatch {
-                title: title.clone(),
-                note: note.clone(),
-                start_at: start.as_deref().map(parse_dt_arg).transpose()?,
-                end_at: end.as_deref().map(parse_dt_arg).transpose()?,
-                clear_start_at: *clear_start,
-                clear_end_at: *clear_end,
-                due_at,
-                due_all_day,
-                clear_due_at: *clear_due,
-                occurred_at: at.as_deref().map(parse_dt_arg).transpose()?,
-                status: match status.as_deref() {
-                    None => None,
-                    Some(s) => Some(ItemStatus::parse(s).ok_or_else(|| {
-                        MyDayError::Invalid(format!(
-                            "未知状态: {s}（可用 todo / done）"
-                        ))
-                    })?),
+            let patch =
+                ItemPatch {
+                    title: title.clone(),
+                    note: note.clone(),
+                    start_at: start.as_deref().map(parse_dt_arg).transpose()?,
+                    end_at: end.as_deref().map(parse_dt_arg).transpose()?,
+                    clear_start_at: *clear_start,
+                    clear_end_at: *clear_end,
+                    due_at,
+                    due_all_day,
+                    clear_due_at: *clear_due,
+                    occurred_at: at.as_deref().map(parse_dt_arg).transpose()?,
+                    status: match status.as_deref() {
+                        None => None,
+                        Some(s) => Some(ItemStatus::parse(s).ok_or_else(|| {
+                            MyDayError::Invalid(format!("未知状态: {s}（可用 todo / done）"))
+                        })?),
+                    },
+                    recurrence: recurse
+                        .as_deref()
+                        .filter(|s| !s.eq_ignore_ascii_case("none"))
+                        .map(parse_recurrence_arg)
+                        .transpose()?,
+                    clear_recurrence: recurse
+                        .as_deref()
+                        .is_some_and(|s| s.eq_ignore_ascii_case("none")),
+                    tags: tags.clone(),
+                    extra: if fields.is_empty() && extra_json.is_none() {
+                        None
+                    } else {
+                        Some(extra)
+                    },
+                    reminders: remind.as_deref().map(parse_reminder_spec).transpose()?.map(
+                        |spec| {
+                            vec![NewReminder {
+                                spec,
+                                channel: "notify".into(),
+                            }]
+                        },
+                    ),
+                    clear_reminders: *no_remind,
+                    ..Default::default()
+                };
+            run_mutation(
+                mode,
+                IpcRequest::UpdateItem {
+                    id: id.clone(),
+                    patch: patch.clone(),
                 },
-                recurrence: recurse
-                    .as_deref()
-                    .filter(|s| !s.eq_ignore_ascii_case("none"))
-                    .map(parse_recurrence_arg)
-                    .transpose()?,
-                clear_recurrence: recurse.as_deref().is_some_and(|s| s.eq_ignore_ascii_case("none")),
-                tags: tags.clone(),
-                extra: if fields.is_empty() && extra_json.is_none() {
-                    None
-                } else {
-                    Some(extra)
+                |store| {
+                    let item = store.update_item(id, patch)?;
+                    Ok(serde_json::to_value(&item)?)
                 },
-                reminders: remind
-                    .as_deref()
-                    .map(parse_reminder_spec)
-                    .transpose()?
-                    .map(|spec| {
-                        vec![NewReminder { spec, channel: "notify".into() }]
-                    }),
-                clear_reminders: *no_remind,
-                ..Default::default()
-            };
-            run_mutation(mode, IpcRequest::UpdateItem { id: id.clone(), patch: patch.clone() }, |store| {
-                let item = store.update_item(id, patch)?;
-                Ok(serde_json::to_value(&item)?)
-            })
+            )
         }
         ItemCmd::Delete { id, hard } => {
             if *hard {
-                run_mutation(mode, IpcRequest::DeleteItem { id: id.clone(), hard: true }, |store| {
-                    let item = store.purge_item(id)?;
-                    Ok(serde_json::to_value(&item)?)
-                })
+                run_mutation(
+                    mode,
+                    IpcRequest::DeleteItem {
+                        id: id.clone(),
+                        hard: true,
+                    },
+                    |store| {
+                        let item = store.purge_item(id)?;
+                        Ok(serde_json::to_value(&item)?)
+                    },
+                )
             } else {
-                run_mutation(mode, IpcRequest::DeleteItem { id: id.clone(), hard: false }, |store| {
-                    let item = store.delete_item(id)?;
-                    Ok(serde_json::to_value(&item)?)
-                })
+                run_mutation(
+                    mode,
+                    IpcRequest::DeleteItem {
+                        id: id.clone(),
+                        hard: false,
+                    },
+                    |store| {
+                        let item = store.delete_item(id)?;
+                        Ok(serde_json::to_value(&item)?)
+                    },
+                )
             }
         }
         ItemCmd::Restore { id } => {
@@ -724,17 +767,25 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
         }
         ItemCmd::Detach { id, at } => {
             let at = parse_dt_arg(at)?;
-            run_mutation(mode, IpcRequest::DetachOccurrence { id: id.clone(), at }, |store| {
-                let item = store.detach_occurrence(id, at)?;
-                Ok(serde_json::to_value(&item)?)
-            })
+            run_mutation(
+                mode,
+                IpcRequest::DetachOccurrence { id: id.clone(), at },
+                |store| {
+                    let item = store.detach_occurrence(id, at)?;
+                    Ok(serde_json::to_value(&item)?)
+                },
+            )
         }
         ItemCmd::Skip { id, at } => {
             let at = parse_dt_arg(at)?;
-            run_mutation(mode, IpcRequest::SkipOccurrence { id: id.clone(), at }, |store| {
-                let item = store.skip_occurrence(id, at)?;
-                Ok(serde_json::to_value(&item)?)
-            })
+            run_mutation(
+                mode,
+                IpcRequest::SkipOccurrence { id: id.clone(), at },
+                |store| {
+                    let item = store.skip_occurrence(id, at)?;
+                    Ok(serde_json::to_value(&item)?)
+                },
+            )
         }
         ItemCmd::Complete { id } => {
             run_mutation(mode, IpcRequest::CompleteTask { id: id.clone() }, |store| {
@@ -742,21 +793,33 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 Ok(serde_json::to_value(&item)?)
             })
         }
-        ItemCmd::Uncomplete { id } => {
-            run_mutation(mode, IpcRequest::UpdateItem {
+        ItemCmd::Uncomplete { id } => run_mutation(
+            mode,
+            IpcRequest::UpdateItem {
                 id: id.clone(),
-                patch: ItemPatch { status: Some(ItemStatus::Todo), ..Default::default() },
-            }, |store| {
+                patch: ItemPatch {
+                    status: Some(ItemStatus::Todo),
+                    ..Default::default()
+                },
+            },
+            |store| {
                 let item = store.uncomplete_task(id)?;
                 Ok(serde_json::to_value(&item)?)
-            })
-        }
+            },
+        ),
         ItemCmd::Snooze { id, until } => {
             let until: DateTime<Utc> = parse_dt_arg(until)?;
-            run_mutation(mode, IpcRequest::Snooze { id: id.clone(), until }, |store| {
-                let item = store.snooze(id, until)?;
-                Ok(serde_json::to_value(&item)?)
-            })
+            run_mutation(
+                mode,
+                IpcRequest::Snooze {
+                    id: id.clone(),
+                    until,
+                },
+                |store| {
+                    let item = store.snooze(id, until)?;
+                    Ok(serde_json::to_value(&item)?)
+                },
+            )
         }
         ItemCmd::Convert { id, to } => {
             let to = to.to_ascii_lowercase();
@@ -765,23 +828,31 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                     "--to 只支持 event / log（待办转日程 / 日程生成记录）".into(),
                 ));
             }
-            run_mutation(mode, IpcRequest::ConvertItem { id: id.clone(), to: to.clone() }, |store| {
-                let item = if to == "event" {
-                    store.convert_task_to_event(id)?
-                } else {
-                    store.event_to_log(id)?
-                };
-                Ok(serde_json::to_value(&item)?)
-            })
+            run_mutation(
+                mode,
+                IpcRequest::ConvertItem {
+                    id: id.clone(),
+                    to: to.clone(),
+                },
+                |store| {
+                    let item = if to == "event" {
+                        store.convert_task_to_event(id)?
+                    } else {
+                        store.event_to_log(id)?
+                    };
+                    Ok(serde_json::to_value(&item)?)
+                },
+            )
         }
-        ItemCmd::Query { view, keyword, limit } => {
+        ItemCmd::Query {
+            view,
+            keyword,
+            limit,
+        } => {
             let store = open_store()?;
             let result = store.query_view(view, keyword.as_deref(), *limit)?;
             if mode.0 {
-                println!(
-                    "{}",
-                    serde_json::json!({ "ok": true, "data": result })
-                );
+                println!("{}", serde_json::json!({ "ok": true, "data": result }));
                 return Ok(());
             }
             println!(
@@ -794,7 +865,10 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 result.tz
             );
             if result.customized {
-                println!("（已定制；myday view show {} --seed 可看 seed 原文）", result.view_id);
+                println!(
+                    "（已定制；myday view show {} --seed 可看 seed 原文）",
+                    result.view_id
+                );
             }
             match (result.widgets, result.groups, result.items) {
                 (Some(widgets), _, _) => {
@@ -839,7 +913,9 @@ fn view_cmd(cmd: &ViewCmd, mode: JsonMode) -> Result<()> {
             let panel = match panel.as_deref() {
                 None => None,
                 Some(p) => Some(myday_core::view::Panel::parse(p).ok_or_else(|| {
-                    MyDayError::Invalid(format!("未知面板: {p}（可用 logs / tasks / search / stats）"))
+                    MyDayError::Invalid(format!(
+                        "未知面板: {p}（可用 logs / tasks / search / stats）"
+                    ))
                 })?),
             };
             let views = open_store()?.list_views(panel)?;
@@ -877,7 +953,11 @@ fn view_cmd(cmd: &ViewCmd, mode: JsonMode) -> Result<()> {
         }
         ViewCmd::Show { id, seed } => {
             let v = open_store()?.get_view(id)?;
-            let config = if *seed { &v.config } else { v.effective_config() };
+            let config = if *seed {
+                &v.config
+            } else {
+                v.effective_config()
+            };
             if mode.0 {
                 let data = serde_json::json!({
                     "id": v.id,
@@ -896,7 +976,11 @@ fn view_cmd(cmd: &ViewCmd, mode: JsonMode) -> Result<()> {
                 v.id,
                 v.name,
                 v.panel.as_str(),
-                if v.builtin { " · 内置" } else { " · 自定义" },
+                if v.builtin {
+                    " · 内置"
+                } else {
+                    " · 自定义"
+                },
                 if v.customized() { " · 已定制" } else { "" },
             );
             println!(
@@ -927,18 +1011,27 @@ fn field_cmd(cmd: &FieldCmd, mode: JsonMode) -> Result<()> {
                         f.name,
                         f.kind.as_str(),
                         f.options,
-                        f.scope.map(|s| format!("[{}]", s.as_str())).unwrap_or_else(|| "[全局]".into()),
+                        f.scope
+                            .map(|s| format!("[{}]", s.as_str()))
+                            .unwrap_or_else(|| "[全局]".into()),
                         if f.builtin { " 内置" } else { "" }
                     );
                 }
             }
             Ok(())
         }
-        FieldCmd::Add { name, kind, unit, choices, scope } => {
-            let kind = FieldKind::parse(kind)
-                .ok_or_else(|| MyDayError::Invalid(format!(
+        FieldCmd::Add {
+            name,
+            kind,
+            unit,
+            choices,
+            scope,
+        } => {
+            let kind = FieldKind::parse(kind).ok_or_else(|| {
+                MyDayError::Invalid(format!(
                     "未知字段类型: {kind}（可用 text/number/select/multiselect/bool/date/url）"
-                )))?;
+                ))
+            })?;
             let mut options = serde_json::Map::new();
             if let Some(u) = unit.as_deref() {
                 options.insert("unit".into(), serde_json::json!(u));
@@ -954,7 +1047,12 @@ fn field_cmd(cmd: &FieldCmd, mode: JsonMode) -> Result<()> {
             )?;
             print_field_def(mode, &def)
         }
-        FieldCmd::Update { id, name, unit, choices } => {
+        FieldCmd::Update {
+            id,
+            name,
+            unit,
+            choices,
+        } => {
             let mut options: Option<serde_json::Value> = None;
             if unit.is_some() || !choices.is_empty() {
                 let existing = open_store()?.get_field_def(id)?;
@@ -971,7 +1069,8 @@ fn field_cmd(cmd: &FieldCmd, mode: JsonMode) -> Result<()> {
                 }
                 options = Some(serde_json::Value::Object(opts));
             }
-            let def = open_store()?.update_field_def(id, name.as_deref(), options.as_ref(), None)?;
+            let def =
+                open_store()?.update_field_def(id, name.as_deref(), options.as_ref(), None)?;
             print_field_def(mode, &def)
         }
         FieldCmd::Delete { id } => {
@@ -985,7 +1084,13 @@ fn print_field_def(mode: JsonMode, def: &FieldDef) -> Result<()> {
     if mode.0 {
         println!("{}", serde_json::json!({ "ok": true, "data": def }));
     } else {
-        println!("{} {} ({}) {}", def.id, def.name, def.kind.as_str(), def.options);
+        println!(
+            "{} {} ({}) {}",
+            def.id,
+            def.name,
+            def.kind.as_str(),
+            def.options
+        );
     }
     Ok(())
 }
@@ -1065,7 +1170,11 @@ fn reminders_cmd(limit: Option<i64>, mode: JsonMode) -> Result<()> {
             display_title(&h.item),
             h.item
                 .status
-                .map(|s| if s == ItemStatus::Done { " · 已完成" } else { "" })
+                .map(|s| if s == ItemStatus::Done {
+                    " · 已完成"
+                } else {
+                    ""
+                })
                 .unwrap_or(""),
         );
     }
@@ -1248,9 +1357,16 @@ fn validate_new(new: &NewItem) -> Result<()> {
     match new.item_type {
         Some(ItemType::Log) => {
             if title.is_empty()
-                && new.note.as_deref().map(str::trim).filter(|n| !n.is_empty()).is_none()
+                && new
+                    .note
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                    .is_none()
             {
-                return Err(MyDayError::Invalid("记录需要 --title 或 --note 至少一项".into()));
+                return Err(MyDayError::Invalid(
+                    "记录需要 --title 或 --note 至少一项".into(),
+                ));
             }
         }
         _ => {

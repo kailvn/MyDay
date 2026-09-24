@@ -407,10 +407,20 @@ pub struct ReminderHistoryEntry {
 
 /// 展示标题：title ?? note 截断(40 字) ?? "无标题"（§5.7）。
 pub fn display_title(item: &Item) -> String {
-    if let Some(t) = item.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+    if let Some(t) = item
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
         return t.to_string();
     }
-    if let Some(n) = item.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+    if let Some(n) = item
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+    {
         let truncated: String = n.chars().take(40).collect();
         return truncated;
     }

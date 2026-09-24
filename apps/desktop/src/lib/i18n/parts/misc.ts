@@ -99,7 +99,7 @@ export const part_misc = {
   "holiday.countdown": "距 {name} 假期还有 {days} 天",
 } as const;
 
-export const part_misc_en: Record<string, string> = {
+export const part_misc_en = {
   // ---- ItemDetail.svelte ----
   "detail.title": "Item details",
   "detail.status.todo": "Not done",

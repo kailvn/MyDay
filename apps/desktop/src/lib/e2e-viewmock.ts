@@ -215,7 +215,7 @@ export function initViewEngine(
     const n = now();
     return new Date(n.getFullYear(), n.getMonth(), n.getDate());
   };
-  const dayBounds = (d: Date) => [d.getTime(), d.getTime() + 86_400_000 - 1];
+  const dayBounds = (d: Date): [number, number] => [d.getTime(), d.getTime() + 86_400_000 - 1];
   const relDay = (r: string) => {
     const t = today();
     if (r === "tomorrow") t.setDate(t.getDate() + 1);

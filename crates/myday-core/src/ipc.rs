@@ -12,10 +12,10 @@
 //! - `myday quick-add`（无参数）通过 `ShowQuickAdd` 唤起快速窗口。
 
 use std::io::{BufRead, BufReader, Write};
-#[cfg(unix)]
-use std::os::unix::net::{UnixListener, UnixStream};
 #[cfg(windows)]
 use std::net::{TcpListener, TcpStream};
+#[cfg(unix)]
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,8 +48,13 @@ pub enum IpcRequest {
         title: Option<String>,
     },
     /// 由 GUI 代为执行创建（GUI 运行时的写路径）
-    AddItem { new: NewItem },
-    UpdateItem { id: String, patch: ItemPatch },
+    AddItem {
+        new: NewItem,
+    },
+    UpdateItem {
+        id: String,
+        patch: ItemPatch,
+    },
     /// 删除：hard = false 进回收站（软删），true = 彻底删除（级联清理，不可逆）
     DeleteItem {
         id: String,
@@ -57,19 +62,37 @@ pub enum IpcRequest {
         hard: bool,
     },
     /// 从回收站恢复
-    RestoreItem { id: String },
+    RestoreItem {
+        id: String,
+    },
     /// 重复条目单次例外：把某次发生拆为独立条目（at = 该期锚点，RFC3339）
-    DetachOccurrence { id: String, at: chrono::DateTime<chrono::Utc> },
+    DetachOccurrence {
+        id: String,
+        at: chrono::DateTime<chrono::Utc>,
+    },
     /// 重复条目单次例外：仅删除某一次发生
-    SkipOccurrence { id: String, at: chrono::DateTime<chrono::Utc> },
-    CompleteTask { id: String },
-    Snooze { id: String, until: chrono::DateTime<chrono::Utc> },
+    SkipOccurrence {
+        id: String,
+        at: chrono::DateTime<chrono::Utc>,
+    },
+    CompleteTask {
+        id: String,
+    },
+    Snooze {
+        id: String,
+        until: chrono::DateTime<chrono::Utc>,
+    },
     /// 类型间转换（SPRINT2-SPEC §7）：to = event / log
-    ConvertItem { id: String, to: String },
+    ConvertItem {
+        id: String,
+        to: String,
+    },
     /// 通知 GUI 数据已被外部（CLI 直写）修改，刷新视图
     Refresh,
     /// 打开并定位到条目（通知点击）
-    Reveal { id: String },
+    Reveal {
+        id: String,
+    },
 }
 
 /// 统一响应信封（与 CLI JSON 输出结构一致，需求 §2.3）。

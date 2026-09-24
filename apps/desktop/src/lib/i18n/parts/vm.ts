@@ -191,7 +191,7 @@ export const part_vm = {
   'vm.toolbar.createCopy': '创建副本',
 } as const;
 
-export const part_vm_en: Record<string, string> = {
+export const part_vm_en = {
   // Built-in column display names
   'vm.col.type': 'Type',
   'vm.col.status': 'Status',

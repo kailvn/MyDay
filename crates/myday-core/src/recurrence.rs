@@ -8,6 +8,7 @@
 //! 结束条件（可选，`;` 追加一段，二选一互斥）：
 //! - `;until=YYYY-MM-DD` 含当天的本地最后日期（该日的发生仍是最后一期）
 //! - `;count=N`          含锚点在内的总次数上限
+//!
 //! 例：`@weekly:3;until=2026-12-31`、`@daily;count=10`。
 //!
 //! 单次例外：`items.recurrence_exdates`（JSON 数组，RFC3339 时刻）列出被剔除的
@@ -56,7 +57,11 @@ pub struct Recurrence {
 impl Recurrence {
     /// 仅基础规则（无结束条件）。
     pub fn bare(kind: RecurKind) -> Self {
-        Self { kind, until: None, count: None }
+        Self {
+            kind,
+            until: None,
+            count: None,
+        }
     }
 
     /// 严格解析（宁报错不猜测）：空值 / 未知 token / 越界参数 / until+count 双写
@@ -149,7 +154,10 @@ impl Recurrence {
                 let base_wd = base.weekday().number_from_monday() as i64;
                 let aligned = base + Duration::days((w as i64 - base_wd).rem_euclid(7));
                 let span = (after_local - aligned).num_days().max(0);
-                ((span / 7) - 1, Box::new(move |k: i64| Some(aligned + Duration::days(7 * k))))
+                (
+                    (span / 7) - 1,
+                    Box::new(move |k: i64| Some(aligned + Duration::days(7 * k))),
+                )
             }
             RecurKind::Monthly(day) => {
                 let month_idx = |d: NaiveDate| d.year() as i64 * 12 + d.month() as i64 - 1;
@@ -194,10 +202,7 @@ impl Recurrence {
 
 fn days_in_month(y: i32, m: u32) -> u32 {
     let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
-    (chrono::NaiveDate::from_ymd_opt(ny, nm, 1)
-        .expect("首日必然合法")
-        - Duration::days(1))
-    .day()
+    (chrono::NaiveDate::from_ymd_opt(ny, nm, 1).expect("首日必然合法") - Duration::days(1)).day()
 }
 
 /// 展开条目在窗口内的发生：日程按区间相交（跨天两头都算），待办按 due 落窗。
@@ -231,7 +236,11 @@ pub fn occurrences_between(item: &Item, from: DateTime<Utc>, to: DateTime<Utc>) 
                 }
                 let e = t + dur;
                 if e >= from && !is_excluded(t) {
-                    out.push(Occurrence { start: Some(t), end: Some(e), due: None });
+                    out.push(Occurrence {
+                        start: Some(t),
+                        end: Some(e),
+                        due: None,
+                    });
                     if out.len() >= MAX_OCCURRENCES {
                         break;
                     }
@@ -290,31 +299,53 @@ mod tests {
     #[test]
     fn parse_is_strict() {
         assert_eq!(Recurrence::parse("@daily").unwrap().kind, RecurKind::Daily);
-        assert_eq!(Recurrence::parse("@weekly:1").unwrap().kind, RecurKind::Weekly(1));
-        assert_eq!(Recurrence::parse("@weekly:7").unwrap().kind, RecurKind::Weekly(7));
-        assert_eq!(Recurrence::parse("@monthly:31").unwrap().kind, RecurKind::Monthly(31));
+        assert_eq!(
+            Recurrence::parse("@weekly:1").unwrap().kind,
+            RecurKind::Weekly(1)
+        );
+        assert_eq!(
+            Recurrence::parse("@weekly:7").unwrap().kind,
+            RecurKind::Weekly(7)
+        );
+        assert_eq!(
+            Recurrence::parse("@monthly:31").unwrap().kind,
+            RecurKind::Monthly(31)
+        );
         assert!(Recurrence::parse("@daily").unwrap().until.is_none());
-        for bad in ["", "@", "@week", "@weekly:0", "@weekly:8", "@monthly:0", "@monthly:32", "@daily:", "@now", "@d+7"] {
+        for bad in [
+            "",
+            "@",
+            "@week",
+            "@weekly:0",
+            "@weekly:8",
+            "@monthly:0",
+            "@monthly:32",
+            "@daily:",
+            "@now",
+            "@d+7",
+        ] {
             assert!(Recurrence::parse(bad).is_err(), "{bad} 应拒绝");
         }
     }
 
     #[test]
     fn parse_end_conditions_and_roundtrip() {
-        use chrono::TimeZone;
         let u = Recurrence::parse("@daily;until=2026-12-31").unwrap();
-        assert_eq!(u.until, Some(chrono::NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()));
+        assert_eq!(
+            u.until,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 12, 31).unwrap())
+        );
         assert_eq!(u.as_str(), "@daily;until=2026-12-31");
         let c = Recurrence::parse("@weekly:3;count=12").unwrap();
         assert_eq!(c.count, Some(12));
         assert_eq!(c.as_str(), "@weekly:3;count=12");
         for bad in [
-            "@daily;until=2026-13-01",   // 非法日期
+            "@daily;until=2026-13-01",         // 非法日期
             "@daily;until=2026-12-31;count=3", // 双写
-            "@daily;count=0",            // 零次
-            "@daily;count=abc",          // 非数字
-            "@daily;freq=x",             // 未知段
-            "@daily;until",              // 残缺
+            "@daily;count=0",                  // 零次
+            "@daily;count=abc",                // 非数字
+            "@daily;freq=x",                   // 未知段
+            "@daily;until",                    // 残缺
         ] {
             assert!(Recurrence::parse(bad).is_err(), "{bad} 应拒绝");
         }
@@ -345,7 +376,6 @@ mod tests {
 
     #[test]
     fn exdate_skips_occurrence() {
-        use chrono::TimeZone;
         let mut item = serde_json::from_str::<Item>(
             r#"{"id":"evt_x","type":"event","title":"站会","start_at":null,"end_at":null,"all_day":false,"due_at":null,"due_all_day":false,"occurred_at":null,"status":null,"completed_at":null,"recurrence":"@daily","recurrence_exdates":[],"template_id":null,"reminders":[],"tags":[],"attachments":[],"idempotency_key":null,"created_at":"2026-09-16T00:00:00Z","updated_at":"2026-09-16T00:00:00Z","extra":{}}"#,
         )
@@ -364,20 +394,30 @@ mod tests {
     #[test]
     fn daily_weekly_monthly_next() {
         let anchor = utc(2026, 9, 16, 9); // 周三 09:00 本地
-        // 每天：严格晚于当天 09:00 的下一次 = 次日
-        let next = Recurrence::bare(RecurKind::Daily).next_after(anchor, anchor).unwrap();
+                                          // 每天：严格晚于当天 09:00 的下一次 = 次日
+        let next = Recurrence::bare(RecurKind::Daily)
+            .next_after(anchor, anchor)
+            .unwrap();
         assert_eq!(next, utc(2026, 9, 17, 9));
         // 每周一：从周三起到下周一
-        let next = Recurrence::bare(RecurKind::Weekly(1)).next_after(anchor, anchor).unwrap();
+        let next = Recurrence::bare(RecurKind::Weekly(1))
+            .next_after(anchor, anchor)
+            .unwrap();
         assert_eq!(next, utc(2026, 9, 21, 9));
         // 每周三是自身锚点：下一个是下周三
-        let next = Recurrence::bare(RecurKind::Weekly(3)).next_after(anchor, anchor).unwrap();
+        let next = Recurrence::bare(RecurKind::Weekly(3))
+            .next_after(anchor, anchor)
+            .unwrap();
         assert_eq!(next, utc(2026, 9, 23, 9));
         // 每月 31 号：9 月之后是 10 月 31，然后 11 月 30（月末钳制），12 月 31
         let jan31 = utc(2026, 1, 31, 20);
-        let feb = Recurrence::bare(RecurKind::Monthly(31)).next_after(jan31, jan31).unwrap();
+        let feb = Recurrence::bare(RecurKind::Monthly(31))
+            .next_after(jan31, jan31)
+            .unwrap();
         assert_eq!(feb, utc(2026, 2, 28, 20));
-        let mar = Recurrence::bare(RecurKind::Monthly(31)).next_after(jan31, feb).unwrap();
+        let mar = Recurrence::bare(RecurKind::Monthly(31))
+            .next_after(jan31, feb)
+            .unwrap();
         assert_eq!(mar, utc(2026, 3, 31, 20));
         let _ = anchor;
     }
@@ -394,7 +434,9 @@ mod tests {
             (2026, 6, 30),
         ];
         for (y, m, d) in months {
-            t = Recurrence::bare(RecurKind::Monthly(31)).next_after(jan31, t).unwrap();
+            t = Recurrence::bare(RecurKind::Monthly(31))
+                .next_after(jan31, t)
+                .unwrap();
             let local = t.with_timezone(&chrono::Local);
             assert_eq!((local.year(), local.month(), local.day()), (y, m, d));
         }
@@ -416,7 +458,10 @@ mod tests {
         let to = utc(2026, 9, 17, 23);
         let occ = occurrences_between(&item, from, to);
         assert_eq!(occ.len(), 1, "窗口内恰好一次：{:?}", occ);
-        assert_eq!(occ[0].end.unwrap() - occ[0].start.unwrap(), Duration::minutes(15));
+        assert_eq!(
+            occ[0].end.unwrap() - occ[0].start.unwrap(),
+            Duration::minutes(15)
+        );
 
         // 待办：每周三截止，9/17 窗口为空、9/23（周三）窗口恰好一次
         item.item_type = ItemType::Task;
@@ -432,4 +477,3 @@ mod tests {
         assert_eq!(occ[0].start, None, "无开始的待办 occurrence 不带 start");
     }
 }
-

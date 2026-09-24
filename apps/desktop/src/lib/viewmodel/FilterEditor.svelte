@@ -35,9 +35,10 @@
     onchanged: () => void;
   } = $props();
 
-  const config = cloneConfig(effectiveConfig(view) as ViewConfig);
-  let state = $state<FilterEditState>(astToEditState(config.dataset?.filter));
-  let itemType = $state<"all" | "event" | "task" | "log">(config.dataset?.item_type ?? "all");
+  // svelte-ignore state_referenced_locally
+  const config = cloneConfig(effectiveConfig(view));
+  let edit: FilterEditState = $state(astToEditState(config.dataset?.filter));
+  let itemType: "all" | "event" | "task" | "log" = $state(config.dataset?.item_type ?? "all");
   let error = $state("");
   let saving = $state(false);
 
@@ -57,7 +58,7 @@
   let firstRun = true;
 
   $effect(() => {
-    JSON.stringify($state.snapshot(state));
+    JSON.stringify($state.snapshot(edit));
     if (firstRun) {
       firstRun = false;
       return;
@@ -82,7 +83,7 @@
     try {
       saving = true;
       const next = cloneConfig(config);
-      next.dataset.filter = editStateToAst($state.snapshot(state) as FilterEditState);
+      next.dataset.filter = editStateToAst($state.snapshot(edit) as FilterEditState);
       await api.viewSave(view.id, next);
       onchanged();
     } catch (e) {
@@ -106,16 +107,16 @@
     // 空行 / 未选字段 / 需要值但值为 null 的行落库前清掉（宁可查不到不静默猜测在引擎侧兜底）
     const ok = (r: { field: string; value: unknown; cmp: string }) =>
       r.field && (r.value != null || ["empty", "not_empty", "is_true", "is_false"].includes(r.cmp));
-    state.rows = state.rows.filter(ok);
-    if (state.sub) {
-      state.sub.rows = state.sub.rows.filter(ok);
-      if (state.sub.rows.length === 0) state.sub = null;
+    edit.rows = edit.rows.filter(ok);
+    if (edit.sub) {
+      edit.sub.rows = edit.sub.rows.filter(ok);
+      if (edit.sub.rows.length === 0) edit.sub = null;
     }
   }
 
   function clearAll() {
-    state.rows = [];
-    state.sub = null;
+    edit.rows = [];
+    edit.sub = null;
     touch();
     void flush();
   }
@@ -160,30 +161,30 @@
     <div class="op-row">
       <span class="op-label">{t("vm.filter.match")}</span>
       <span class="seg" role="group" aria-label={t("vm.filter.opLabel")}>
-        <button class:on={state.op === "and"} onclick={() => (state.op = "and")}>{t("vm.filter.all")}</button>
-        <button class:on={state.op === "or"} onclick={() => (state.op = "or")}>{t("vm.filter.any")}</button>
+        <button class:on={edit.op === "and"} onclick={() => (edit.op = "and")}>{t("vm.filter.all")}</button>
+        <button class:on={edit.op === "or"} onclick={() => (edit.op = "or")}>{t("vm.filter.any")}</button>
       </span>
     </div>
 
     <div class="rows-list">
-      <RuleRows bind:rows={state.rows} {fields} {templates} {itemType} {tagSuggestions} />
+      <RuleRows bind:rows={edit.rows} {fields} {templates} {itemType} {tagSuggestions} />
 
-      {#if state.sub}
+      {#if edit.sub}
         <div class="sub">
           <div class="sub-head">
             <span>{t("vm.filter.groupPrefix")}</span>
             <span class="seg small" role="group" aria-label={t("vm.filter.subOpLabel")}>
-              <button class:on={state.sub.op === "and"} onclick={() => { if (state.sub) state.sub.op = "and"; }}>{t("vm.filter.subAll")}</button>
-              <button class:on={state.sub.op === "or"} onclick={() => { if (state.sub) state.sub.op = "or"; }}>{t("vm.filter.subAny")}</button>
+              <button class:on={edit.sub.op === "and"} onclick={() => { if (edit.sub) edit.sub.op = "and"; }}>{t("vm.filter.subAll")}</button>
+              <button class:on={edit.sub.op === "or"} onclick={() => { if (edit.sub) edit.sub.op = "or"; }}>{t("vm.filter.subAny")}</button>
             </span>
             <span>{t("vm.filter.groupSuffix")}</span>
             <span class="flex1"></span>
-            <button class="ghost" onclick={() => (state.sub = null)}>{t("vm.filter.removeGroup")}</button>
+            <button class="ghost" onclick={() => (edit.sub = null)}>{t("vm.filter.removeGroup")}</button>
           </div>
-          <RuleRows bind:rows={state.sub.rows} {fields} {templates} {itemType} />
+          <RuleRows bind:rows={edit.sub.rows} {fields} {templates} {itemType} />
         </div>
       {:else}
-        <button class="ghost add-group" onclick={() => (state.sub = { op: "or", rows: [] })}>{t("vm.filter.addGroup")}</button>
+        <button class="ghost add-group" onclick={() => (edit.sub = { op: "or", rows: [] })}>{t("vm.filter.addGroup")}</button>
       {/if}
     </div>
 

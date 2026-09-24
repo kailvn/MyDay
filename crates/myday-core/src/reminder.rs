@@ -13,11 +13,11 @@
 //! GUI 注入 notify-rust 实现；测试注入收集器。
 //! 调用方（GUI 常驻线程）每 30 秒执行一次 [`tick_once`]。
 
-use chrono::{DateTime, Duration, Utc};
 use crate::error::Result;
 use crate::model::{display_title, Item, ItemStatus, ItemType, Reminder};
 use crate::store::Store;
 use crate::tpltime::{self, Spec};
+use chrono::{DateTime, Duration, Utc};
 
 /// 通知发送抽象。只传**结构化数据**（条目 + 发生时刻 + 动作 ID），文案由
 /// 实现方按界面语言渲染（core 保持 locale 中立）。GNOME 通知 action 受限时，
@@ -37,7 +37,13 @@ pub trait Notifier: Send + Sync {
 pub struct LogNotifier;
 
 impl Notifier for LogNotifier {
-    fn notify(&self, _reminder: &Reminder, item: &Item, _at: DateTime<Utc>, _actions: &[&'static str]) {
+    fn notify(
+        &self,
+        _reminder: &Reminder,
+        item: &Item,
+        _at: DateTime<Utc>,
+        _actions: &[&'static str],
+    ) {
         eprintln!("myday reminder: {} ({})", display_title(item), item.id);
     }
 
@@ -83,7 +89,7 @@ pub fn occurrences(spec: &str, item: &Item) -> Vec<DateTime<Utc>> {
 /// 期间逐日本地时刻（上限 400 个防御异常区间）。
 fn daily_occurrences(item: &Item, clock: (u32, u32)) -> Vec<DateTime<Utc>> {
     let period: Option<(DateTime<Utc>, DateTime<Utc>)> = match item.item_type {
-        ItemType::Event => item.start_at.and_then(|s| item.end_at.map(|e| (s, e))),
+        ItemType::Event => item.start_at.zip(item.end_at),
         ItemType::Task => item
             .due_at
             .map(|d| (item.start_at.unwrap_or(item.created_at), d)),
@@ -151,8 +157,7 @@ pub fn tick_once(store: &Store, notifier: &dyn Notifier) -> Result<usize> {
             .map(|o| {
                 (
                     display_title(&o.item),
-                    o.at
-                        .with_timezone(&chrono::Local)
+                    o.at.with_timezone(&chrono::Local)
                         .format("%m-%d %H:%M")
                         .to_string(),
                 )

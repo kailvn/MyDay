@@ -34,7 +34,11 @@ pub struct ResolveCtx {
 
 impl ResolveCtx {
     pub fn new(now: DateTime<Utc>, anchor_day: NaiveDate) -> Self {
-        Self { now, anchor_day, start: None }
+        Self {
+            now,
+            anchor_day,
+            start: None,
+        }
     }
     pub fn with_start(mut self, start: Option<DateTime<Utc>>) -> Self {
         self.start = start;
@@ -70,9 +74,7 @@ pub fn is_past_now_token(tok: &str) -> bool {
         return false;
     };
     let (digits, unit) = rest.split_at(rest.len().saturating_sub(1));
-    !digits.is_empty()
-        && digits.chars().all(|c| c.is_ascii_digit())
-        && matches!(unit, "m" | "h")
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) && matches!(unit, "m" | "h")
 }
 
 /// 模板保存时的语法与列合法性校验（不做解析——解析依赖运行时上下文）。
@@ -202,7 +204,9 @@ pub fn parse_spec(tok: &str, column: &str) -> Result<Spec, String> {
 /// offset 起始位置（第一个 +/- 后跟数字处）。
 fn find_offset_start(s: &str) -> usize {
     s.char_indices()
-        .find(|(i, c)| (*c == '+' || *c == '-') && s[i + 1..].starts_with(|c: char| c.is_ascii_digit()))
+        .find(|(i, c)| {
+            (*c == '+' || *c == '-') && s[i + 1..].starts_with(|c: char| c.is_ascii_digit())
+        })
         .map(|(i, _)| i)
         .unwrap_or(s.len())
 }
@@ -316,7 +320,10 @@ mod tests {
     fn now_family() {
         let c = ctx();
         assert_eq!(resolve("@now", &c).unwrap(), c.now);
-        assert_eq!(resolve("@now+30m", &c).unwrap(), c.now + Duration::minutes(30));
+        assert_eq!(
+            resolve("@now+30m", &c).unwrap(),
+            c.now + Duration::minutes(30)
+        );
         assert_eq!(resolve("@now-1h", &c).unwrap(), c.now - Duration::hours(1));
         assert!(resolve("@now+90m", &c).is_ok());
         assert!(resolve("@now+x", &c).is_err());
@@ -337,7 +344,10 @@ mod tests {
 
         // 无 T = 当日零点；d-1 = 前一天
         let got = resolve("@d0", &c).unwrap();
-        assert_eq!(got.with_timezone(&chrono::Local).time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        assert_eq!(
+            got.with_timezone(&chrono::Local).time(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+        );
         let got = resolve("@d-1T21:00", &c).unwrap();
         assert_eq!(
             got.with_timezone(&chrono::Local).date_naive(),
@@ -364,7 +374,10 @@ mod tests {
         assert!(validate_for_column("@due", "reminder").is_ok());
         assert!(validate_for_column("@dailyT09:00", "reminder").is_ok());
         for col in ["start_at", "end_at", "due_at", "occurred_at"] {
-            assert!(validate_for_column("@due-1d", col).is_err(), "@due 用于 {col} 应拒绝");
+            assert!(
+                validate_for_column("@due-1d", col).is_err(),
+                "@due 用于 {col} 应拒绝"
+            );
             assert!(validate_for_column("@dailyT09:00", col).is_err());
         }
         // now 族不作为提醒意图（随评估漂移永不触发）
@@ -397,7 +410,17 @@ mod tests {
         for (tok, _) in OFFICIAL_EXAMPLES {
             assert!(validate_for_column(tok, "any").is_ok(), "{tok} 应合法");
         }
-        for bad in ["@", "@foo", "@d", "@dT09:00", "@d0T25:00", "@now+30x", "@next_hour+1h", "@daily", "@dailyT09:00x"] {
+        for bad in [
+            "@",
+            "@foo",
+            "@d",
+            "@dT09:00",
+            "@d0T25:00",
+            "@now+30x",
+            "@next_hour+1h",
+            "@daily",
+            "@dailyT09:00x",
+        ] {
             assert!(validate_for_column(bad, "any").is_err(), "{bad} 应非法");
         }
     }

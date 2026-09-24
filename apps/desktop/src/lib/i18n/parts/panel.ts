@@ -163,7 +163,7 @@ export const part_panel = {
   'panel.validate.titleRequired': '标题不能为空',
 } as const;
 
-export const part_panel_en: Record<string, string> = {
+export const part_panel_en = {
   'panel.time.start': 'Start',
   'panel.time.end': 'End',
   'panel.time.due': 'Due',

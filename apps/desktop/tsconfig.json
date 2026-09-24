@@ -11,8 +11,9 @@
     "skipLibCheck": true,
     "types": ["svelte", "vite/client"],
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts", "src/**/*.svelte"],
-  "exclude": ["src/lib/tpltime.golden.ts"]
+  "exclude": ["src/lib/*.golden.ts"]
 }

@@ -70,11 +70,23 @@ fn validation_rejections_exit_2() {
 
     // 日程必须带开始时间
     let out = run(myday(&t).args(["item", "add", "--type", "event", "--title", "没开始"]));
-    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     // log 不允许未来发生时间
     let out = run(myday(&t).args([
-        "item", "add", "--type", "log", "--title", "穿越", "--at", "2099-01-01T00:00",
+        "item",
+        "add",
+        "--type",
+        "log",
+        "--title",
+        "穿越",
+        "--at",
+        "2099-01-01T00:00",
     ]));
     assert_eq!(out.status.code(), Some(2));
 
@@ -100,30 +112,60 @@ fn field_values_use_field_ids() {
     let t = TempDir::new().unwrap();
 
     // 建字段拿 id
-    let out = run(
-        myday(&t).args(["field", "add", "--name", "体重", "--kind", "number", "--json"]),
+    let out = run(myday(&t).args([
+        "field", "add", "--name", "体重", "--kind", "number", "--json",
+    ]));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let fid = v["data"]["id"].as_str().unwrap().to_string();
 
     // 写值
-    let id = add_item_id(&t, &["--type", "log", "--title", "称重", &format!("--field={fid}=70.5")]);
+    let id = add_item_id(
+        &t,
+        &[
+            "--type",
+            "log",
+            "--title",
+            "称重",
+            &format!("--field={fid}=70.5"),
+        ],
+    );
     let out = run(myday(&t).args(["item", "get", &id, "--json"]));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["extra"][&fid], 70.5);
 
     // 未定义字段被拒（extra 的键必须是字段 id）
-    let out = run(
-        myday(&t).args(["item", "add", "--type", "log", "--title", "x", "--field", "不存在=1"]),
-    );
+    let out = run(myday(&t).args([
+        "item",
+        "add",
+        "--type",
+        "log",
+        "--title",
+        "x",
+        "--field",
+        "不存在=1",
+    ]));
     assert_eq!(out.status.code(), Some(2));
 }
 
 #[test]
 fn delete_trash_restore_and_hard_delete() {
     let t = TempDir::new().unwrap();
-    let id = add_item_id(&t, &["--type", "event", "--title", "客户沟通", "--start", "2026-09-16T10:00"]);
+    let id = add_item_id(
+        &t,
+        &[
+            "--type",
+            "event",
+            "--title",
+            "客户沟通",
+            "--start",
+            "2026-09-16T10:00",
+        ],
+    );
 
     // 删除 = 进回收站 → 0，返回被删条目；重复删除幂等成功（已软删不再改）
     let out = run(myday(&t).args(["item", "delete", &id, "--json"]));
@@ -131,7 +173,11 @@ fn delete_trash_restore_and_hard_delete() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(v["ok"].as_bool().unwrap());
     assert_eq!(v["data"]["id"].as_str().unwrap(), id);
-    assert_eq!(v["data"]["deleted_at"].as_str().unwrap_or(""), "", "软删条目带 deleted_at");
+    assert_eq!(
+        v["data"]["deleted_at"].as_str().unwrap_or(""),
+        "",
+        "软删条目带 deleted_at"
+    );
 
     // 活跃列表不再可见；回收站可见；get 仍可访问（回收站详情）
     let out = run(myday(&t).args(["item", "list", "--type", "event", "--json"]));
@@ -152,10 +198,19 @@ fn delete_trash_restore_and_hard_delete() {
     let out = run(myday(&t).args(["item", "delete", &id, "--json"]));
     assert!(out.status.success());
     let out = run(myday(&t).args(["item", "delete", &id, "--hard", "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(run(myday(&t).args(["item", "get", &id])).status.code(), Some(3));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(
-        run(myday(&t).args(["item", "delete", &id, "--hard"])).status.code(),
+        run(myday(&t).args(["item", "get", &id])).status.code(),
+        Some(3)
+    );
+    assert_eq!(
+        run(myday(&t).args(["item", "delete", &id, "--hard"]))
+            .status
+            .code(),
         Some(3)
     );
 }
@@ -164,18 +219,43 @@ fn delete_trash_restore_and_hard_delete() {
 fn import_ics_roundtrip_and_dedupe() {
     let t = TempDir::new().unwrap();
     // 带截止待办 → 导出 → 删掉原条目 → 导入 = 数据回来
-    let id = add_item_id(&t, &["--type", "task", "--title", "买牛奶", "--due", "2026-10-10T18:00"]);
+    let id = add_item_id(
+        &t,
+        &[
+            "--type",
+            "task",
+            "--title",
+            "买牛奶",
+            "--due",
+            "2026-10-10T18:00",
+        ],
+    );
     let out = run(myday(&t).args([
-        "export", "ics", "--output",
+        "export",
+        "ics",
+        "--output",
         t.path().join("roundtrip.ics").to_str().unwrap(),
     ]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     // 删掉原条目（软删 → 彻底删除）后导入 → 待办回来（无截止映射等价）
     run(myday(&t).args(["item", "delete", &id]));
     run(myday(&t).args(["item", "delete", &id, "--hard"]));
-    let out = run(myday(&t).args(["import", "ics", t.path().join("roundtrip.ics").to_str().unwrap(), "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = run(myday(&t).args([
+        "import",
+        "ics",
+        t.path().join("roundtrip.ics").to_str().unwrap(),
+        "--json",
+    ]));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["tasks"].as_i64().unwrap(), 1, "VTODO → 待办");
     assert_eq!(
@@ -186,7 +266,12 @@ fn import_ics_roundtrip_and_dedupe() {
     );
 
     // 重复导入 → 幂等跳过（回链 / UID 幂等键），不新增
-    let out = run(myday(&t).args(["import", "ics", t.path().join("roundtrip.ics").to_str().unwrap(), "--json"]));
+    let out = run(myday(&t).args([
+        "import",
+        "ics",
+        t.path().join("roundtrip.ics").to_str().unwrap(),
+        "--json",
+    ]));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["tasks"].as_i64().unwrap(), 0);
     assert!(v["data"]["skipped_duplicates"].as_i64().unwrap() >= 1);
@@ -198,7 +283,11 @@ fn complete_cycle_and_views() {
     let id = add_item_id(&t, &["--title", "写周报", "--due", "2026-09-16"]);
 
     let out = run(myday(&t).args(["item", "complete", &id, "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["status"], "done");
     assert!(v["data"]["completed_at"].is_string());
@@ -234,7 +323,10 @@ fn log_future_at_and_update_note_only() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(
-        v["data"]["occurred_at"].as_str().unwrap_or("").starts_with("2026-09-15"),
+        v["data"]["occurred_at"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("2026-09-15"),
         "occurred_at = {}",
         v["data"]["occurred_at"]
     );
@@ -244,11 +336,27 @@ fn log_future_at_and_update_note_only() {
 fn occurrence_detach_and_skip() {
     let t = TempDir::new().unwrap();
     // 周四 09:00 起每周重复（带结束条件语法）
-    let id = add_item_id(&t, &["--type", "event", "--title", "站会", "--start", "2026-09-24T09:00", "--recurse", "@weekly:4;count=3"]);
+    let id = add_item_id(
+        &t,
+        &[
+            "--type",
+            "event",
+            "--title",
+            "站会",
+            "--start",
+            "2026-09-24T09:00",
+            "--recurse",
+            "@weekly:4;count=3",
+        ],
+    );
 
     // 拆分下一期（10-01 09:00）为独立条目
     let out = run(myday(&t).args(["item", "detach", &id, "--at", "2026-10-01T09:00", "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let detached_id = v["data"]["id"].as_str().unwrap().to_string();
     assert_ne!(detached_id, id);
@@ -259,11 +367,15 @@ fn occurrence_detach_and_skip() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["recurrence_exdates"].as_array().unwrap().len(), 1);
     assert_eq!(
-        run(myday(&t).args(["item", "skip", &id, "--at", "2026-09-30T09:00"])).status.code(),
+        run(myday(&t).args(["item", "skip", &id, "--at", "2026-09-30T09:00"]))
+            .status
+            .code(),
         Some(2)
     );
     assert_eq!(
-        run(myday(&t).args(["item", "skip", &detached_id, "--at", "2026-10-01T09:00"])).status.code(),
+        run(myday(&t).args(["item", "skip", &detached_id, "--at", "2026-10-01T09:00"]))
+            .status
+            .code(),
         Some(2)
     );
 

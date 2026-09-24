@@ -237,9 +237,21 @@ CREATE TABLE view_defs (
 
 /// 内置字段种子：优先级 + 预计分钟（时间块排期；升级路径见 upgrade_builtin_fields）。
 const SEED_FIELD_DEFS: &[(&str, &str, FieldKind, &str, &str)] = &[
-    ("fd_priority", "优先级", FieldKind::Select, r#"{"choices":["低","中","高"]}"#, "task"),
+    (
+        "fd_priority",
+        "优先级",
+        FieldKind::Select,
+        r#"{"choices":["低","中","高"]}"#,
+        "task",
+    ),
     // 预计耗时（分钟）：未排期池拖入周/日时段格时按它占位时间块（WeekGrid 渲染）
-    ("fd_est_min", "预计分钟", FieldKind::Number, r#"{"unit":"分钟"}"#, "task"),
+    (
+        "fd_est_min",
+        "预计分钟",
+        FieldKind::Number,
+        r#"{"unit":"分钟"}"#,
+        "task",
+    ),
 ];
 
 /// 内置模板种子（§4）：最少、最通用——不做健康记录的用户也用得上，
@@ -561,7 +573,10 @@ impl Store {
             let Some(name) = f.get("name").and_then(|v| v.as_str()) else {
                 continue;
             };
-            let Some(kind) = f.get("kind").and_then(|v| v.as_str()).and_then(FieldKind::parse)
+            let Some(kind) = f
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .and_then(FieldKind::parse)
             else {
                 continue;
             };
@@ -703,7 +718,12 @@ impl Store {
         let item_type = match new.item_type.or(tpl_type) {
             // §5.8 规则 1：模板自带 item_type 即类型（显式传参仍最优先）
             Some(t) => t,
-            None => Self::infer_type(&conn, new.due_at.is_some(), new.start_at.is_some(), &new.extra)?,
+            None => Self::infer_type(
+                &conn,
+                new.due_at.is_some(),
+                new.start_at.is_some(),
+                &new.extra,
+            )?,
         };
         new.item_type = Some(item_type);
 
@@ -725,11 +745,13 @@ impl Store {
             }
         };
 
-        let title = new.title.as_deref().map(str::trim).filter(|t| !t.is_empty());
+        let title = new
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty());
         let note = new.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
-        if (title.is_none() && note.is_none())
-            || (item_type != ItemType::Log && title.is_none())
-        {
+        if (title.is_none() && note.is_none()) || (item_type != ItemType::Log && title.is_none()) {
             return Err(MyDayError::Invalid(
                 "标题不能为空（记录类至少需要标题或备注之一）".into(),
             ));
@@ -785,8 +807,11 @@ impl Store {
         let id = new_id(item_type);
         // 单次例外只在重复条目上有意义；统一截到秒保证往返相等
         let exdates = if recurrence.is_some() && !new.recurrence_exdates.is_empty() {
-            let list: Vec<DateTime<Utc>> =
-                new.recurrence_exdates.iter().map(|t| t.trunc_subsecs(0)).collect();
+            let list: Vec<DateTime<Utc>> = new
+                .recurrence_exdates
+                .iter()
+                .map(|t| t.trunc_subsecs(0))
+                .collect();
             exdates_json(&list)
         } else {
             None
@@ -869,7 +894,9 @@ impl Store {
         match item_type {
             ItemType::Event => {
                 if new.due_at.is_some() {
-                    return Err(MyDayError::Invalid("日程不允许截止时间；同时有开始与截止请用待办".into()));
+                    return Err(MyDayError::Invalid(
+                        "日程不允许截止时间；同时有开始与截止请用待办".into(),
+                    ));
                 }
                 let Some(start) = new.start_at else {
                     return Err(MyDayError::Invalid("日程必须带开始时间".into()));
@@ -889,7 +916,9 @@ impl Store {
             }
             ItemType::Log => {
                 if new.start_at.is_some() || new.end_at.is_some() {
-                    return Err(MyDayError::Invalid("记录没有开始/结束时间；发生时间请填 occurred_at".into()));
+                    return Err(MyDayError::Invalid(
+                        "记录没有开始/结束时间；发生时间请填 occurred_at".into(),
+                    ));
                 }
                 if new.due_at.is_some() {
                     return Err(MyDayError::Invalid("记录没有截止时间".into()));
@@ -919,25 +948,30 @@ impl Store {
                     continue;
                 }
                 let Some(list) = v.as_array() else {
-                    return Err(MyDayError::Invalid(format!("extra[{FILE_LINKS_KEY}] 必须是路径数组")));
+                    return Err(MyDayError::Invalid(format!(
+                        "extra[{FILE_LINKS_KEY}] 必须是路径数组"
+                    )));
                 };
                 if list.iter().any(|p| !p.is_string()) {
-                    return Err(MyDayError::Invalid(format!("extra[{FILE_LINKS_KEY}] 必须是路径数组")));
+                    return Err(MyDayError::Invalid(format!(
+                        "extra[{FILE_LINKS_KEY}] 必须是路径数组"
+                    )));
                 }
                 continue;
             }
             if k == RECURRED_DONE_KEY {
                 // 系统记账键（重复待办完成回拨）：值须为 RFC3339 字符串
-                let ok = v.as_str().map(parse_dt).flatten().is_some();
+                let ok = v.as_str().and_then(parse_dt).is_some();
                 if !ok {
-                    return Err(MyDayError::Invalid(format!("extra[{RECURRED_DONE_KEY}] 必须是 RFC3339 时刻")));
+                    return Err(MyDayError::Invalid(format!(
+                        "extra[{RECURRED_DONE_KEY}] 必须是 RFC3339 时刻"
+                    )));
                 }
                 continue;
             }
-            let (def, active) = field_def_any(conn, k)
-                .ok_or_else(|| {
-                    MyDayError::Invalid(format!("extra 的键 \"{k}\" 不是已定义的字段 id"))
-                })??;
+            let (def, active) = field_def_any(conn, k).ok_or_else(|| {
+                MyDayError::Invalid(format!("extra 的键 \"{k}\" 不是已定义的字段 id"))
+            })??;
             if !active {
                 // 软删字段的历史值：不清理、不强校验，原样保留（§2.5）
                 continue;
@@ -960,13 +994,17 @@ impl Store {
 
     pub fn get_item(&self, id: &str) -> Result<Item> {
         let conn = self.lock()?;
-        conn.query_row("SELECT * FROM items WHERE id = ?1", params![id], item_mapper)
-            .optional()?
-            .ok_or_else(|| MyDayError::NotFound(format!("item {id} not found")))
-            .and_then(|mut item| {
-                Self::hydrate(&conn, &mut item)?;
-                Ok(item)
-            })
+        conn.query_row(
+            "SELECT * FROM items WHERE id = ?1",
+            params![id],
+            item_mapper,
+        )
+        .optional()?
+        .ok_or_else(|| MyDayError::NotFound(format!("item {id} not found")))
+        .and_then(|mut item| {
+            Self::hydrate(&conn, &mut item)?;
+            Ok(item)
+        })
     }
 
     pub fn find_by_idempotency_key(&self, key: &str) -> Result<Option<Item>> {
@@ -1137,6 +1175,7 @@ impl Store {
     /// - 日程/带开始条目：[start_at, end_at] 区间与窗口相交（跨天事件两头都算）；
     /// - 待办：due_at 落入窗口；
     /// - 记录：occurred_at 落入窗口。
+    ///
     /// NULL 列自然不命中，无需按类型分守卫。排序按 COALESCE 主时间升序。
     pub fn list_items_window(
         &self,
@@ -1159,9 +1198,11 @@ impl Store {
              ORDER BY COALESCE(start_at, due_at, occurred_at, created_at) ASC",
         )?;
         let rows = stmt.query_map(
-            params![from.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                    to.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                    item_type.map(|t| t.as_str())],
+            params![
+                from.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                to.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                item_type.map(|t| t.as_str())
+            ],
             item_mapper,
         )?;
         let mut items = rows.collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1239,7 +1280,12 @@ impl Store {
         if q.is_empty() {
             return Ok(Vec::new());
         }
-        let like = format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        let like = format!(
+            "%{}%",
+            q.replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT i.* FROM items i \
@@ -1283,7 +1329,11 @@ impl Store {
             {
                 matched_in.push("note".into());
             }
-            if item.tags.iter().any(|t| t.to_lowercase().contains(&q_lower)) {
+            if item
+                .tags
+                .iter()
+                .any(|t| t.to_lowercase().contains(&q_lower))
+            {
                 matched_in.push("tag".into());
             }
             if let Some(map) = item.extra.as_object() {
@@ -1321,7 +1371,14 @@ impl Store {
     pub fn update_item(&self, id: &str, patch: ItemPatch) -> Result<Item> {
         {
             let conn = self.lock()?;
-            let (existing_type, existing_note, existing_due, existing_recurrence, existing_status, existing_extra): (
+            let (
+                existing_type,
+                existing_note,
+                existing_due,
+                existing_recurrence,
+                existing_status,
+                existing_extra,
+            ): (
                 String,
                 Option<String>,
                 Option<String>,
@@ -1333,7 +1390,14 @@ impl Store {
                     "SELECT type, note, due_at, recurrence, status, extra FROM items WHERE id = ?1",
                     params![id],
                     |r| {
-                        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+                        Ok((
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                        ))
                     },
                 )
                 .optional()?
@@ -1356,10 +1420,13 @@ impl Store {
                 if has_ledger {
                     drop(conn);
                     self.uncomplete_task(id)?;
-                    let rest = ItemPatch { status: None, ..patch };
+                    let rest = ItemPatch {
+                        status: None,
+                        ..patch
+                    };
                     let baseline = ItemPatch::default();
-                    let is_empty = serde_json::to_value(&rest).ok()
-                        == serde_json::to_value(&baseline).ok();
+                    let is_empty =
+                        serde_json::to_value(&rest).ok() == serde_json::to_value(&baseline).ok();
                     if is_empty {
                         return self.get_item(id);
                     }
@@ -1422,7 +1489,8 @@ impl Store {
                 return Err(MyDayError::Invalid("记录没有开始/结束/截止时间".into()));
             }
             // 重复规则（SPRINT-SPEC §2.1）：仅 event / task；严格解析；待办须带截止
-            if (patch.recurrence.is_some() || patch.clear_recurrence) && item_type == ItemType::Log {
+            if (patch.recurrence.is_some() || patch.clear_recurrence) && item_type == ItemType::Log
+            {
                 return Err(MyDayError::Invalid("记录不支持重复规则".into()));
             }
             // 母条目不变量（FILTER-SPEC §3）：行内 due 恒为当前期——
@@ -1471,9 +1539,17 @@ impl Store {
                  WHERE id = ?1",
                 params![
                     id,
-                    patch.title.as_deref().map(str::trim).filter(|t| !t.is_empty()),
+                    patch
+                        .title
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty()),
                     patch.note.is_some(),
-                    patch.note.as_deref().map(str::trim).filter(|n| !n.is_empty()),
+                    patch
+                        .note
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|n| !n.is_empty()),
                     patch.start_at.is_some(),
                     opt_dt(patch.start_at),
                     patch.end_at.is_some(),
@@ -1568,15 +1644,15 @@ impl Store {
     /// 回收站列表（按删除时刻倒序）。附件 / 提醒 / 标签一并带出（恢复零成本）。
     pub fn list_trash(&self) -> Result<Vec<Item>> {
         let conn = self.lock()?;
-        let mut stmt =
-            conn.prepare("SELECT * FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")?;
+        let mut stmt = conn
+            .prepare("SELECT * FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")?;
         let mut items = stmt
             .query_map([], item_mapper)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         for item in items.iter_mut() {
             Self::hydrate(&conn, item)?;
         }
-        items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+        items.sort_by_key(|a| std::cmp::Reverse(a.deleted_at));
         Ok(items)
     }
 
@@ -1642,7 +1718,10 @@ impl Store {
             .reminders
             .iter()
             .filter(|r| !r.spec.starts_with("@daily"))
-            .map(|r| NewReminder { spec: r.spec.clone(), channel: r.channel.clone() })
+            .map(|r| NewReminder {
+                spec: r.spec.clone(),
+                channel: r.channel.clone(),
+            })
             .collect();
         // 记账键（重复完成回拨）不属于拆分出的单次条目
         let mut extra = base.extra.clone();
@@ -1693,13 +1772,17 @@ impl Store {
             ItemType::Task => o.due == Some(a),
             ItemType::Log => false,
         };
-        crate::recurrence::occurrences_between(base, a - Duration::hours(36), a + Duration::hours(36))
-            .iter()
-            .find(|o| matches(o))
-            .copied()
-            .ok_or_else(|| {
-                MyDayError::Invalid("时刻不对应任何一次发生（event=开始 / task=截止）".into())
-            })
+        crate::recurrence::occurrences_between(
+            base,
+            a - Duration::hours(36),
+            a + Duration::hours(36),
+        )
+        .iter()
+        .find(|o| matches(o))
+        .copied()
+        .ok_or_else(|| {
+            MyDayError::Invalid("时刻不对应任何一次发生（event=开始 / task=截止）".into())
+        })
     }
 
     /// 追加单次例外（去重、按时间排序），更新 updated_at。
@@ -1743,7 +1826,11 @@ impl Store {
                     let delta = next - due;
                     // 推进后 count 递减；无 count（永续 / until）规则原样保留
                     let new_spec = match rec.count {
-                        Some(n) => crate::recurrence::Recurrence { count: Some(n - 1), ..rec }.as_str(),
+                        Some(n) => crate::recurrence::Recurrence {
+                            count: Some(n - 1),
+                            ..rec
+                        }
+                        .as_str(),
                         None => spec.to_string(),
                     };
                     let mut extra = item.extra.clone();
@@ -1827,7 +1914,13 @@ impl Store {
                 }
             }
         }
-        self.update_item(id, ItemPatch { status: Some(ItemStatus::Todo), ..Default::default() })
+        self.update_item(
+            id,
+            ItemPatch {
+                status: Some(ItemStatus::Todo),
+                ..Default::default()
+            },
+        )
     }
 
     /// 待办转日程（SPRINT2-SPEC §7）：新建日程承接标题/备注/标签/字段/附件，
@@ -1989,7 +2082,8 @@ impl Store {
         now: DateTime<Utc>,
     ) -> Result<Vec<crate::reminder::DueOccurrence>> {
         let conn = self.lock()?;
-        let mut stmt = conn.prepare("SELECT id, item_id, spec, channel FROM reminders ORDER BY id")?;
+        let mut stmt =
+            conn.prepare("SELECT id, item_id, spec, channel FROM reminders ORDER BY id")?;
         let reminders: Vec<Reminder> = stmt
             .query_map([], |r| {
                 Ok(Reminder {
@@ -2063,8 +2157,13 @@ impl Store {
         let mut out = Vec::with_capacity(rows.len());
         for (at, item_id) in rows {
             let Some(at) = parse_dt(&at) else { continue };
-            let Ok(item) = self.get_item(&item_id) else { continue };
-            out.push(ReminderHistoryEntry { remind_at: at, item });
+            let Ok(item) = self.get_item(&item_id) else {
+                continue;
+            };
+            out.push(ReminderHistoryEntry {
+                remind_at: at,
+                item,
+            });
         }
         Ok(out)
     }
@@ -2215,7 +2314,11 @@ impl Store {
     /// defaults 保存时校验（§2.6）：列对该 item_type 有意义且值可解析
     /// （时间列可为 `@` token，按 tpltime 文法 + 列合法性校验），
     /// 或活跃字段 id（scope 匹配 / 全局）且值按 kind 合法。
-    fn validate_template_defaults(&self, item_type: ItemType, defaults: &serde_json::Value) -> Result<()> {
+    fn validate_template_defaults(
+        &self,
+        item_type: ItemType,
+        defaults: &serde_json::Value,
+    ) -> Result<()> {
         let Some(map) = defaults.as_object() else {
             return Ok(());
         };
@@ -2252,12 +2355,10 @@ impl Store {
                             ));
                         }
                     }
-                    "all_day" | "due_all_day" => {
-                        if !v.is_boolean() {
-                            return Err(MyDayError::Invalid(format!(
-                                "模板 defaults 的 \"{k}\" 必须是布尔值"
-                            )));
-                        }
+                    "all_day" | "due_all_day" if !v.is_boolean() => {
+                        return Err(MyDayError::Invalid(format!(
+                            "模板 defaults 的 \"{k}\" 必须是布尔值"
+                        )));
                     }
                     _ => {}
                 }
@@ -2297,7 +2398,10 @@ impl Store {
             let Some(name) = f.get("name").and_then(|v| v.as_str()) else {
                 continue;
             };
-            let Some(kind) = f.get("kind").and_then(|v| v.as_str()).and_then(FieldKind::parse)
+            let Some(kind) = f
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .and_then(FieldKind::parse)
             else {
                 continue;
             };
@@ -2343,8 +2447,14 @@ impl Store {
         let Some((nid, nsort)) = neighbor else {
             return Ok(()); // 已在端点，视为成功
         };
-        conn.execute("UPDATE templates SET sort = ?1 WHERE id = ?2", params![nsort, current.id])?;
-        conn.execute("UPDATE templates SET sort = ?1 WHERE id = ?2", params![current.sort, nid])?;
+        conn.execute(
+            "UPDATE templates SET sort = ?1 WHERE id = ?2",
+            params![nsort, current.id],
+        )?;
+        conn.execute(
+            "UPDATE templates SET sort = ?1 WHERE id = ?2",
+            params![current.sort, nid],
+        )?;
         Ok(())
     }
 
@@ -2491,7 +2601,12 @@ impl Store {
             "UPDATE field_defs SET name = COALESCE(?2, name), options = COALESCE(?3, options),
                                    sort = COALESCE(?4, sort)
              WHERE id = ?1 AND deleted_at IS NULL",
-            params![id, new_name.map(str::trim).filter(|n| !n.is_empty()), new_options.map(|o| o.to_string()), new_sort],
+            params![
+                id,
+                new_name.map(str::trim).filter(|n| !n.is_empty()),
+                new_options.map(|o| o.to_string()),
+                new_sort
+            ],
         )
         .map_err(|e| match e {
             rusqlite::Error::SqliteFailure(f, _)
@@ -2583,15 +2698,25 @@ impl Store {
     // 内部工具
     // ------------------------------------------------------------------
 
-    fn attach_tags(&self, tx: &rusqlite::Transaction, item_id: &str, tags: &[String]) -> Result<()> {
+    fn attach_tags(
+        &self,
+        tx: &rusqlite::Transaction,
+        item_id: &str,
+        tags: &[String],
+    ) -> Result<()> {
         for raw in tags {
             let tag = raw.trim().trim_start_matches('#');
             if tag.is_empty() {
                 continue;
             }
-            tx.execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", params![tag])?;
+            tx.execute(
+                "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+                params![tag],
+            )?;
             let tag_id: i64 =
-                tx.query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |r| r.get(0))?;
+                tx.query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |r| {
+                    r.get(0)
+                })?;
             tx.execute(
                 "INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
                 params![item_id, tag_id],
@@ -2649,10 +2774,22 @@ fn field_def_by_id(conn: &Connection, id: &str) -> Result<FieldDef> {
         .ok_or_else(|| MyDayError::NotFound(format!("field {id} not found")))
 }
 
+/// field_defs 查询行（SELECT 列序）：id, name, kind, options, scope, sort, builtin, deleted_at
+type FieldDefRow = (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    i64,
+    i64,
+    Option<String>,
+);
+
 /// 任意删除状态的字段定义，返回 (定义, 是否活跃)。软删历史值校验用。
 fn field_def_any(conn: &Connection, id: &str) -> Option<Result<(FieldDef, bool)>> {
-    let row: std::result::Result<Option<(String, String, String, String, Option<String>, i64, i64, Option<String>)>, _> =
-        conn.query_row(
+    let row: std::result::Result<Option<FieldDefRow>, _> = conn
+        .query_row(
             "SELECT id, name, kind, options, scope, sort, builtin, deleted_at \
              FROM field_defs WHERE id = ?1",
             params![id],
@@ -2674,7 +2811,9 @@ fn field_def_any(conn: &Connection, id: &str) -> Option<Result<(FieldDef, bool)>
         Ok(None) => None,
         Err(e) => Some(Err(e.into())),
         Ok(Some(tuple)) => {
-            let def = field_def_tuple(tuple.0, tuple.1, tuple.2, tuple.3, tuple.4, tuple.5, tuple.6);
+            let def = field_def_tuple(
+                tuple.0, tuple.1, tuple.2, tuple.3, tuple.4, tuple.5, tuple.6,
+            );
             Some(Ok((def, tuple.7.is_none())))
         }
     }
@@ -2706,9 +2845,11 @@ fn field_def_tuple(
 }
 
 fn get_setting_on(conn: &Connection, key: &str) -> Result<Option<String>> {
-    conn.query_row("SELECT value FROM settings WHERE key = ?1", params![key], |r| {
-        r.get(0)
-    })
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |r| r.get(0),
+    )
     .optional()
     .map_err(Into::into)
 }
@@ -2743,8 +2884,7 @@ fn resolve_template_token(
 /// 提醒 spec 校验：@token（提醒收窄的文法）或 RFC3339 绝对时刻。
 fn validate_reminder_spec(spec: &str) -> Result<()> {
     if crate::tpltime::is_token(spec) {
-        crate::tpltime::validate_for_column(spec, "reminder")
-            .map_err(MyDayError::Invalid)
+        crate::tpltime::validate_for_column(spec, "reminder").map_err(MyDayError::Invalid)
     } else if parse_dt(spec).is_some() {
         Ok(())
     } else {
@@ -2848,10 +2988,19 @@ fn item_mapper(row: &Row) -> rusqlite::Result<Item> {
         },
         title: row.get::<_, Option<String>>("title")?,
         note: row.get("note")?,
-        start_at: row.get::<_, Option<String>>("start_at")?.as_deref().and_then(parse_dt),
-        end_at: row.get::<_, Option<String>>("end_at")?.as_deref().and_then(parse_dt),
+        start_at: row
+            .get::<_, Option<String>>("start_at")?
+            .as_deref()
+            .and_then(parse_dt),
+        end_at: row
+            .get::<_, Option<String>>("end_at")?
+            .as_deref()
+            .and_then(parse_dt),
         all_day: row.get::<_, i64>("all_day")? != 0,
-        due_at: row.get::<_, Option<String>>("due_at")?.as_deref().and_then(parse_dt),
+        due_at: row
+            .get::<_, Option<String>>("due_at")?
+            .as_deref()
+            .and_then(parse_dt),
         due_all_day: row.get::<_, i64>("due_all_day")? != 0,
         occurred_at: row
             .get::<_, Option<String>>("occurred_at")?
@@ -2948,10 +3097,13 @@ fn field_def_mapper(row: &Row) -> rusqlite::Result<FieldDef> {
             .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
             .filter(|v: &serde_json::Value| v.is_object())
             .unwrap_or(serde_json::json!({})),
-        scope: row
-            .get::<_, Option<String>>(4)?
-            .as_deref()
-            .and_then(|s| if s == "all" { None } else { ItemType::parse(s) }),
+        scope: row.get::<_, Option<String>>(4)?.as_deref().and_then(|s| {
+            if s == "all" {
+                None
+            } else {
+                ItemType::parse(s)
+            }
+        }),
         sort: row.get(5)?,
         builtin: row.get::<_, i64>(6)? != 0,
     })
@@ -2970,11 +3122,8 @@ fn extra_for_type(
 ) -> Result<serde_json::Value> {
     let mut allowed: std::collections::HashSet<String> = [FILE_LINKS_KEY.to_string()].into();
     {
-        let mut stmt =
-            conn.prepare("SELECT id, scope FROM field_defs WHERE deleted_at IS NULL")?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })?;
+        let mut stmt = conn.prepare("SELECT id, scope FROM field_defs WHERE deleted_at IS NULL")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         for (id, scope) in rows.flatten() {
             if scope == "all" || scope == target.as_str() {
                 allowed.insert(id);

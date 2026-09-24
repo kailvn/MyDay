@@ -23,7 +23,10 @@ fn arg_str(args: &serde_json::Value, names: &[&str]) -> Option<String> {
         .map(str::to_string)
 }
 
-fn arg_opt_time(args: &serde_json::Value, name: &str) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
+fn arg_opt_time(
+    args: &serde_json::Value,
+    name: &str,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
     match args.get(name) {
         None | Some(serde_json::Value::Null) => Ok(None),
         Some(s) => s
@@ -71,19 +74,45 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
             };
             Ok(serde_json::to_value(store.tasks_view(view, None).map_err(e10s)?).unwrap())
         }
-        "get_item" => Ok(serde_json::to_value(store.get_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "get_item" => Ok(serde_json::to_value(
+            store
+                .get_item(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "add_item" => {
-            let new: NewItem = serde_json::from_value(v("new").cloned().unwrap_or_default()).map_err(|e| e.to_string())?;
+            let new: NewItem = serde_json::from_value(v("new").cloned().unwrap_or_default())
+                .map_err(|e| e.to_string())?;
             Ok(serde_json::to_value(store.add_item(new).map_err(e10s)?).unwrap())
         }
         "update_item" => {
-            let patch: ItemPatch =
-                serde_json::from_value(v("patch").cloned().unwrap_or_default()).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_value(store.update_item(&arg_str(args, &["id"]).ok_or("missing id")?, patch).map_err(e10s)?).unwrap())
+            let patch: ItemPatch = serde_json::from_value(v("patch").cloned().unwrap_or_default())
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::to_value(
+                store
+                    .update_item(&arg_str(args, &["id"]).ok_or("missing id")?, patch)
+                    .map_err(e10s)?,
+            )
+            .unwrap())
         }
-        "delete_item" => Ok(serde_json::to_value(store.delete_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
-        "restore_item" => Ok(serde_json::to_value(store.restore_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
-        "purge_item" => Ok(serde_json::to_value(store.purge_item(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "delete_item" => Ok(serde_json::to_value(
+            store
+                .delete_item(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
+        "restore_item" => Ok(serde_json::to_value(
+            store
+                .restore_item(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
+        "purge_item" => Ok(serde_json::to_value(
+            store
+                .purge_item(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "list_trash" => Ok(serde_json::to_value(store.list_trash().map_err(e10s)?).unwrap()),
         "empty_trash" => Ok(serde_json::to_value(store.empty_trash().map_err(e10s)?).unwrap()),
         "detach_occurrence" => Ok(serde_json::to_value(
@@ -104,27 +133,43 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
                 .map_err(e10s)?,
         )
         .unwrap()),
-        "complete_task" => Ok(serde_json::to_value(store.complete_task(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "complete_task" => Ok(serde_json::to_value(
+            store
+                .complete_task(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "snooze" => Ok(serde_json::to_value(
             store
-                .snooze(&arg_str(args, &["id"]).ok_or("missing id")?, arg_time(args, "until")?)
+                .snooze(
+                    &arg_str(args, &["id"]).ok_or("missing id")?,
+                    arg_time(args, "until")?,
+                )
                 .map_err(e10s)?,
         )
         .unwrap()),
         "search_items" => Ok(serde_json::to_value(
             store
-                .search(&arg_str(args, &["query"]).unwrap_or_default(), v("itemType").and_then(|s| s.as_str()).and_then(type_of))
+                .search(
+                    &arg_str(args, &["query"]).unwrap_or_default(),
+                    v("itemType").and_then(|s| s.as_str()).and_then(type_of),
+                )
                 .map_err(e10s)?,
         )
         .unwrap()),
-        "list_templates" => Ok(serde_json::to_value(store.list_templates().map_err(e10s)?).unwrap()),
+        "list_templates" => {
+            Ok(serde_json::to_value(store.list_templates().map_err(e10s)?).unwrap())
+        }
         "add_template" => Ok(serde_json::to_value(
             store
                 .add_template(
                     &arg_str(args, &["name"]).ok_or("missing name")?,
                     v("tag").and_then(|s| s.as_str()),
                     v("icon").and_then(|s| s.as_str()),
-                    v("itemType").and_then(|s| s.as_str()).and_then(type_of).unwrap_or(ItemType::Log),
+                    v("itemType")
+                        .and_then(|s| s.as_str())
+                        .and_then(type_of)
+                        .unwrap_or(ItemType::Log),
                     v("defaults").unwrap_or(&serde_json::json!({})),
                     v("fields").unwrap_or(&serde_json::json!([])),
                     v("note").and_then(|s| s.as_str()),
@@ -139,7 +184,10 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
                     &arg_str(args, &["name"]).ok_or("missing name")?,
                     v("tag").and_then(|s| s.as_str()),
                     v("icon").and_then(|s| s.as_str()),
-                    v("itemType").and_then(|s| s.as_str()).and_then(type_of).unwrap_or(ItemType::Log),
+                    v("itemType")
+                        .and_then(|s| s.as_str())
+                        .and_then(type_of)
+                        .unwrap_or(ItemType::Log),
                     v("defaults").unwrap_or(&serde_json::json!({})),
                     v("fields").unwrap_or(&serde_json::json!([])),
                     v("note").and_then(|s| s.as_str()),
@@ -147,7 +195,12 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
                 .map_err(e10s)?,
         )
         .unwrap()),
-        "delete_template" => Ok(serde_json::to_value(store.delete_template(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
+        "delete_template" => Ok(serde_json::to_value(
+            store
+                .delete_template(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "move_template" => {
             store
                 .move_template(
@@ -202,18 +255,29 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
             )
             .unwrap())
         }
-        "delete_field_def" => Ok(serde_json::to_value(store.delete_field_def(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?).unwrap()),
-        "count_items_with_field" => Ok(serde_json::json!(
-            store.count_items_with_field(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?
-        )),
-        "list_deleted_field_defs" => Ok(serde_json::to_value(store.list_deleted_field_defs().map_err(e10s)?).unwrap()),
-        "purge_deleted_field_defs" => Ok(serde_json::json!(
-            store.purge_deleted_field_defs().map_err(e10s)?
-        )),
+        "delete_field_def" => Ok(serde_json::to_value(
+            store
+                .delete_field_def(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
+        "count_items_with_field" => Ok(serde_json::json!(store
+            .count_items_with_field(&arg_str(args, &["id"]).ok_or("missing id")?)
+            .map_err(e10s)?)),
+        "list_deleted_field_defs" => {
+            Ok(serde_json::to_value(store.list_deleted_field_defs().map_err(e10s)?).unwrap())
+        }
+        "purge_deleted_field_defs" => Ok(serde_json::json!(store
+            .purge_deleted_field_defs()
+            .map_err(e10s)?)),
         "add_attachment_b64" => {
             use base64::Engine;
             let bytes = base64::engine::general_purpose::STANDARD
-                .decode(arg_str(args, &["dataB64", "data_b64"]).unwrap_or_default().as_bytes())
+                .decode(
+                    arg_str(args, &["dataB64", "data_b64"])
+                        .unwrap_or_default()
+                        .as_bytes(),
+                )
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::to_value(
                 store
@@ -226,7 +290,12 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
             )
             .unwrap())
         }
-        "get_setting" => Ok(serde_json::to_value(store.get_setting(&arg_str(args, &["key"]).ok_or("missing key")?).map_err(e10s)?).unwrap()),
+        "get_setting" => Ok(serde_json::to_value(
+            store
+                .get_setting(&arg_str(args, &["key"]).ok_or("missing key")?)
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "set_setting" => {
             store
                 .set_setting(
@@ -246,19 +315,26 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
                 .map_err(e10s)?,
         )
         .unwrap()),
-        "stats_summary" => Ok(serde_json::to_value(store.stats_summary(365).map_err(e10s)?).unwrap()),
+        "stats_summary" => {
+            Ok(serde_json::to_value(store.stats_summary(365).map_err(e10s)?).unwrap())
+        }
         // 视图模型（FILTER-SPEC §12）：camelCase 参数与 Tauri 命令一一对应
         "view_list" => {
-            let panel = v("panel").and_then(|s| s.as_str()).and_then(myday_core::view::Panel::parse);
+            let panel = v("panel")
+                .and_then(|s| s.as_str())
+                .and_then(myday_core::view::Panel::parse);
             Ok(serde_json::to_value(store.list_views(panel).map_err(e10s)?).unwrap())
         }
         "view_get" => Ok(serde_json::to_value(
-            store.get_view(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?,
+            store
+                .get_view(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
         )
         .unwrap()),
         "view_create" => {
-            let panel = myday_core::view::Panel::parse(&arg_str(args, &["panel"]).unwrap_or_default())
-                .ok_or("bad panel")?;
+            let panel =
+                myday_core::view::Panel::parse(&arg_str(args, &["panel"]).unwrap_or_default())
+                    .ok_or("bad panel")?;
             Ok(serde_json::to_value(
                 store
                     .create_view(
@@ -281,11 +357,15 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
         )
         .unwrap()),
         "view_delete" => Ok(serde_json::to_value(
-            store.delete_view(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?,
+            store
+                .delete_view(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
         )
         .unwrap()),
         "view_reset" => Ok(serde_json::to_value(
-            store.reset_view(&arg_str(args, &["id"]).ok_or("missing id")?).map_err(e10s)?,
+            store
+                .reset_view(&arg_str(args, &["id"]).ok_or("missing id")?)
+                .map_err(e10s)?,
         )
         .unwrap()),
         "view_duplicate" => Ok(serde_json::to_value(
@@ -307,14 +387,12 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
                 .map_err(e10s)?,
         )
         .unwrap()),
-        "query_stats_page" => Ok(serde_json::to_value(
-            store.query_stats_page().map_err(e10s)?,
-        )
-        .unwrap()),
-        "stats_restore_defaults" => Ok(serde_json::to_value(
-            store.restore_stats_defaults().map_err(e10s)?,
-        )
-        .unwrap()),
+        "query_stats_page" => {
+            Ok(serde_json::to_value(store.query_stats_page().map_err(e10s)?).unwrap())
+        }
+        "stats_restore_defaults" => {
+            Ok(serde_json::to_value(store.restore_stats_defaults().map_err(e10s)?).unwrap())
+        }
         "app_info" => Ok(serde_json::json!({
             "version": env!("CARGO_PKG_VERSION"),
             "data_root": store.data_root().to_string_lossy(),
@@ -323,7 +401,7 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
         })),
         // 今日悬浮窗（OVERLAY-SPEC）：真实 core 求值（本地日 = 桥进程的今天）
         "overlay_today" => Ok(serde_json::to_value(
-            myday_core::overlay::today_overlay(&store, chrono::Local::now().date_naive())
+            myday_core::overlay::today_overlay(store, chrono::Local::now().date_naive())
                 .map_err(e10s)?,
         )
         .unwrap()),
@@ -338,7 +416,10 @@ fn e10s(e: myday_core::MyDayError) -> String {
 }
 
 fn main() {
-    let port: u16 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(1429);
+    let port: u16 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1429);
     let store = match myday_core::Store::open_default() {
         Ok(s) => Arc::new(s),
         Err(e) => {
@@ -356,8 +437,7 @@ fn main() {
             let mut buf = Vec::new();
             let mut tmp = [0u8; 4096];
             let mut header_end = None;
-            loop {
-                let Ok(n) = stream.read(&mut tmp) else { break };
+            while let Ok(n) = stream.read(&mut tmp) {
                 if n == 0 {
                     break;
                 }
@@ -411,16 +491,35 @@ fn route(store: &Arc<Store>, body: &str) -> String {
         Ok(v) => v,
         Err(e) => return envelope(Err(format!("bad json: {e}"))),
     };
-    let cmd = parsed.get("cmd").and_then(|c| c.as_str()).unwrap_or("").to_string();
+    let cmd = parsed
+        .get("cmd")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
     let args = parsed.get("args").cloned().unwrap_or(serde_json::json!({}));
     let is_mutation = matches!(
         cmd.as_str(),
-        "add_item" | "update_item" | "delete_item" | "complete_task" | "snooze"
-            | "restore_item" | "purge_item" | "empty_trash" | "detach_occurrence" | "skip_occurrence"
-            | "add_template" | "update_template" | "delete_template" | "move_template"
-            | "set_template_pinned" | "add_field_def" | "update_field_def" | "delete_field_def"
+        "add_item"
+            | "update_item"
+            | "delete_item"
+            | "complete_task"
+            | "snooze"
+            | "restore_item"
+            | "purge_item"
+            | "empty_trash"
+            | "detach_occurrence"
+            | "skip_occurrence"
+            | "add_template"
+            | "update_template"
+            | "delete_template"
+            | "move_template"
+            | "set_template_pinned"
+            | "add_field_def"
+            | "update_field_def"
+            | "delete_field_def"
             | "purge_deleted_field_defs"
-            | "set_setting" | "add_attachment_b64"
+            | "set_setting"
+            | "add_attachment_b64"
     );
     let out = handle(store, &cmd, &args).map(|mut data| {
         if is_mutation {
@@ -442,7 +541,8 @@ fn envelope(res: Result<serde_json::Value, String>) -> String {
                 Some((c, m)) if c.starts_with('[') => (c[1..].to_string(), m.trim().to_string()),
                 _ => ("INTERNAL".to_string(), message),
             };
-            serde_json::json!({ "ok": false, "error": { "code": code, "message": message } }).to_string()
+            serde_json::json!({ "ok": false, "error": { "code": code, "message": message } })
+                .to_string()
         }
     }
 }

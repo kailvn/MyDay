@@ -7,7 +7,7 @@
    * 筛选编辑器与挂件编辑器的同一套行组件——一致性靠复用保证。
    */
   import type { Cmp, FieldDef, FilterValue, ItemType } from "../api";
-  import { t } from "../i18n";
+  import { t, type MessageKey } from "../i18n";
   import {
     BUILTIN_COLUMNS,
     CMP_MATRIX,
@@ -87,7 +87,7 @@
     if (v && typeof v === "object" && "rel" in v) return { mode: "rel", rel: v.rel };
     return { mode: "rel", rel: "today" };
   }
-  function applyDateCtl(row: RuleRow, ctl: DateCtl, key?: "value" | "from" | "to") {
+  function applyDateCtl(row: RuleRow, ctl: DateCtl, key?: "from" | "to") {
     const v: FilterValue = ctl.mode === "day" && ctl.day ? { day: ctl.day } : { rel: (ctl.mode === "rel" ? ctl.rel : "today") as never };
     if (key === undefined) row.value = v;
     else if (row.value && typeof row.value === "object" && "from" in row.value) {
@@ -135,7 +135,7 @@
     </select>
     <select class="cmp" value={row.cmp} onchange={(e) => onCmpChange(row, e)}>
       {#each CMP_MATRIX[roleOf(row.field, fields) ?? "text"] as c (c.id)}
-        <option value={c.id}>{t(c.label)}</option>
+        <option value={c.id}>{t(c.label as MessageKey)}</option>
       {/each}
     </select>
 
@@ -236,7 +236,7 @@
         {/if}
       {:else if controlOf(row) === "date"}
         <span class="date-ctl">
-          <select class="mode" value={ctlOf(row.value).mode === "day" ? "day" : ctlOf(row.value).rel}
+          <select class="mode" value={ctlOf(row.value).mode === "day" ? "day" : (ctlOf(row.value) as { rel: string }).rel}
             onchange={(e) => {
               const v = (e.target as HTMLSelectElement).value;
               applyDateCtl(row, v === "day" ? dayCtl(ctlOf(row.value)) : { mode: "rel", rel: v });

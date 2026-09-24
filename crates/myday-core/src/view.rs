@@ -209,7 +209,9 @@ pub fn parse_date_value(v: &Value) -> std::result::Result<DateValue, String> {
                     "未知相对值 \"{rel}\"（可用 today/tomorrow/yesterday/this_week/this_month/last_days:N）"
                 ));
             };
-            let n: i64 = n.parse().map_err(|_| "last_days:N 的 N 必须是整数".to_string())?;
+            let n: i64 = n
+                .parse()
+                .map_err(|_| "last_days:N 的 N 必须是整数".to_string())?;
             if n < 1 {
                 return Err("last_days:N 的 N 必须 ≥ 1".into());
             }
@@ -234,10 +236,10 @@ impl Serialize for DatePair {
 impl<'de> Deserialize<'de> for DatePair {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         let v = Value::deserialize(d)?;
-        let from =
-            parse_date_value(v.get("from").unwrap_or(&Value::Null)).map_err(serde::de::Error::custom)?;
-        let to =
-            parse_date_value(v.get("to").unwrap_or(&Value::Null)).map_err(serde::de::Error::custom)?;
+        let from = parse_date_value(v.get("from").unwrap_or(&Value::Null))
+            .map_err(serde::de::Error::custom)?;
+        let to = parse_date_value(v.get("to").unwrap_or(&Value::Null))
+            .map_err(serde::de::Error::custom)?;
         Ok(Self { from, to })
     }
 }
@@ -275,13 +277,19 @@ pub struct Condition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FilterNode {
-    Group { op: Logic, children: Vec<FilterNode> },
+    Group {
+        op: Logic,
+        children: Vec<FilterNode>,
+    },
     Cond(Condition),
 }
 
 /// 恒真组（空 children）。
 pub fn true_group() -> FilterNode {
-    FilterNode::Group { op: Logic::And, children: Vec::new() }
+    FilterNode::Group {
+        op: Logic::And,
+        children: Vec::new(),
+    }
 }
 
 impl FilterNode {
@@ -369,17 +377,26 @@ fn cmp_allowed(role: FieldRole, cmp: Cmp) -> bool {
     match role {
         FieldRole::Text => matches!(cmp, Eq | Neq | Contains | NotContains | Empty | NotEmpty),
         FieldRole::Number => {
-            matches!(cmp, Eq | Neq | Gt | Gte | Lt | Lte | Between | Empty | NotEmpty)
+            matches!(
+                cmp,
+                Eq | Neq | Gt | Gte | Lt | Lte | Between | Empty | NotEmpty
+            )
         }
         FieldRole::Select => matches!(cmp, Eq | Neq | Empty | NotEmpty),
         // 多值字段在矩阵外补 contains / not_contains：关键词编译在标签上
         // 需要「子串命中任一标签」（与 search 的 LIKE 口径一致）
         FieldRole::Multi => {
-            matches!(cmp, Any | All | HasNone | Contains | NotContains | Empty | NotEmpty)
+            matches!(
+                cmp,
+                Any | All | HasNone | Contains | NotContains | Empty | NotEmpty
+            )
         }
         FieldRole::Bool => matches!(cmp, IsTrue | IsFalse | Empty),
         FieldRole::Date => {
-            matches!(cmp, On | Before | After | Between | Within | Empty | NotEmpty)
+            matches!(
+                cmp,
+                On | Before | After | Between | Within | Empty | NotEmpty
+            )
         }
         FieldRole::TypeCol | FieldRole::StatusCol => matches!(cmp, Eq),
         FieldRole::TemplateCol => matches!(cmp, Eq | Neq | Empty | NotEmpty),
@@ -413,7 +430,11 @@ fn check_value_pairing(role: FieldRole, cmp: Cmp, value: Option<&FilterValue>) -
             let v = needs("范围值 {rel:this_week|this_month|last_days:N}")?;
             match v {
                 FilterValue::Date(DateValue::RelRange(_)) => {}
-                _ => return Err(invalid("within 只接范围值（this_week / this_month / last_days:N）")),
+                _ => {
+                    return Err(invalid(
+                        "within 只接范围值（this_week / this_month / last_days:N）",
+                    ))
+                }
             }
         }
         Cmp::Between => {
@@ -427,7 +448,11 @@ fn check_value_pairing(role: FieldRole, cmp: Cmp, value: Option<&FilterValue>) -
                         to: DateValue::Day(_) | DateValue::RelPoint(_),
                     }),
                 ) => {}
-                _ => return Err(invalid("between：日期接双点值 {from,to}，数字接 {from,to} 数值")),
+                _ => {
+                    return Err(invalid(
+                        "between：日期接双点值 {from,to}，数字接 {from,to} 数值",
+                    ))
+                }
             }
         }
         Cmp::Any | Cmp::All | Cmp::HasNone => {
@@ -497,16 +522,19 @@ fn validate_condition(cond: &Condition, fields: &[FieldDef]) -> Result<()> {
     let role = if let Some(r) = col_role(&cond.field) {
         r
     } else {
-        let def = fields
-            .iter()
-            .find(|f| f.id == cond.field)
-            .ok_or_else(|| {
-                invalid(format!("条件的字段 \"{}\" 不是内置列也不是活跃字段 id", cond.field))
-            })?;
+        let def = fields.iter().find(|f| f.id == cond.field).ok_or_else(|| {
+            invalid(format!(
+                "条件的字段 \"{}\" 不是内置列也不是活跃字段 id",
+                cond.field
+            ))
+        })?;
         kind_role(def.kind)
     };
     if !cmp_allowed(role, cond.cmp) {
-        return Err(invalid(format!("字段 \"{}\" 不支持运算符 {:?}", cond.field, cond.cmp)));
+        return Err(invalid(format!(
+            "字段 \"{}\" 不支持运算符 {:?}",
+            cond.field, cond.cmp
+        )));
     }
     check_value_pairing(role, cond.cmp, cond.value.as_ref())
 }
@@ -685,7 +713,11 @@ fn default_top_n() -> i64 {
 
 impl Default for WidgetOptions {
     fn default() -> Self {
-        Self { presence: false, unit: None, top_n: default_top_n() }
+        Self {
+            presence: false,
+            unit: None,
+            top_n: default_top_n(),
+        }
     }
 }
 
@@ -744,7 +776,9 @@ fn validate_sort_field(field: &str, fields: &[FieldDef]) -> Result<()> {
     if fields.iter().any(|f| f.id == field) {
         return Ok(());
     }
-    Err(invalid(format!("排序字段 \"{field}\" 不是内置列也不是活跃字段 id")))
+    Err(invalid(format!(
+        "排序字段 \"{field}\" 不是内置列也不是活跃字段 id"
+    )))
 }
 
 /// 挂件配置校验（dataset 禁 limit；values 限 log 且禁 group；槽位规则 §8）。
@@ -757,7 +791,10 @@ pub fn validate_widget_config(cfg: &Value, fields: &[FieldDef]) -> Result<Widget
     let c: WidgetConfig =
         serde_json::from_value(cfg.clone()).map_err(|e| invalid(format!("挂件配置无效: {e}")))?;
     if c.kind != "widget" {
-        return Err(invalid(format!("未知挂件 kind: \"{}\"（应为 widget）", c.kind)));
+        return Err(invalid(format!(
+            "未知挂件 kind: \"{}\"（应为 widget）",
+            c.kind
+        )));
     }
     validate_filter(&c.dataset.filter, fields)?;
     if let Some(Window::Days { days }) = &c.window {
@@ -765,10 +802,20 @@ pub fn validate_widget_config(cfg: &Value, fields: &[FieldDef]) -> Result<Widget
             return Err(invalid("window.days 必须 ≥ 1"));
         }
     }
-    let agg = c.agg.clone().unwrap_or(Agg { group: None, metric: None });
-    let metric_fn = agg.metric.as_ref().map(|m| m.fun.as_str()).unwrap_or("count");
+    let agg = c.agg.clone().unwrap_or(Agg {
+        group: None,
+        metric: None,
+    });
+    let metric_fn = agg
+        .metric
+        .as_ref()
+        .map(|m| m.fun.as_str())
+        .unwrap_or("count");
     let metric_field = agg.metric.as_ref().and_then(|m| m.field.clone());
-    if !matches!(metric_fn, "count" | "sum" | "avg" | "min" | "max" | "values") {
+    if !matches!(
+        metric_fn,
+        "count" | "sum" | "avg" | "min" | "max" | "values"
+    ) {
         return Err(invalid(format!("未知聚合 fn: {metric_fn}")));
     }
     match &agg.group {
@@ -836,14 +883,18 @@ pub fn validate_widget_config(cfg: &Value, fields: &[FieldDef]) -> Result<Widget
 
 fn require_number_field(field: Option<&str>, fields: &[FieldDef], what: &str) -> Result<()> {
     let Some(f) = field else {
-        return Err(invalid(format!("聚合 {what} 需要 metric.field（number 字段）")));
+        return Err(invalid(format!(
+            "聚合 {what} 需要 metric.field（number 字段）"
+        )));
     };
     let def = fields
         .iter()
         .find(|d| d.id == f)
         .ok_or_else(|| invalid(format!("metric.field \"{f}\" 不是活跃字段 id")))?;
     if def.kind != crate::model::FieldKind::Number {
-        return Err(invalid(format!("聚合 {what} 的 metric.field 必须是 number 字段")));
+        return Err(invalid(format!(
+            "聚合 {what} 的 metric.field 必须是 number 字段"
+        )));
     }
     Ok(())
 }
@@ -1034,7 +1085,8 @@ fn view_def_mapper(row: &rusqlite::Row) -> rusqlite::Result<ViewDef> {
         id: row.get("id")?,
         name: row.get("name")?,
         panel: Panel::parse(&panel).unwrap_or(Panel::Search),
-        config: serde_json::from_str(&row.get::<_, String>("config")?).unwrap_or_else(|_| json!({})),
+        config: serde_json::from_str(&row.get::<_, String>("config")?)
+            .unwrap_or_else(|_| json!({})),
         config_user: row
             .get::<_, Option<String>>("config_user")?
             .and_then(|s| serde_json::from_str(&s).ok()),
@@ -1066,11 +1118,17 @@ pub struct EvalCtx {
 
 impl EvalCtx {
     pub fn now() -> Self {
-        Self { now: Utc::now(), today: chrono::Local::now().date_naive() }
+        Self {
+            now: Utc::now(),
+            today: chrono::Local::now().date_naive(),
+        }
     }
     /// 本地日 d 的 [日始, 次日始)（UTC 时刻对）。
     fn day_bounds(&self, d: NaiveDate) -> (DateTime<Utc>, DateTime<Utc>) {
-        let start = d.and_hms_opt(0, 0, 0).map(crate::tpltime::local_to_utc).unwrap_or(self.now);
+        let start = d
+            .and_hms_opt(0, 0, 0)
+            .map(crate::tpltime::local_to_utc)
+            .unwrap_or(self.now);
         let end = (d + Duration::days(1))
             .and_hms_opt(0, 0, 0)
             .map(crate::tpltime::local_to_utc)
@@ -1086,9 +1144,9 @@ impl EvalCtx {
                 RelDay::Tomorrow => self.today + Duration::days(1),
                 RelDay::Yesterday => self.today - Duration::days(1),
             }),
-            DateValue::RelRange(_) => {
-                Err(invalid("点值位置不能使用区间（this_week / this_month / last_days:N）"))
-            }
+            DateValue::RelRange(_) => Err(invalid(
+                "点值位置不能使用区间（this_week / this_month / last_days:N）",
+            )),
         }
     }
     /// 值 → [日始, 日末]（闭区间）。范围值展开为区间（本地时区、查询时求值）。
@@ -1351,7 +1409,10 @@ fn value_is_empty(v: Option<&Value>) -> bool {
 
 fn value_to_list(v: &Value) -> Vec<String> {
     match v {
-        Value::Array(a) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
+        Value::Array(a) => a
+            .iter()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect(),
         Value::String(s) => vec![s.clone()],
         _ => Vec::new(),
     }
@@ -1388,11 +1449,15 @@ pub fn eval_condition(item: &Item, cond: &Condition, ctx: &EvalCtx) -> Result<bo
     if let Some(role) = col_role(field) {
         return match role {
             FieldRole::TypeCol => {
-                let Some(FilterValue::Text(v)) = cond.value.as_ref() else { return Ok(false) };
+                let Some(FilterValue::Text(v)) = cond.value.as_ref() else {
+                    return Ok(false);
+                };
                 Ok(item.item_type.as_str().eq_ignore_ascii_case(v))
             }
             FieldRole::StatusCol => {
-                let Some(FilterValue::Text(v)) = cond.value.as_ref() else { return Ok(false) };
+                let Some(FilterValue::Text(v)) = cond.value.as_ref() else {
+                    return Ok(false);
+                };
                 Ok(item
                     .status
                     .map(|s| s.as_str().eq_ignore_ascii_case(v))
@@ -1420,7 +1485,11 @@ pub fn eval_condition(item: &Item, cond: &Condition, ctx: &EvalCtx) -> Result<bo
                 _ => Err(invalid("col:recurrence 只支持 empty / not_empty")),
             },
             FieldRole::Text => {
-                let v = if field == "col:title" { item.title.as_deref() } else { item.note.as_deref() };
+                let v = if field == "col:title" {
+                    item.title.as_deref()
+                } else {
+                    item.note.as_deref()
+                };
                 eval_text(v, cmp, cond.value.as_ref())
             }
             FieldRole::Multi => eval_list(&item.tags, cmp, cond.value.as_ref()),
@@ -1463,7 +1532,10 @@ pub fn eval_condition(item: &Item, cond: &Condition, ctx: &EvalCtx) -> Result<bo
         },
         Value::Array(_) => eval_list(&value_to_list(v), cmp, cond.value.as_ref()),
         Value::String(_) => {
-            if matches!(cmp, Cmp::On | Cmp::Before | Cmp::After | Cmp::Between | Cmp::Within) {
+            if matches!(
+                cmp,
+                Cmp::On | Cmp::Before | Cmp::After | Cmp::Between | Cmp::Within
+            ) {
                 eval_time(field_value_time(v), cmp, cond.value.as_ref(), ctx)
             } else {
                 eval_text(v.as_str(), cmp, cond.value.as_ref())
@@ -1540,7 +1612,9 @@ fn eval_list(list: &[String], cmp: Cmp, value: Option<&FilterValue>) -> Result<b
             let has = |t: &String| lower.iter().any(|x| *x == t.to_lowercase());
             Ok(match cmp {
                 Cmp::Any => list.iter().any(has),
-                Cmp::All => lower.iter().all(|x| list.iter().any(|t| t.to_lowercase() == *x)),
+                Cmp::All => lower
+                    .iter()
+                    .all(|x| list.iter().any(|t| t.to_lowercase() == *x)),
                 Cmp::HasNone => !list.iter().any(has),
                 _ => return Err(invalid("多值字段不支持该运算符")),
             })
@@ -1636,7 +1710,11 @@ fn sort_key(item: &Item, field: &str) -> SortKey {
             FieldRole::Date => SortKey::Time(col_time(item, field)),
             FieldRole::Multi => SortKey::Text(Some(item.tags.join(","))),
             FieldRole::Text => {
-                let v = if field == "col:title" { item.title.as_deref() } else { item.note.as_deref() };
+                let v = if field == "col:title" {
+                    item.title.as_deref()
+                } else {
+                    item.note.as_deref()
+                };
                 SortKey::Text(v.map(str::to_string))
             }
             _ => SortKey::Text(None),
@@ -1703,7 +1781,10 @@ fn sort_items(items: &mut [Item], spec: &[SortSpec]) {
 }
 
 fn day_key(t: DateTime<Utc>) -> String {
-    t.with_timezone(&chrono::Local).date_naive().format("%Y-%m-%d").to_string()
+    t.with_timezone(&chrono::Local)
+        .date_naive()
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 /// 时间桶分组（v1 仅 day）：组序 = 组键倒序，NULL 单独成桶恒排末尾，组内按 sort。
@@ -1785,7 +1866,10 @@ fn compile_keyword(keyword: &str, source: Source, fields: &[FieldDef]) -> Filter
             value: Some(FilterValue::Text(kw.into())),
         }));
     }
-    FilterNode::Group { op: Logic::Or, children }
+    FilterNode::Group {
+        op: Logic::Or,
+        children,
+    }
 }
 
 // ==========================================================================
@@ -1867,7 +1951,9 @@ fn leaf_constraints(cond: &Condition, ctx: &EvalCtx) -> Option<ColConstraints> {
             if cond.cmp != Cmp::Eq {
                 return None;
             }
-            let Some(FilterValue::Text(v)) = cond.value.as_ref() else { return None };
+            let Some(FilterValue::Text(v)) = cond.value.as_ref() else {
+                return None;
+            };
             c.item_type = ItemType::parse(v);
             c.item_type.is_some().then_some(c)
         }
@@ -1875,7 +1961,9 @@ fn leaf_constraints(cond: &Condition, ctx: &EvalCtx) -> Option<ColConstraints> {
             if cond.cmp != Cmp::Eq {
                 return None;
             }
-            let Some(FilterValue::Text(v)) = cond.value.as_ref() else { return None };
+            let Some(FilterValue::Text(v)) = cond.value.as_ref() else {
+                return None;
+            };
             c.status = ItemStatus::parse(v);
             c.status.is_some().then_some(c)
         }
@@ -2089,7 +2177,10 @@ fn render_incompatibility(
         }
         Render::Heatmap => {
             if buckets.is_some_and(|bs| {
-                !bs.is_empty() && bs.iter().all(|b| NaiveDate::parse_from_str(&b.key, "%Y-%m-%d").is_ok())
+                !bs.is_empty()
+                    && bs
+                        .iter()
+                        .all(|b| NaiveDate::parse_from_str(&b.key, "%Y-%m-%d").is_ok())
             }) {
                 None
             } else {
@@ -2111,7 +2202,10 @@ pub struct TplInfo {
 /// 挂件 window 绑定的时间列（§8：group.time_field → 缺省锚点列）。
 fn window_time_col(cfg: &WidgetConfig) -> &'static str {
     match &cfg.agg {
-        Some(Agg { group: Some(GroupClause::Time { time_field, .. }), .. }) => match time_field.as_str() {
+        Some(Agg {
+            group: Some(GroupClause::Time { time_field, .. }),
+            ..
+        }) => match time_field.as_str() {
             "col:start_at" => "col:start_at",
             "col:end_at" => "col:end_at",
             "col:due_at" => "col:due_at",
@@ -2149,7 +2243,8 @@ pub fn eval_widget(
     // ---- 第一段前半：filter（AST 终审）----
     let mut items: Vec<Item> = Vec::new();
     for it in pool {
-        if cfg.dataset.item_type.matches(it.item_type) && eval_filter(it, &cfg.dataset.filter, ctx)? {
+        if cfg.dataset.item_type.matches(it.item_type) && eval_filter(it, &cfg.dataset.filter, ctx)?
+        {
             items.push(it.clone());
         }
     }
@@ -2167,8 +2262,16 @@ pub fn eval_widget(
         None => items.clone(),
     };
 
-    let agg = cfg.agg.clone().unwrap_or(Agg { group: None, metric: None });
-    let metric_fn = agg.metric.as_ref().map(|m| m.fun.as_str()).unwrap_or("count").to_string();
+    let agg = cfg.agg.clone().unwrap_or(Agg {
+        group: None,
+        metric: None,
+    });
+    let metric_fn = agg
+        .metric
+        .as_ref()
+        .map(|m| m.fun.as_str())
+        .unwrap_or("count")
+        .to_string();
     let metric_field = agg.metric.as_ref().and_then(|m| m.field.clone());
 
     // ---- 第一段收口：聚合 → 统一结果表 ----
@@ -2186,7 +2289,14 @@ pub fn eval_widget(
             })
             .collect();
         pts.sort_by_key(|(t, _)| *t);
-        points = Some(pts.into_iter().map(|(t, v)| Point { t: crate::store::dt(t), v }).collect());
+        points = Some(
+            pts.into_iter()
+                .map(|(t, v)| Point {
+                    t: crate::store::dt(t),
+                    v,
+                })
+                .collect(),
+        );
     } else {
         let metric_of = |it: &Item| -> Option<f64> {
             match metric_fn.as_str() {
@@ -2201,14 +2311,20 @@ pub fn eval_widget(
                 let mut mins: BTreeMap<String, f64> = BTreeMap::new();
                 let mut maxs: BTreeMap<String, f64> = BTreeMap::new();
                 for it in &windowed {
-                    let Some(t) = col_time(it, time_field) else { continue };
+                    let Some(t) = col_time(it, time_field) else {
+                        continue;
+                    };
                     let Some(v) = metric_of(it) else { continue };
                     let local_day = t.with_timezone(&chrono::Local).date_naive();
                     let key = bucket_key_of(local_day, bucket);
                     *sums.entry(key.clone()).or_insert(0.0) += v;
                     *counts.entry(key.clone()).or_insert(0) += 1;
-                    mins.entry(key.clone()).and_modify(|m| *m = m.min(v)).or_insert(v);
-                    maxs.entry(key.clone()).and_modify(|m| *m = m.max(v)).or_insert(v);
+                    mins.entry(key.clone())
+                        .and_modify(|m| *m = m.min(v))
+                        .or_insert(v);
+                    maxs.entry(key.clone())
+                        .and_modify(|m| *m = m.max(v))
+                        .or_insert(v);
                 }
                 // 时间桶补零：窗口内每个桶都出桶（热力图与折线依赖完整时间轴）；
                 // 时间桶升序（line / heatmap 用）
@@ -2276,7 +2392,9 @@ pub fn eval_widget(
                         }
                         continue;
                     }
-                    let Some(v) = extra_value(it, field) else { continue };
+                    let Some(v) = extra_value(it, field) else {
+                        continue;
+                    };
                     match v {
                         Value::Array(_) => {
                             for x in value_to_list(v) {
@@ -2287,11 +2405,15 @@ pub fn eval_widget(
                         _ => {}
                     }
                 }
-                let mut bs: Vec<Bucket> =
-                    counts.into_iter().map(|(k, v)| Bucket { key: k, value: v }).collect();
+                let mut bs: Vec<Bucket> = counts
+                    .into_iter()
+                    .map(|(k, v)| Bucket { key: k, value: v })
+                    .collect();
                 // 字段分组按 value 降序（bar / pie 默认）
                 bs.sort_by(|a, b| {
-                    b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal)
+                    b.value
+                        .partial_cmp(&a.value)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 if field == "col:template_id" {
                     for b in &bs {
@@ -2319,7 +2441,10 @@ pub fn eval_widget(
                     "max" => vals.iter().cloned().reduce(f64::max).unwrap_or(0.0),
                     _ => vals.len() as f64,
                 };
-                buckets = Some(vec![Bucket { key: "all".into(), value: v }]);
+                buckets = Some(vec![Bucket {
+                    key: "all".into(),
+                    value: v,
+                }]);
             }
         }
     }
@@ -2331,11 +2456,18 @@ pub fn eval_widget(
         let mut day_counts: BTreeMap<NaiveDate, i64> = BTreeMap::new();
         for it in &items {
             if let Some(t) = window_time_of(it, win_col) {
-                *day_counts.entry(t.with_timezone(&chrono::Local).date_naive()).or_insert(0) += 1;
+                *day_counts
+                    .entry(t.with_timezone(&chrono::Local).date_naive())
+                    .or_insert(0) += 1;
             }
         }
         let goal = cfg.derived.as_ref().and_then(|d| d.goal);
-        derived.streak = Some(compute_streak(&day_counts, goal, ctx, windowed.len() as i64));
+        derived.streak = Some(compute_streak(
+            &day_counts,
+            goal,
+            ctx,
+            windowed.len() as i64,
+        ));
     }
     {
         // total / min / max / last：over 窗口内结果表
@@ -2421,7 +2553,11 @@ fn compute_streak(
             let mut run = 0i64;
             let mut prev: Option<NaiveDate> = None;
             for m in week_counts.keys().filter(|m| met_mondays.contains(*m)) {
-                run = if prev == Some(*m - Duration::weeks(1)) { run + 1 } else { 1 };
+                run = if prev == Some(*m - Duration::weeks(1)) {
+                    run + 1
+                } else {
+                    1
+                };
                 longest = longest.max(run);
                 prev = Some(*m);
             }
@@ -2438,8 +2574,11 @@ fn compute_streak(
                 Some(Goal::Daily { daily }) => daily.max(1),
                 _ => 1,
             };
-            let met_days: HashSet<NaiveDate> =
-                day_counts.iter().filter(|(_, c)| **c >= need).map(|(d, _)| *d).collect();
+            let met_days: HashSet<NaiveDate> = day_counts
+                .iter()
+                .filter(|(_, c)| **c >= need)
+                .map(|(d, _)| *d)
+                .collect();
             let mut current = 0i64;
             if !met_days.is_empty() {
                 let mut cursor = if met_days.contains(&ctx.today) {
@@ -2460,11 +2599,20 @@ fn compute_streak(
             let mut run = 0i64;
             let mut prev: Option<NaiveDate> = None;
             for d in day_counts.keys().filter(|d| met_days.contains(*d)) {
-                run = if prev == Some(*d - Duration::days(1)) { run + 1 } else { 1 };
+                run = if prev == Some(*d - Duration::days(1)) {
+                    run + 1
+                } else {
+                    1
+                };
                 longest = longest.max(run);
                 prev = Some(*d);
             }
-            StreakOut { current, longest, recent, week_remaining: None }
+            StreakOut {
+                current,
+                longest,
+                recent,
+                week_remaining: None,
+            }
         }
     }
 }
@@ -2514,7 +2662,10 @@ struct ContainerState {
 fn parse_container_value(v: &Value) -> std::result::Result<ContainerState, String> {
     match v.get("kind").and_then(|k| k.as_str()) {
         Some("container") => {
-            let mut st = ContainerState { layout: ContainerLayout::Vertical, ..Default::default() };
+            let mut st = ContainerState {
+                layout: ContainerLayout::Vertical,
+                ..Default::default()
+            };
             st.layout = v
                 .get("layout")
                 .and_then(|l| l.as_str())
@@ -2535,7 +2686,8 @@ fn parse_container_value(v: &Value) -> std::result::Result<ContainerState, Strin
 }
 
 fn parse_container(row: &ViewDef) -> Result<ContainerState> {
-    parse_container_value(&row.config).map_err(|e| invalid(format!("视图 {} 配置无效: {e}", row.id)))
+    parse_container_value(&row.config)
+        .map_err(|e| invalid(format!("视图 {} 配置无效: {e}", row.id)))
 }
 
 /// 预设统计容器定义（恢复 / 首次播种的唯一事实源；名称 + 布局 + 挂件构建器）。
@@ -2544,7 +2696,6 @@ const PRESET_STATS: &[(&str, &str, ContainerLayout)] = &[
     (VIEW_STATS_STREAKS, "打卡连续", ContainerLayout::Horizontal),
     (VIEW_STATS_SERIES, "数值趋势", ContainerLayout::Vertical),
 ];
-
 
 /// 预设热力图挂件（全部 log，按天计数，365 天窗口）。
 fn preset_heatmap_widget() -> WidgetConfig {
@@ -2573,7 +2724,11 @@ fn preset_streak_widgets(templates: &[TplInfo]) -> Vec<WidgetConfig> {
     templates
         .iter()
         .map(|tpl| {
-            let mut c = streak_card_cfg(tpl, Some(Window::Days { days: 365 }), Some(Goal::Daily { daily: 1 }));
+            let mut c = streak_card_cfg(
+                tpl,
+                Some(Window::Days { days: 365 }),
+                Some(Goal::Daily { daily: 1 }),
+            );
             c.window = Some(Window::Days { days: 365 });
             c
         })
@@ -2590,11 +2745,7 @@ fn preset_series_widgets(fields: &[FieldDef]) -> Vec<WidgetConfig> {
 }
 
 /// 打卡卡配置：filter = `col:template_id eq <tpl>`，day×count + streak derived（§8）。
-fn streak_card_cfg(
-    tpl: &TplInfo,
-    window: Option<Window>,
-    goal: Option<Goal>,
-) -> WidgetConfig {
+fn streak_card_cfg(tpl: &TplInfo, window: Option<Window>, goal: Option<Goal>) -> WidgetConfig {
     WidgetConfig {
         kind: "widget".into(),
         dataset: WidgetDataset {
@@ -2614,7 +2765,10 @@ fn streak_card_cfg(
                 bucket: "day".into(),
                 time_field: "col:occurred_at".into(),
             }),
-            metric: Some(Metric { fun: "count".into(), field: None }),
+            metric: Some(Metric {
+                fun: "count".into(),
+                field: None,
+            }),
         }),
         derived: Some(DerivedSpec {
             kind: Some("streak".into()),
@@ -2645,7 +2799,10 @@ fn series_line_cfg(field: &FieldDef, window: Option<Window>) -> WidgetConfig {
         window,
         agg: Some(Agg {
             group: None,
-            metric: Some(Metric { fun: "values".into(), field: Some(field.id.clone()) }),
+            metric: Some(Metric {
+                fun: "values".into(),
+                field: Some(field.id.clone()),
+            }),
         }),
         derived: None,
         render: Render::Line,
@@ -2675,7 +2832,10 @@ impl Store {
         let rows: Vec<ViewDef> = stmt
             .query_map([], view_def_mapper)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows.into_iter().filter(|v| panel.is_none_or(|p| v.panel == p)).collect())
+        Ok(rows
+            .into_iter()
+            .filter(|v| panel.is_none_or(|p| v.panel == p))
+            .collect())
     }
 
     pub fn get_view(&self, id: &str) -> Result<ViewDef> {
@@ -2732,7 +2892,12 @@ impl Store {
             if let Some(n) = name {
                 conn.execute(
                     "UPDATE view_defs SET name = ?2, config = ?3, updated_at = ?4 WHERE id = ?1",
-                    params![id, n.trim(), config.to_string(), crate::store::dt(Utc::now())],
+                    params![
+                        id,
+                        n.trim(),
+                        config.to_string(),
+                        crate::store::dt(Utc::now())
+                    ],
                 )?;
             } else {
                 conn.execute(
@@ -2748,11 +2913,16 @@ impl Store {
     pub fn delete_view(&self, id: &str) -> Result<ViewDef> {
         let view = self.get_view(id)?;
         if view.builtin {
-            return Err(crate::MyDayError::Conflict("内置视图不可删除（可重置回 seed）".into()));
+            return Err(crate::MyDayError::Conflict(
+                "内置视图不可删除（可重置回 seed）".into(),
+            ));
         }
         {
             let conn = self.lock()?;
-            conn.execute("DELETE FROM view_defs WHERE id = ?1 AND builtin = 0", params![id])?;
+            conn.execute(
+                "DELETE FROM view_defs WHERE id = ?1 AND builtin = 0",
+                params![id],
+            )?;
         }
         Ok(view)
     }
@@ -2761,7 +2931,9 @@ impl Store {
     pub fn reset_view(&self, id: &str) -> Result<ViewDef> {
         let view = self.get_view(id)?;
         if !view.builtin {
-            return Err(invalid_cfg("用户视图没有 seed，无法重置（可直接编辑或删除）"));
+            return Err(invalid_cfg(
+                "用户视图没有 seed，无法重置（可直接编辑或删除）",
+            ));
         }
         {
             let conn = self.lock()?;
@@ -2838,8 +3010,8 @@ impl Store {
             });
         }
 
-        let cfg: ViewConfig =
-            serde_json::from_value(config.clone()).map_err(|e| invalid_cfg(format!("视图配置无效: {e}")))?;
+        let cfg: ViewConfig = serde_json::from_value(config.clone())
+            .map_err(|e| invalid_cfg(format!("视图配置无效: {e}")))?;
         let mut dataset = cfg.dataset.clone();
         if let Some(n) = limit_override {
             dataset.limit = Some(n);
@@ -2849,7 +3021,10 @@ impl Store {
         let filter = match keyword.map(str::trim).filter(|k| !k.is_empty()) {
             Some(kw) => FilterNode::Group {
                 op: Logic::And,
-                children: vec![dataset.filter.clone(), compile_keyword(kw, dataset.item_type, &fields)],
+                children: vec![
+                    dataset.filter.clone(),
+                    compile_keyword(kw, dataset.item_type, &fields),
+                ],
             },
             None => dataset.filter.clone(),
         };
@@ -2883,8 +3058,10 @@ impl Store {
         }
 
         // 分组（v1 时间桶）：组序 = 组键倒序，组内按 sort
-        let groups =
-            dataset.group.as_ref().map(|g| group_items(&matched_items, g, &dataset.sort));
+        let groups = dataset
+            .group
+            .as_ref()
+            .map(|g| group_items(&matched_items, g, &dataset.sort));
 
         // keyword 命中位置（与 search() 同口径，信息量不缩水）
         let matched = keyword.map(str::trim).filter(|k| !k.is_empty()).map(|kw| {
@@ -2892,10 +3069,18 @@ impl Store {
             let kwl = kw.to_lowercase();
             for it in &matched_items {
                 let mut where_: Vec<String> = Vec::new();
-                if it.title.as_deref().is_some_and(|t| t.to_lowercase().contains(&kwl)) {
+                if it
+                    .title
+                    .as_deref()
+                    .is_some_and(|t| t.to_lowercase().contains(&kwl))
+                {
                     where_.push("title".into());
                 }
-                if it.note.as_deref().is_some_and(|n| n.to_lowercase().contains(&kwl)) {
+                if it
+                    .note
+                    .as_deref()
+                    .is_some_and(|n| n.to_lowercase().contains(&kwl))
+                {
                     where_.push("note".into());
                 }
                 if it.tags.iter().any(|t| t.to_lowercase().contains(&kwl)) {
@@ -2936,7 +3121,11 @@ impl Store {
         Ok(self
             .list_templates()?
             .into_iter()
-            .map(|t| TplInfo { id: t.id, name: t.name, icon: t.icon })
+            .map(|t| TplInfo {
+                id: t.id,
+                name: t.name,
+                icon: t.icon,
+            })
             .collect())
     }
 
@@ -2950,7 +3139,11 @@ impl Store {
         let templates: Vec<TplInfo> = self
             .list_templates()?
             .into_iter()
-            .map(|t| TplInfo { id: t.id, name: t.name, icon: t.icon })
+            .map(|t| TplInfo {
+                id: t.id,
+                name: t.name,
+                icon: t.icon,
+            })
             .collect();
         let rows = self.list_views(Some(Panel::Stats))?;
 
@@ -2992,7 +3185,10 @@ impl Store {
                     }
                 }
             }
-            let mut lf = ListFilter { item_type: Some(ItemType::Log), ..Default::default() };
+            let mut lf = ListFilter {
+                item_type: Some(ItemType::Log),
+                ..Default::default()
+            };
             lf.occurred_from = min_start;
             self.list_items_unbounded(&lf)?
         };
@@ -3095,7 +3291,11 @@ impl Store {
             .list_templates()?
             .into_iter()
             .filter(|t| t.item_type == ItemType::Log && t.pinned)
-            .map(|t| TplInfo { id: t.id, name: t.name, icon: t.icon })
+            .map(|t| TplInfo {
+                id: t.id,
+                name: t.name,
+                icon: t.icon,
+            })
             .collect();
         let fields = self.list_field_defs(None)?;
         let widgets = if id == VIEW_STATS_HEATMAP {
@@ -3132,7 +3332,11 @@ pub fn stats_summary_via_widgets(store: &Store, days: i64) -> Result<StatsSummar
     let templates: Vec<TplInfo> = store
         .list_templates()?
         .into_iter()
-        .map(|t| TplInfo { id: t.id, name: t.name, icon: t.icon })
+        .map(|t| TplInfo {
+            id: t.id,
+            name: t.name,
+            icon: t.icon,
+        })
         .collect();
     // streak 卡全历史 → 整页取 all（一份 log 全量内存集，同源不重复扫）
     let pool = store.list_items_unbounded(&crate::store::ListFilter {
@@ -3159,14 +3363,21 @@ pub fn stats_summary_via_widgets(store: &Store, days: i64) -> Result<StatsSummar
         if let Some(bs) = r.buckets {
             out.heatmap = bs
                 .into_iter()
-                .map(|b| crate::store::HeatDay { day: b.key, count: b.value as i64 })
+                .map(|b| crate::store::HeatDay {
+                    day: b.key,
+                    count: b.value as i64,
+                })
                 .collect();
         }
     }
 
     // ---- 打卡连续：全部 pinned log 模板各一张卡 ----
     for tpl in &templates {
-        let cfg = streak_card_cfg(tpl, Some(Window::Days { days }), Some(Goal::Daily { daily: 1 }));
+        let cfg = streak_card_cfg(
+            tpl,
+            Some(Window::Days { days }),
+            Some(Goal::Daily { daily: 1 }),
+        );
         let r = eval_widget(
             VIEW_STATS_STREAKS,
             &tpl.id,

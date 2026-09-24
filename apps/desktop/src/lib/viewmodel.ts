@@ -14,10 +14,11 @@ import type {
   FilterValue,
   ItemType,
   SortSpec,
+  ViewConfig,
   ViewDef,
   WidgetConfig,
 } from "./api";
-import { t } from "./i18n";
+import { t, type MessageKey } from "./i18n";
 
 /** 字段 UI 角色（决定运算符集与值控件） */
 export type FieldRole =
@@ -28,7 +29,7 @@ export type FieldRole =
  * 内置列（§4.1；v1 不暴露 col:id / idempotency_key）。
  * label 存 i18n key（结构不变），渲染处过 t() 出显示名。
  */
-export const BUILTIN_COLUMNS: { id: string; label: string; role: FieldRole }[] = [
+export const BUILTIN_COLUMNS: { id: string; label: MessageKey; role: FieldRole }[] = [
   { id: "col:type", label: "vm.col.type", role: "type" },
   { id: "col:status", label: "vm.col.status", role: "status" },
   { id: "col:title", label: "vm.col.title", role: "text" },
@@ -81,8 +82,9 @@ export function fieldApplicable(field: string, itemType: "all" | ItemType, field
   return def.scope == null || def.scope === itemType;
 }
 
-/** 运算符矩阵（§4.3）：每个角色可用的运算符 + 文案 key（渲染处过 t()） */
-export const CMP_MATRIX: Record<FieldRole, { id: Cmp; label: string }[]> = {
+/** 运算符矩阵（§4.3）：每个角色可用的运算符 + 文案 key（渲染处过 t()）。
+ *  label = MessageKey 或字面符号（数字比较的 "=" / "≠" 等，t() 对词典外 key 原样返回） */
+export const CMP_MATRIX: Record<FieldRole, { id: Cmp; label: MessageKey | (string & {}) }[]> = {
   text: [
     { id: "eq", label: "vm.cmp.eq" },
     { id: "neq", label: "vm.cmp.neq" },
@@ -177,14 +179,14 @@ export function valueControlOf(role: FieldRole, cmp: Cmp): ValueControl {
 }
 
 /** 相对日期 token（点值）菜单（label 为 key，渲染处过 t()） */
-export const REL_DAY_LABELS: { id: DateValue; label: string }[] = [
+export const REL_DAY_LABELS: { id: DateValue; label: MessageKey }[] = [
   { id: { rel: "today" }, label: "vm.rel.today" },
   { id: { rel: "tomorrow" }, label: "vm.rel.tomorrow" },
   { id: { rel: "yesterday" }, label: "vm.rel.yesterday" },
 ];
 
 /** 范围值预设 chips（UI 的「本周 / 本月 / 近 N 天」） */
-export const REL_RANGE_LABELS: { id: DateValue; label: string }[] = [
+export const REL_RANGE_LABELS: { id: DateValue; label: MessageKey }[] = [
   { id: { rel: "this_week" }, label: "vm.rel.thisWeek" },
   { id: { rel: "this_month" }, label: "vm.rel.thisMonth" },
   { id: { rel: "last_days:7" }, label: "vm.rel.last7" },
@@ -281,6 +283,7 @@ export function defaultValueFor(field: string, cmp: Cmp, fields: FieldDef[]): Fi
 }
 
 /** 条件 chips 用的运算符短文案（key 表） */
+/** 值 = MessageKey 或字面符号（"=" / "≠" / ">" 等不进词典，t() 对词典外 key 原样返回） */
 const CMP_SHORT: Record<Cmp, string> = {
   eq: "=", neq: "≠", contains: "vm.cmp.contains", not_contains: "vm.cmp.notContains",
   gt: ">", gte: "≥", lt: "<", lte: "≤", between: "vm.cmp.between",
@@ -329,7 +332,7 @@ export function describeCondition(
   templates: { id: string; name: string }[],
 ): string {
   const label = fieldLabel(c.field, fields);
-  const op = t(CMP_SHORT[c.cmp]);
+  const op = t(CMP_SHORT[c.cmp] as MessageKey);
   if (c.value == null) return `${label} ${op}`;
   const role = roleOf(c.field, fields);
   let v = describeValue(c.value, fields, templates);
@@ -350,7 +353,7 @@ export function describeSort(s: SortSpec, fields: FieldDef[]): string {
 // 挂件（stats 挂件编辑器共用）
 // ----------------------------------------------------------------------
 
-export const RENDER_LABELS: { id: WidgetConfig["render"]; label: string }[] = [
+export const RENDER_LABELS: { id: WidgetConfig["render"]; label: MessageKey }[] = [
   { id: "card", label: "vm.render.card" },
   { id: "bar", label: "vm.render.bar" },
   { id: "line", label: "vm.render.line" },
@@ -358,7 +361,7 @@ export const RENDER_LABELS: { id: WidgetConfig["render"]; label: string }[] = [
   { id: "heatmap", label: "vm.render.heatmap" },
 ];
 
-export const METRIC_FNS: { id: NonNullable<NonNullable<WidgetConfig["agg"]>["metric"]>["fn"]; label: string }[] = [
+export const METRIC_FNS: { id: NonNullable<NonNullable<WidgetConfig["agg"]>["metric"]>["fn"]; label: MessageKey }[] = [
   { id: "count", label: "vm.metric.count" },
   { id: "sum", label: "vm.metric.sum" },
   { id: "avg", label: "vm.metric.avg" },
@@ -371,11 +374,6 @@ export const METRIC_FNS: { id: NonNullable<NonNullable<WidgetConfig["agg"]>["met
 export function newWidgetConfig(source: Partial<WidgetConfig> = {}): WidgetConfig {
   return {
     kind: "widget",
-    dataset: {
-      item_type: "log",
-      filter: { op: "and", children: [] },
-      ...(source.dataset ? JSON.parse(JSON.stringify(source.dataset)) : {}),
-    },
     window: { days: 365 },
     agg: {
       group: { by: "time", bucket: "day", time_field: "col:occurred_at" },
@@ -385,10 +383,10 @@ export function newWidgetConfig(source: Partial<WidgetConfig> = {}): WidgetConfi
     render: "card",
     options: { presence: false, top_n: 8 },
     ...source,
-    dataset: source.dataset ?? {
-      item_type: "log",
-      filter: { op: "and", children: [] },
-    },
+    // 深拷贝调用方传入值，避免种子与源对象共享引用
+    dataset: source.dataset
+      ? JSON.parse(JSON.stringify(source.dataset))
+      : { item_type: "log", filter: { op: "and", children: [] } },
   };
 }
 
@@ -397,9 +395,9 @@ export function cloneConfig<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
 }
 
-/** 生效配置（config_user ?? config） */
-export function effectiveConfig(view: ViewDef): Record<string, unknown> {
-  return (view.config_user ?? view.config) as Record<string, unknown>;
+/** 生效配置（config_user ?? config）：库里是松散 JSON，此处按 ViewConfig 形状出 */
+export function effectiveConfig(view: ViewDef): ViewConfig {
+  return (view.config_user ?? view.config) as unknown as ViewConfig;
 }
 
 

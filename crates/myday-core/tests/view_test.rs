@@ -8,9 +8,9 @@ use chrono::{Datelike, Duration, TimeZone, Utc};
 use myday_core::model::*;
 use myday_core::store::{ListFilter, Store, TaskView};
 use myday_core::view::{
-    self, Condition, Cmp, EvalCtx, FilterNode, FilterValue, Logic, Panel,
-    VIEW_LOGS_TIMELINE, VIEW_SEARCH_ALL, VIEW_STATS_STREAKS,
-    VIEW_TASKS_ALL, VIEW_TASKS_DONE, VIEW_TASKS_NODATE, VIEW_TASKS_TODAY, VIEW_TASKS_UPCOMING,
+    self, Cmp, Condition, EvalCtx, FilterNode, FilterValue, Logic, Panel, VIEW_LOGS_TIMELINE,
+    VIEW_SEARCH_ALL, VIEW_STATS_STREAKS, VIEW_TASKS_ALL, VIEW_TASKS_DONE, VIEW_TASKS_NODATE,
+    VIEW_TASKS_TODAY, VIEW_TASKS_UPCOMING,
 };
 
 struct TempDir(tempfile::TempDir);
@@ -57,15 +57,25 @@ fn recent_log_at(hours_ago: i64) -> chrono::DateTime<Utc> {
 }
 
 fn cond(field: &str, cmp: Cmp, value: Option<FilterValue>) -> FilterNode {
-    FilterNode::Cond(Condition { field: field.into(), cmp, value })
+    FilterNode::Cond(Condition {
+        field: field.into(),
+        cmp,
+        value,
+    })
 }
 
 fn and(children: Vec<FilterNode>) -> FilterNode {
-    FilterNode::Group { op: Logic::And, children }
+    FilterNode::Group {
+        op: Logic::And,
+        children,
+    }
 }
 
 fn or(children: Vec<FilterNode>) -> FilterNode {
-    FilterNode::Group { op: Logic::Or, children }
+    FilterNode::Group {
+        op: Logic::Or,
+        children,
+    }
 }
 
 fn user_view_config(filter: FilterNode) -> serde_json::Value {
@@ -134,7 +144,11 @@ fn builtin_task_views_align_with_tasks_view() {
         .unwrap();
     // 全无 = 收件箱：进今天、排序最后
     let inbox = store
-        .add_item(NewItem { title: Some("收件箱".into()), item_type: Some(ItemType::Task), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("收件箱".into()),
+            item_type: Some(ItemType::Task),
+            ..Default::default()
+        })
         .unwrap();
     // 有截止的「开始在过去」不进今天（截止优先，§4.1 有意差异）
     let due_future_start_past = store
@@ -179,32 +193,56 @@ fn builtin_task_views_align_with_tasks_view() {
             b.sort();
             assert_eq!(a, b, "视图 {view_id} 与 tasks_view 集合一致");
         } else {
-            assert_eq!(ids, via_sql, "视图 {view_id} 与 tasks_view 集合+顺序必须一致");
+            assert_eq!(
+                ids, via_sql,
+                "视图 {view_id} 与 tasks_view 集合+顺序必须一致"
+            );
         }
     }
 
     // 语义抽查
-    let today = store.query_view(VIEW_TASKS_TODAY, None, None).unwrap().items.unwrap();
+    let today = store
+        .query_view(VIEW_TASKS_TODAY, None, None)
+        .unwrap()
+        .items
+        .unwrap();
     let today_ids: Vec<&str> = today.iter().map(|i| i.id.as_str()).collect();
     for id in [&due_today.id, &overdue.id, &start_today.id, &inbox.id] {
         assert!(today_ids.contains(&id.as_str()), "{id} 应在今天");
     }
-    for id in [&due_tomorrow.id, &start_tomorrow.id, &due_future_start_past.id, &done.id] {
+    for id in [
+        &due_tomorrow.id,
+        &start_tomorrow.id,
+        &due_future_start_past.id,
+        &done.id,
+    ] {
         assert!(!today_ids.contains(&id.as_str()), "{id} 不应在今天");
     }
     // 收件箱（anchor 空）恒排该级末尾
     assert_eq!(today.last().unwrap().id, inbox.id);
 
-    let upcoming = store.query_view(VIEW_TASKS_UPCOMING, None, None).unwrap().items.unwrap();
+    let upcoming = store
+        .query_view(VIEW_TASKS_UPCOMING, None, None)
+        .unwrap()
+        .items
+        .unwrap();
     let up_ids: Vec<&str> = upcoming.iter().map(|i| i.id.as_str()).collect();
     assert!(up_ids.contains(&due_tomorrow.id.as_str()));
     assert!(up_ids.contains(&start_tomorrow.id.as_str()));
     assert!(up_ids.contains(&due_future_start_past.id.as_str()));
 
-    let all = store.query_view(VIEW_TASKS_ALL, None, None).unwrap().items.unwrap();
+    let all = store
+        .query_view(VIEW_TASKS_ALL, None, None)
+        .unwrap()
+        .items
+        .unwrap();
     assert_eq!(all.len(), 7, "All = 全部未完成（不含已完成）");
 
-    let done_view = store.query_view(VIEW_TASKS_DONE, None, None).unwrap().items.unwrap();
+    let done_view = store
+        .query_view(VIEW_TASKS_DONE, None, None)
+        .unwrap()
+        .items
+        .unwrap();
     assert_eq!(done_view.len(), 1);
     assert_eq!(done_view[0].id, done.id);
 }
@@ -254,7 +292,11 @@ fn tasks_nodate_view_is_anchor_empty_fifo() {
         })
         .unwrap();
 
-    let items = store.query_view(VIEW_TASKS_NODATE, None, None).unwrap().items.unwrap();
+    let items = store
+        .query_view(VIEW_TASKS_NODATE, None, None)
+        .unwrap()
+        .items
+        .unwrap();
     let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
     assert_eq!(
         ids,
@@ -280,8 +322,18 @@ fn recurring_task_stays_single_row_mother_mode() {
             ..Default::default()
         })
         .unwrap();
-    let today = store.query_view(VIEW_TASKS_TODAY, None, None).unwrap().items.unwrap();
-    assert_eq!(today.iter().filter(|i| i.title.as_deref() == Some("每周报告")).count(), 1);
+    let today = store
+        .query_view(VIEW_TASKS_TODAY, None, None)
+        .unwrap()
+        .items
+        .unwrap();
+    assert_eq!(
+        today
+            .iter()
+            .filter(|i| i.title.as_deref() == Some("每周报告"))
+            .count(),
+        1
+    );
     let sql = store.tasks_view(TaskView::Today, None).unwrap();
     assert_eq!(today.len(), sql.len(), "母条目集合与 tasks_view 一致");
 }
@@ -306,7 +358,11 @@ fn logs_timeline_groups_desc_with_null_last() {
     let keys: Vec<&str> = groups.iter().filter_map(|g| g.key.as_deref()).collect();
     assert!(keys[0] > keys[1] && keys[1] > keys[2], "组键倒序: {keys:?}");
     // 组内按 sort（occurred desc）
-    let first_day: Vec<String> = groups[0].items.iter().map(|i| i.title.clone().unwrap()).collect();
+    let first_day: Vec<String> = groups[0]
+        .items
+        .iter()
+        .map(|i| i.title.clone().unwrap())
+        .collect();
     assert_eq!(first_day, vec!["记录 0/9", "记录 0/8"]);
 
     // 时间线视图不包含 task / event
@@ -362,18 +418,29 @@ fn search_view_keyword_compiles_into_ast() {
         .unwrap();
     let items = r.items.unwrap();
     assert_eq!(items.len(), 1, "备注命中");
-    let r = store.query_view(VIEW_SEARCH_ALL, Some("健康"), None).unwrap();
+    let r = store
+        .query_view(VIEW_SEARCH_ALL, Some("健康"), None)
+        .unwrap();
     assert_eq!(r.items.unwrap().len(), 1, "标签命中");
-    let r = store.query_view(VIEW_SEARCH_ALL, Some("72.5"), None).unwrap();
+    let r = store
+        .query_view(VIEW_SEARCH_ALL, Some("72.5"), None)
+        .unwrap();
     assert_eq!(r.items.unwrap().len(), 1, "字段值命中");
-    let r = store.query_view(VIEW_SEARCH_ALL, Some("客户"), None).unwrap();
+    let r = store
+        .query_view(VIEW_SEARCH_ALL, Some("客户"), None)
+        .unwrap();
     let items = r.items.unwrap();
     assert_eq!(items.len(), 1);
     let matched = r.matched.unwrap();
-    assert_eq!(matched.get(items[0].id.as_str()), Some(&vec!["title".to_string()]));
+    assert_eq!(
+        matched.get(items[0].id.as_str()),
+        Some(&vec!["title".to_string()])
+    );
 
     // 排序 = updated desc（种子），后创建的「晨重」在前
-    let r = store.query_view(VIEW_SEARCH_ALL, Some("喝水"), None).unwrap();
+    let r = store
+        .query_view(VIEW_SEARCH_ALL, Some("喝水"), None)
+        .unwrap();
     assert_eq!(r.items.unwrap().len(), 1);
 }
 
@@ -402,20 +469,59 @@ fn matrix_setup() -> (TempDir, Store) {
 fn operator_matrix_text_number_select_multiselect_bool() {
     let (_t, store) = matrix_setup();
     let defs = store.list_field_defs(None).unwrap();
-    let num = defs.iter().find(|d| d.kind == FieldKind::Number && d.scope.is_none()).unwrap().id.clone();
+    let num = defs
+        .iter()
+        .find(|d| d.kind == FieldKind::Number && d.scope.is_none())
+        .unwrap()
+        .id
+        .clone();
     store
-        .add_field_def("等级", FieldKind::Select, &serde_json::json!({"choices":["低","高"]}), None)
+        .add_field_def(
+            "等级",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["低","高"]}),
+            None,
+        )
         .unwrap();
     store
-        .add_field_def("标签组", FieldKind::MultiSelect, &serde_json::json!({"choices":["a","b","c"]}), None)
+        .add_field_def(
+            "标签组",
+            FieldKind::MultiSelect,
+            &serde_json::json!({"choices":["a","b","c"]}),
+            None,
+        )
         .unwrap();
-    store.add_field_def("开关", FieldKind::Bool, &serde_json::json!({}), None).unwrap();
-    store.add_field_def("网址", FieldKind::Url, &serde_json::json!({}), None).unwrap();
+    store
+        .add_field_def("开关", FieldKind::Bool, &serde_json::json!({}), None)
+        .unwrap();
+    store
+        .add_field_def("网址", FieldKind::Url, &serde_json::json!({}), None)
+        .unwrap();
     let defs = store.list_field_defs(None).unwrap();
-    let sel = defs.iter().find(|d| d.kind == FieldKind::Select).unwrap().id.clone();
-    let multi = defs.iter().find(|d| d.kind == FieldKind::MultiSelect).unwrap().id.clone();
-    let flag = defs.iter().find(|d| d.kind == FieldKind::Bool).unwrap().id.clone();
-    let url = defs.iter().find(|d| d.kind == FieldKind::Url).unwrap().id.clone();
+    let sel = defs
+        .iter()
+        .find(|d| d.kind == FieldKind::Select)
+        .unwrap()
+        .id
+        .clone();
+    let multi = defs
+        .iter()
+        .find(|d| d.kind == FieldKind::MultiSelect)
+        .unwrap()
+        .id
+        .clone();
+    let flag = defs
+        .iter()
+        .find(|d| d.kind == FieldKind::Bool)
+        .unwrap()
+        .id
+        .clone();
+    let url = defs
+        .iter()
+        .find(|d| d.kind == FieldKind::Url)
+        .unwrap()
+        .id
+        .clone();
 
     let mk = |extra: serde_json::Value, title: &str| {
         store
@@ -432,37 +538,115 @@ fn operator_matrix_text_number_select_multiselect_bool() {
         serde_json::json!({ num.clone(): 42, sel.clone(): "高", multi.clone(): ["a","b"], flag.clone(): true, url.clone(): "https://example.com" }),
         "全有",
     );
-    mk(serde_json::json!({ num.clone(): 7, sel.clone(): "低", multi.clone(): ["c"], flag.clone(): false }), "半有");
+    mk(
+        serde_json::json!({ num.clone(): 7, sel.clone(): "低", multi.clone(): ["c"], flag.clone(): false }),
+        "半有",
+    );
     mk(serde_json::json!({}), "全无");
 
     // 文本：contains / not_contains / empty / not_empty / eq（大小写不敏感）
-    assert_eq!(eval_one(&store, cond("col:title", Cmp::Contains, Some(FilterValue::Text("全".into())))), 2);
-    assert_eq!(eval_one(&store, cond("col:title", Cmp::NotContains, Some(FilterValue::Text("全".into())))), 1);
-    assert_eq!(eval_one(&store, cond(&url, Cmp::NotEmpty, None)), 1);
-    assert_eq!(eval_one(&store, cond(&url, Cmp::Empty, None)), 2);
-    // 数字
-    assert_eq!(eval_one(&store, cond(&num, Cmp::Gt, Some(FilterValue::Number(10.0)))), 1);
-    assert_eq!(eval_one(&store, cond(&num, Cmp::Lte, Some(FilterValue::Number(42.0)))), 2);
     assert_eq!(
-        eval_one(&store, cond(&num, Cmp::Between, Some(FilterValue::NumPair(serde_json::from_value(serde_json::json!({"from":5,"to":10})).unwrap())))),
-        1
-    );
-    assert_eq!(eval_one(&store, cond(&num, Cmp::Empty, None)), 1);
-    assert_eq!(eval_one(&store, cond(&num, Cmp::Eq, Some(FilterValue::Number(42.0)))), 1);
-    // 单选
-    assert_eq!(eval_one(&store, cond(&sel, Cmp::Eq, Some(FilterValue::Text("高".into())))), 1);
-    assert_eq!(eval_one(&store, cond(&sel, Cmp::Neq, Some(FilterValue::Text("高".into())))), 1, "neq 不含空值行（空值恒不命中 eq/neq）");
-    // 多选
-    assert_eq!(
-        eval_one(&store, cond(&multi, Cmp::Any, Some(FilterValue::StrList(vec!["a".into(), "c".into()])))),
+        eval_one(
+            &store,
+            cond(
+                "col:title",
+                Cmp::Contains,
+                Some(FilterValue::Text("全".into()))
+            )
+        ),
         2
     );
     assert_eq!(
-        eval_one(&store, cond(&multi, Cmp::All, Some(FilterValue::StrList(vec!["a".into(), "b".into()])))),
+        eval_one(
+            &store,
+            cond(
+                "col:title",
+                Cmp::NotContains,
+                Some(FilterValue::Text("全".into()))
+            )
+        ),
+        1
+    );
+    assert_eq!(eval_one(&store, cond(&url, Cmp::NotEmpty, None)), 1);
+    assert_eq!(eval_one(&store, cond(&url, Cmp::Empty, None)), 2);
+    // 数字
+    assert_eq!(
+        eval_one(&store, cond(&num, Cmp::Gt, Some(FilterValue::Number(10.0)))),
         1
     );
     assert_eq!(
-        eval_one(&store, cond(&multi, Cmp::HasNone, Some(FilterValue::StrList(vec!["a".into()])))),
+        eval_one(
+            &store,
+            cond(&num, Cmp::Lte, Some(FilterValue::Number(42.0)))
+        ),
+        2
+    );
+    assert_eq!(
+        eval_one(
+            &store,
+            cond(
+                &num,
+                Cmp::Between,
+                Some(FilterValue::NumPair(
+                    serde_json::from_value(serde_json::json!({"from":5,"to":10})).unwrap()
+                ))
+            )
+        ),
+        1
+    );
+    assert_eq!(eval_one(&store, cond(&num, Cmp::Empty, None)), 1);
+    assert_eq!(
+        eval_one(&store, cond(&num, Cmp::Eq, Some(FilterValue::Number(42.0)))),
+        1
+    );
+    // 单选
+    assert_eq!(
+        eval_one(
+            &store,
+            cond(&sel, Cmp::Eq, Some(FilterValue::Text("高".into())))
+        ),
+        1
+    );
+    assert_eq!(
+        eval_one(
+            &store,
+            cond(&sel, Cmp::Neq, Some(FilterValue::Text("高".into())))
+        ),
+        1,
+        "neq 不含空值行（空值恒不命中 eq/neq）"
+    );
+    // 多选
+    assert_eq!(
+        eval_one(
+            &store,
+            cond(
+                &multi,
+                Cmp::Any,
+                Some(FilterValue::StrList(vec!["a".into(), "c".into()]))
+            )
+        ),
+        2
+    );
+    assert_eq!(
+        eval_one(
+            &store,
+            cond(
+                &multi,
+                Cmp::All,
+                Some(FilterValue::StrList(vec!["a".into(), "b".into()]))
+            )
+        ),
+        1
+    );
+    assert_eq!(
+        eval_one(
+            &store,
+            cond(
+                &multi,
+                Cmp::HasNone,
+                Some(FilterValue::StrList(vec!["a".into()]))
+            )
+        ),
         2
     );
     // 布尔：未填 ≠ false
@@ -480,21 +664,53 @@ fn operator_matrix_text_number_select_multiselect_bool() {
         })
         .unwrap();
     assert_eq!(
-        eval_one(&store, cond("col:tags", Cmp::Any, Some(FilterValue::StrList(vec!["紧急".into()])))),
+        eval_one(
+            &store,
+            cond(
+                "col:tags",
+                Cmp::Any,
+                Some(FilterValue::StrList(vec!["紧急".into()]))
+            )
+        ),
         1
     );
     assert_eq!(
-        eval_one(&store, cond("col:tags", Cmp::Contains, Some(FilterValue::Text("紧".into())))),
+        eval_one(
+            &store,
+            cond(
+                "col:tags",
+                Cmp::Contains,
+                Some(FilterValue::Text("紧".into()))
+            )
+        ),
         1
     );
     // 日期列 + 相对值：due before tomorrow（矩阵条目全带 due）
     assert_eq!(
-        eval_one(&store, cond("col:due_at", Cmp::Before, Some(FilterValue::Date(view::DateValue::RelPoint(view::RelDay::Tomorrow))))),
+        eval_one(
+            &store,
+            cond(
+                "col:due_at",
+                Cmp::Before,
+                Some(FilterValue::Date(view::DateValue::RelPoint(
+                    view::RelDay::Tomorrow
+                )))
+            )
+        ),
         4
     );
     // 「今天或之前」写 before tomorrow
     assert_eq!(
-        eval_one(&store, cond("col:anchor", Cmp::Before, Some(FilterValue::Date(view::DateValue::RelPoint(view::RelDay::Tomorrow))))),
+        eval_one(
+            &store,
+            cond(
+                "col:anchor",
+                Cmp::Before,
+                Some(FilterValue::Date(view::DateValue::RelPoint(
+                    view::RelDay::Tomorrow
+                )))
+            )
+        ),
         4
     );
 }
@@ -534,7 +750,12 @@ fn date_value_pairing_is_closed() {
 fn within_and_between_hit_expected_days() {
     let (_t, store) = matrix_setup();
     let defs = store.list_field_defs(None).unwrap();
-    let num = defs.iter().find(|d| d.kind == FieldKind::Number && d.scope.is_none()).unwrap().id.clone();
+    let num = defs
+        .iter()
+        .find(|d| d.kind == FieldKind::Number && d.scope.is_none())
+        .unwrap()
+        .id
+        .clone();
     // due = 明天的待办：within this_week（若明天在本周）与 between 今天~明天
     store
         .add_item(NewItem {
@@ -545,18 +766,42 @@ fn within_and_between_hit_expected_days() {
             ..Default::default()
         })
         .unwrap();
-    let cfg = user_view_config(and(vec![cond("col:due_at", Cmp::Between, Some(FilterValue::DatePair(view::DatePair {
-        from: view::DateValue::RelPoint(view::RelDay::Today),
-        to: view::DateValue::RelPoint(view::RelDay::Tomorrow),
-    })))]));
+    let cfg = user_view_config(and(vec![cond(
+        "col:due_at",
+        Cmp::Between,
+        Some(FilterValue::DatePair(view::DatePair {
+            from: view::DateValue::RelPoint(view::RelDay::Today),
+            to: view::DateValue::RelPoint(view::RelDay::Tomorrow),
+        })),
+    )]));
     let v = store.create_view("btw", Panel::Tasks, &cfg).unwrap();
-    assert_eq!(store.query_view(&v.id, None, None).unwrap().items.unwrap().len(), 1);
+    assert_eq!(
+        store
+            .query_view(&v.id, None, None)
+            .unwrap()
+            .items
+            .unwrap()
+            .len(),
+        1
+    );
     let _ = store.delete_view(&v.id);
 
     // number between
-    let cfg = user_view_config(and(vec![cond(&num, Cmp::Between, Some(FilterValue::NumPair(view::NumPair { from: 1.0, to: 9.0 })))]));
+    let cfg = user_view_config(and(vec![cond(
+        &num,
+        Cmp::Between,
+        Some(FilterValue::NumPair(view::NumPair { from: 1.0, to: 9.0 })),
+    )]));
     let v = store.create_view("num-btw", Panel::Tasks, &cfg).unwrap();
-    assert_eq!(store.query_view(&v.id, None, None).unwrap().items.unwrap().len(), 1);
+    assert_eq!(
+        store
+            .query_view(&v.id, None, None)
+            .unwrap()
+            .items
+            .unwrap()
+            .len(),
+        1
+    );
     let _ = store.delete_view(&v.id);
 }
 
@@ -598,8 +843,18 @@ fn pushdown_or_union_keeps_both_branches() {
         .unwrap();
 
     let filter = or(vec![
-        cond("col:due_at", Cmp::Before, Some(FilterValue::Date(view::DateValue::RelPoint(view::RelDay::Tomorrow)))),
-        cond("col:status", Cmp::Eq, Some(FilterValue::Text("done".into()))),
+        cond(
+            "col:due_at",
+            Cmp::Before,
+            Some(FilterValue::Date(view::DateValue::RelPoint(
+                view::RelDay::Tomorrow,
+            ))),
+        ),
+        cond(
+            "col:status",
+            Cmp::Eq,
+            Some(FilterValue::Text("done".into())),
+        ),
     ]);
     let cfg = user_view_config(filter);
     let v = store.create_view("or-test", Panel::Tasks, &cfg).unwrap();
@@ -622,15 +877,20 @@ fn view_crud_customize_reset_delete() {
     let views = store.list_views(None).unwrap();
     assert!(views.iter().any(|v| v.id == VIEW_TASKS_TODAY));
     assert_eq!(views.len(), 10, "七面板视图 + 三统计容器");
-    assert_eq!(views.iter().filter(|v| v.builtin).count(), 7, "仅面板视图是内置");
+    assert_eq!(
+        views.iter().filter(|v| v.builtin).count(),
+        7,
+        "仅面板视图是内置"
+    );
 
     // 内置编辑写 config_user；生效配置随之变化；customized 标志翻转
     let today = store.get_view(VIEW_TASKS_TODAY).unwrap();
     assert!(!today.customized());
     let mut cfg = today.effective_config().clone();
-    cfg["dataset"]["filter"]["children"].as_array_mut().unwrap().push(
-        serde_json::json!({ "field": "col:anchor", "cmp": "empty" }),
-    );
+    cfg["dataset"]["filter"]["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({ "field": "col:anchor", "cmp": "empty" }));
     store.save_view(VIEW_TASKS_TODAY, None, &cfg).unwrap();
     let customized = store.get_view(VIEW_TASKS_TODAY).unwrap();
     assert!(customized.customized());
@@ -646,9 +906,15 @@ fn view_crud_customize_reset_delete() {
 
     // 用户视图：新建 → 查询 → 删除
     let v = store
-        .create_view("高优先级未完成", Panel::Tasks, &user_view_config(and(vec![
-            cond("col:status", Cmp::Eq, Some(FilterValue::Text("todo".into()))),
-        ])))
+        .create_view(
+            "高优先级未完成",
+            Panel::Tasks,
+            &user_view_config(and(vec![cond(
+                "col:status",
+                Cmp::Eq,
+                Some(FilterValue::Text("todo".into())),
+            )])),
+        )
         .unwrap();
     assert!(v.id.starts_with("view_") && !v.builtin);
     store.query_view(&v.id, None, None).unwrap();
@@ -656,9 +922,14 @@ fn view_crud_customize_reset_delete() {
     assert!(store.get_view(&v.id).is_err());
 
     // 另存为 = 从生效配置复制出用户视图
-    let dup = store.duplicate_view(VIEW_TASKS_UPCOMING, "我的即将").unwrap();
+    let dup = store
+        .duplicate_view(VIEW_TASKS_UPCOMING, "我的即将")
+        .unwrap();
     assert!(!dup.builtin);
-    assert_eq!(dup.effective_config(), &store.get_view(VIEW_TASKS_UPCOMING).unwrap().config);
+    assert_eq!(
+        dup.effective_config(),
+        &store.get_view(VIEW_TASKS_UPCOMING).unwrap().config
+    );
 }
 
 #[test]
@@ -731,7 +1002,11 @@ fn widget_streak_and_heatmap_and_bar_same_source() {
         .list_templates()
         .unwrap()
         .into_iter()
-        .map(|t| view::TplInfo { id: t.id, name: t.name, icon: t.icon })
+        .map(|t| view::TplInfo {
+            id: t.id,
+            name: t.name,
+            icon: t.icon,
+        })
         .collect::<Vec<_>>();
     let pool = store.list_items_unbounded(&ListFilter::default()).unwrap();
 
@@ -764,19 +1039,28 @@ fn widget_streak_and_heatmap_and_bar_same_source() {
     assert_eq!(streak.recent, 3, "window=all → recent = 全部 3 条");
     // day 桶：全历史窗口从最早记录补零到今天
     let buckets = r.buckets.unwrap();
-    assert_eq!(buckets.last().unwrap().key, ctx.today.format("%Y-%m-%d").to_string());
+    assert_eq!(
+        buckets.last().unwrap().key,
+        ctx.today.format("%Y-%m-%d").to_string()
+    );
     assert!(buckets.iter().any(|b| b.value == 0.0), "断档日补零");
 
     // 同数据即时换渲染器：bar / heatmap 不需要改数据配置（§8 抽象）
     let mut bar_cfg = cfg.clone();
     bar_cfg.render = myday_core::view::Render::Bar;
-    let r = myday_core::view::eval_widget("test", "k", &bar_cfg, &pool, &ctx, None, &fields, &templates).unwrap();
+    let r = myday_core::view::eval_widget(
+        "test", "k", &bar_cfg, &pool, &ctx, None, &fields, &templates,
+    )
+    .unwrap();
     assert!(r.error.is_none());
 
     // 渲染器不兼容标注：时间桶上画饼图
     let mut pie_cfg = cfg.clone();
     pie_cfg.render = myday_core::view::Render::Pie;
-    let r = myday_core::view::eval_widget("test", "k", &pie_cfg, &pool, &ctx, None, &fields, &templates).unwrap();
+    let r = myday_core::view::eval_widget(
+        "test", "k", &pie_cfg, &pool, &ctx, None, &fields, &templates,
+    )
+    .unwrap();
     assert!(r.error.is_some(), "饼图需要字段分组");
 }
 
@@ -809,7 +1093,11 @@ fn widget_field_grouping_counts_each_value_and_templates_get_labels() {
         .list_templates()
         .unwrap()
         .into_iter()
-        .map(|t| view::TplInfo { id: t.id, name: t.name, icon: t.icon })
+        .map(|t| view::TplInfo {
+            id: t.id,
+            name: t.name,
+            icon: t.icon,
+        })
         .collect::<Vec<_>>();
     let pool = store.list_items_unbounded(&ListFilter::default()).unwrap();
 
@@ -822,7 +1110,9 @@ fn widget_field_grouping_counts_each_value_and_templates_get_labels() {
         "options": { "top_n": 8 }
     }))
     .unwrap();
-    let r = myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates).unwrap();
+    let r =
+        myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates)
+            .unwrap();
     let bs = r.buckets.unwrap();
     assert_eq!(bs.len(), 2);
     assert_eq!(bs[0].value, 1.0, "按 value 降序");
@@ -836,7 +1126,9 @@ fn widget_field_grouping_counts_each_value_and_templates_get_labels() {
         "options": { "top_n": 8 }
     }))
     .unwrap();
-    let r = myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates).unwrap();
+    let r =
+        myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates)
+            .unwrap();
     assert_eq!(r.labels.get("tpl_water").map(String::as_str), Some("喝水"));
 }
 
@@ -872,7 +1164,9 @@ fn widget_values_points_and_month_avg() {
         "options": {}
     }))
     .unwrap();
-    let r = myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates).unwrap();
+    let r =
+        myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates)
+            .unwrap();
     let pts = r.points.unwrap();
     assert_eq!(pts.len(), 3);
     assert!(pts[0].t < pts[2].t);
@@ -888,7 +1182,9 @@ fn widget_values_points_and_month_avg() {
         "options": {}
     }))
     .unwrap();
-    let r = myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates).unwrap();
+    let r =
+        myday_core::view::eval_widget("test", "k", &cfg, &pool, &ctx, None, &fields, &templates)
+            .unwrap();
     let bs = r.buckets.unwrap();
     let nonzero: Vec<&myday_core::view::Bucket> = bs.iter().filter(|b| b.value > 0.0).collect();
     assert_eq!(nonzero.len(), 2, "两个月各有数据: {bs:?}");
@@ -911,12 +1207,22 @@ fn stats_preset_containers_are_ordinary() {
     // 预置容器 = 开库铺好的普通容器（无 builtin / 隐藏 / 动态概念）
     let page = store.query_stats_page().unwrap();
     assert_eq!(page.containers.len(), 3);
-    let streaks = page.containers.iter().find(|c| c.view_id == VIEW_STATS_STREAKS).unwrap();
+    let streaks = page
+        .containers
+        .iter()
+        .find(|c| c.view_id == VIEW_STATS_STREAKS)
+        .unwrap();
     assert_eq!(streaks.layout, "horizontal");
     // 预置挂件按当前数据物化：种子两个 pinned log 模板各一张卡，全部显式
-    let cards: Vec<_> = page.widgets.iter().filter(|w| w.view_id == VIEW_STATS_STREAKS).collect();
+    let cards: Vec<_> = page
+        .widgets
+        .iter()
+        .filter(|w| w.view_id == VIEW_STATS_STREAKS)
+        .collect();
     assert_eq!(cards.len(), 2);
-    assert!(cards.iter().all(|w| w.render == myday_core::view::Render::Card));
+    assert!(cards
+        .iter()
+        .all(|w| w.render == myday_core::view::Render::Card));
     let row = store.get_view(VIEW_STATS_STREAKS).unwrap();
     assert!(!row.builtin, "预置容器与用户容器同权");
     let cards_in_config = row.config.get("widgets").unwrap().as_array().unwrap().len();
@@ -927,7 +1233,13 @@ fn stats_preset_containers_are_ordinary() {
     cfg["widgets"].as_array_mut().unwrap().remove(0);
     store.save_view(VIEW_STATS_STREAKS, None, &cfg).unwrap();
     let page = store.query_stats_page().unwrap();
-    assert_eq!(page.widgets.iter().filter(|w| w.view_id == VIEW_STATS_STREAKS).count(), 1);
+    assert_eq!(
+        page.widgets
+            .iter()
+            .filter(|w| w.view_id == VIEW_STATS_STREAKS)
+            .count(),
+        1
+    );
 
     // 删除预置容器 = 物理删除（与用户容器同权）
     store.delete_view(VIEW_STATS_STREAKS).unwrap();
@@ -937,7 +1249,11 @@ fn stats_preset_containers_are_ordinary() {
     let created = store.restore_stats_defaults().unwrap();
     assert_eq!(created.len(), 3, "三个预设全部重铺");
     let page = store.query_stats_page().unwrap();
-    let cards: Vec<_> = page.widgets.iter().filter(|w| w.view_id == VIEW_STATS_STREAKS).collect();
+    let cards: Vec<_> = page
+        .widgets
+        .iter()
+        .filter(|w| w.view_id == VIEW_STATS_STREAKS)
+        .collect();
     assert_eq!(cards.len(), 2, "按当前 pinned 模板重新铺卡");
     assert_eq!(page.containers.len(), 3);
 
@@ -958,7 +1274,10 @@ fn stats_preset_containers_are_ordinary() {
         }))
         .unwrap();
     let page = store.query_stats_page().unwrap();
-    assert!(page.widgets.iter().any(|w| w.view_id == cv.id && w.render == myday_core::view::Render::Card));
+    assert!(page
+        .widgets
+        .iter()
+        .any(|w| w.view_id == cv.id && w.render == myday_core::view::Render::Card));
     assert!(store.delete_view(&cv.id).is_ok());
 }
 
@@ -982,7 +1301,10 @@ fn stats_summary_independent_of_view_rows() {
     let s = store.stats_summary(30).unwrap();
     assert_eq!(s.heatmap.len(), 30);
     assert_eq!(s.streaks.len(), 2, "pinned log 模板全部出卡（预设定义）");
-    assert!(s.streaks.iter().any(|x| x.template_id == "tpl_water" && x.current == 1));
+    assert!(s
+        .streaks
+        .iter()
+        .any(|x| x.template_id == "tpl_water" && x.current == 1));
 }
 
 #[test]
@@ -1000,8 +1322,16 @@ fn stats_summary_envelope_stays_compatible() {
         .unwrap();
     let s = store.stats_summary(365).unwrap();
     assert_eq!(s.heatmap.len(), 365);
-    assert_eq!(s.streaks.len(), 2, "pinned log 模板全部出卡（固定 seed，忽略 hidden）");
-    let water = s.streaks.iter().find(|x| x.template_id == "tpl_water").unwrap();
+    assert_eq!(
+        s.streaks.len(),
+        2,
+        "pinned log 模板全部出卡（固定 seed，忽略 hidden）"
+    );
+    let water = s
+        .streaks
+        .iter()
+        .find(|x| x.template_id == "tpl_water")
+        .unwrap();
     assert_eq!(water.current, 1);
     assert_eq!(water.recent, 1);
     // 页面定制不影响 CLI 契约（预设定义在代码里，不读 view_defs 的统计行）
@@ -1038,10 +1368,17 @@ fn invariant_recurring_task_requires_due() {
         })
         .unwrap();
     // update：清掉截止（保留规则）= 破坏不变量
-    let patch = ItemPatch { clear_due_at: true, ..Default::default() };
+    let patch = ItemPatch {
+        clear_due_at: true,
+        ..Default::default()
+    };
     assert!(store.update_item(&task.id, patch).is_err());
     // 同一补丁清规则 + 清截止 = 合法（不再重复）
-    let patch = ItemPatch { clear_due_at: true, clear_recurrence: true, ..Default::default() };
+    let patch = ItemPatch {
+        clear_due_at: true,
+        clear_recurrence: true,
+        ..Default::default()
+    };
     store.update_item(&task.id, patch).unwrap();
 }
 
@@ -1065,16 +1402,34 @@ fn invariant_uncomplete_via_update_item_rolls_back() {
     assert_eq!(advanced_due, at(1, 20, 0));
     // 用户又把它标记成 done（update 直改），随后取消完成 —— 取消旁路
     store
-        .update_item(&task.id, ItemPatch { status: Some(ItemStatus::Done), ..Default::default() })
+        .update_item(
+            &task.id,
+            ItemPatch {
+                status: Some(ItemStatus::Done),
+                ..Default::default()
+            },
+        )
         .unwrap();
     // 经 update_item 直改 todo = 统一回拨（v1.6 ②：对齐 uncomplete_task）
     let rolled = store
-        .update_item(&task.id, ItemPatch { status: Some(ItemStatus::Todo), ..Default::default() })
+        .update_item(
+            &task.id,
+            ItemPatch {
+                status: Some(ItemStatus::Todo),
+                ..Default::default()
+            },
+        )
         .unwrap();
-    assert_eq!(rolled.due_at, Some(at(0, 20, 0)), "回拨到最近一次推进前的存储值");
+    assert_eq!(
+        rolled.due_at,
+        Some(at(0, 20, 0)),
+        "回拨到最近一次推进前的存储值"
+    );
     let item = store.get_item(&task.id).unwrap();
     assert!(
-        item.extra.get(myday_core::store::RECURRED_DONE_KEY).is_none(),
+        item.extra
+            .get(myday_core::store::RECURRED_DONE_KEY)
+            .is_none(),
         "记账键消费即清"
     );
 }

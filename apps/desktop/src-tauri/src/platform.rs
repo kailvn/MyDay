@@ -53,7 +53,15 @@ pub fn force_x11_on_wayland() {
     let _ = NATIVE_WAYLAND.set(native);
     eprintln!(
         "myday: 显示后端 = {}（会话 {}，注入 GDK_BACKEND=x11 = {injected}）",
-        if native { "wayland 原生（降级：无置顶/定位）" } else { "x11" },
-        if session_wayland { "wayland" } else { "x11/其他" },
+        if native {
+            "wayland 原生（降级：无置顶/定位）"
+        } else {
+            "x11"
+        },
+        if session_wayland {
+            "wayland"
+        } else {
+            "x11/其他"
+        },
     );
 }

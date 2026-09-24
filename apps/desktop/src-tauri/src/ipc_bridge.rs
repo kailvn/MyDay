@@ -71,7 +71,9 @@ impl IpcHandler for IpcBridge {
                 match result {
                     Ok(item) => {
                         broadcast_changed(&self.app);
-                        IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))
+                        IpcResponse::ok(
+                            serde_json::to_value(&item).unwrap_or(serde_json::Value::Null),
+                        )
                     }
                     Err(e) => IpcResponse::from_error(&e),
                 }
@@ -85,13 +87,17 @@ impl IpcHandler for IpcBridge {
                 Err(e) => IpcResponse::from_error(&e),
             },
 
-            IpcRequest::DetachOccurrence { id, at } => match self.store.detach_occurrence(&id, at) {
-                Ok(item) => {
-                    broadcast_changed(&self.app);
-                    IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))
+            IpcRequest::DetachOccurrence { id, at } => {
+                match self.store.detach_occurrence(&id, at) {
+                    Ok(item) => {
+                        broadcast_changed(&self.app);
+                        IpcResponse::ok(
+                            serde_json::to_value(&item).unwrap_or(serde_json::Value::Null),
+                        )
+                    }
+                    Err(e) => IpcResponse::from_error(&e),
                 }
-                Err(e) => IpcResponse::from_error(&e),
-            },
+            }
 
             IpcRequest::SkipOccurrence { id, at } => match self.store.skip_occurrence(&id, at) {
                 Ok(item) => {

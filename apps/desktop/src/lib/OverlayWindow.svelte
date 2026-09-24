@@ -206,11 +206,13 @@
 {#if data && cfg}
   <div class="overlay" style={`--op:${cfg.opacity}`} data-testid="overlay-root">
     <div class="head">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span
         class="date"
         data-tauri-drag-region
         onpointerdown={() => (dragging = true)}>{headDate}</span
       >
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="spacer" data-tauri-drag-region onpointerdown={() => (dragging = true)}></span>
       {#if showTasks}
         <span class="progress" data-testid="overlay-progress" title={t("overlay.progressTitle")}
@@ -339,7 +341,8 @@
 
     <!-- 边缘 / 角落拖拽把手：无边框窗口的尺寸调整入口（锁定态整窗穿透自然不可达） -->
     {#each Object.keys(RESIZE_DIRS) as dir (dir)}
-      <div class={`rz rz-${dir}`} onpointerdown={(e) => resizeStart(e, dir)}></div>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class={`rz rz-${dir}`} onpointerdown={(e) => resizeStart(e, dir)}></div>
     {/each}
   </div>
 {/if}

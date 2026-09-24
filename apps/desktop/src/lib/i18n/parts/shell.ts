@@ -22,7 +22,7 @@ export const part_shell = {
   "undo.all": "全部撤销（{n}）",
 } as const;
 
-export const part_shell_en: Record<string, string> = {
+export const part_shell_en = {
   "shell.nav.today": "Today",
   "shell.nav.calendar": "Calendar",
   "shell.nav.tasks": "Tasks",

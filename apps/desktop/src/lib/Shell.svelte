@@ -215,6 +215,7 @@
 
   <!-- 全局轻提示（冲突警告 / 批量操作结果 / 拖拽改期撤销等，非阻断） -->
   {#if toast.message}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
     <div class="toast" role="status" onclick={() => toast.dismiss()}>
       <span>{toast.message}</span>
       {#if toast.action}

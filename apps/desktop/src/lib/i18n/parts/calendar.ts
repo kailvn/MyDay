@@ -58,7 +58,7 @@ export const part_calendar = {
   'week.create_here': '在此新建',
 } as const;
 
-export const part_calendar_en: Record<string, string> = {
+export const part_calendar_en = {
   // ---- calendar.* ----
   'calendar.title': 'Calendar',
   'calendar.mode_month': 'Month',

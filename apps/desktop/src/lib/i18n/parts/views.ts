@@ -142,7 +142,7 @@ export const part_views = {
   'trash.failed': '操作失败：{e}',
 } as const;
 
-export const part_views_en: Record<string, string> = {
+export const part_views_en = {
   // ---- today.* ----
   'today.plan_title': "Today's plan",
   'today.empty': 'Nothing planned today · press',

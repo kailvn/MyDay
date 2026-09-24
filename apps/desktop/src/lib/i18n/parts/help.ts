@@ -86,7 +86,7 @@ export const part_help = {
   "help.keys.tab": "应用自然语言时间提示",
 } as const;
 
-export const part_help_en: Record<string, string> = {
+export const part_help_en = {
   "help.title": "Help",
   "help.concepts.title": "Three item types",
   "help.concepts.types.k": "Event / Task / Log",

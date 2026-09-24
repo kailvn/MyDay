@@ -362,7 +362,7 @@
         data-testid="overlay-expand"
         checked={overlayCfg.expand_summary}
         onchange={(e) => {
-          overlayCfg = { ...overlayCfg, expand_summary: e.currentTarget.checked };
+          overlayCfg = { ...overlayCfg!, expand_summary: e.currentTarget.checked };
           void saveOverlay();
         }}
       />
@@ -374,7 +374,7 @@
         data-testid="overlay-locked"
         checked={overlayCfg.locked}
         onchange={(e) => {
-          overlayCfg = { ...overlayCfg, locked: e.currentTarget.checked };
+          overlayCfg = { ...overlayCfg!, locked: e.currentTarget.checked };
           void saveOverlay();
         }}
       />

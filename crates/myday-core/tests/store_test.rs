@@ -36,7 +36,10 @@ fn seeds_priority_field_and_generic_pinned_templates() {
     let t = TempDir::new();
     let store = t.store();
     let defs = store.list_field_defs(Some(ItemType::Task)).unwrap();
-    assert!(defs.iter().any(|d| d.id == "fd_priority" && d.builtin), "内置优先级字段");
+    assert!(
+        defs.iter().any(|d| d.id == "fd_priority" && d.builtin),
+        "内置优先级字段"
+    );
     assert!(
         defs.iter()
             .any(|d| d.id == "fd_est_min" && d.builtin && d.kind == FieldKind::Number),
@@ -63,7 +66,11 @@ fn seeds_priority_field_and_generic_pinned_templates() {
     drop(store);
     let store = Store::open(&t.db_path(), t.0.path()).unwrap();
     assert!(
-        !store.list_field_defs(Some(ItemType::Log)).unwrap().iter().any(|d| d.id == "fd_weight_kg"),
+        !store
+            .list_field_defs(Some(ItemType::Log))
+            .unwrap()
+            .iter()
+            .any(|d| d.id == "fd_weight_kg"),
         "软删字段不因重开复活"
     );
 }
@@ -75,7 +82,8 @@ fn builtin_seed_upgrade_adds_new_fields_to_old_dbs() {
         // 模拟旧版库：seed_version 停在 v2（fd_est_min 引入前），且字段行不存在
         let store = t.store();
         let conn = store.raw_conn().unwrap();
-        conn.execute("DELETE FROM field_defs WHERE id = 'fd_est_min'", []).unwrap();
+        conn.execute("DELETE FROM field_defs WHERE id = 'fd_est_min'", [])
+            .unwrap();
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('seed_version', '2') \
              ON CONFLICT(key) DO UPDATE SET value = '2'",
@@ -100,31 +108,54 @@ fn recreate_deleted_field_revives_with_history() {
     let t = TempDir::new();
     let store = t.store();
     let def = store
-        .add_field_def("心情", FieldKind::Select, &serde_json::json!({"choices":["好","差"]}), None)
+        .add_field_def(
+            "心情",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["好","差"]}),
+            None,
+        )
         .unwrap();
     let item = store
         .add_item(NewItem {
             item_type: Some(ItemType::Log),
             title: Some("随手记".into()),
             occurred_at: Some(Utc::now().trunc_subsecs(0)),
-            extra: [(def.id.clone(), serde_json::json!("好"))].into_iter().collect(),
+            extra: [(def.id.clone(), serde_json::json!("好"))]
+                .into_iter()
+                .collect(),
             ..Default::default()
         })
         .unwrap();
 
     // 删除 → 历史值仍在 extra 里但定义不可见
     store.delete_field_def(&def.id).unwrap();
-    assert!(!store.list_field_defs(None).unwrap().iter().any(|d| d.id == def.id));
+    assert!(!store
+        .list_field_defs(None)
+        .unwrap()
+        .iter()
+        .any(|d| d.id == def.id));
 
     // 同名重建：复活原 id（历史值重挂），kind/options 按新输入更新
     let again = store
-        .add_field_def("心情", FieldKind::Select, &serde_json::json!({"choices":["好","一般","差"]}), None)
+        .add_field_def(
+            "心情",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["好","一般","差"]}),
+            None,
+        )
         .unwrap();
     assert_eq!(again.id, def.id, "重建同名应复活软删字段而不是新建 id");
-    assert_eq!(again.options.get("choices").unwrap(), &serde_json::json!(["好", "一般", "差"]));
+    assert_eq!(
+        again.options.get("choices").unwrap(),
+        &serde_json::json!(["好", "一般", "差"])
+    );
 
     let fetched = store.get_item(&item.id).unwrap();
-    assert_eq!(fetched.extra.get(&def.id), Some(&serde_json::json!("好")), "历史值自动恢复可见");
+    assert_eq!(
+        fetched.extra.get(&def.id),
+        Some(&serde_json::json!("好")),
+        "历史值自动恢复可见"
+    );
 
     // 活跃同名字段仍拒绝重复创建
     let err = store
@@ -134,7 +165,12 @@ fn recreate_deleted_field_revives_with_history() {
 
     // 软删字段不挡新建不同 scope 的同名（scope 不同即不同字段位）
     let scoped = store
-        .add_field_def("心情", FieldKind::Text, &serde_json::json!({}), Some(ItemType::Log))
+        .add_field_def(
+            "心情",
+            FieldKind::Text,
+            &serde_json::json!({}),
+            Some(ItemType::Log),
+        )
         .unwrap();
     assert_ne!(scoped.id, def.id);
 }
@@ -144,14 +180,21 @@ fn purge_deleted_fields_removes_revive_path() {
     let t = TempDir::new();
     let store = t.store();
     let def = store
-        .add_field_def("心情", FieldKind::Select, &serde_json::json!({"choices":["好","差"]}), None)
+        .add_field_def(
+            "心情",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["好","差"]}),
+            None,
+        )
         .unwrap();
     let item = store
         .add_item(NewItem {
             item_type: Some(ItemType::Log),
             title: Some("随手记".into()),
             occurred_at: Some(Utc::now().trunc_subsecs(0)),
-            extra: [(def.id.clone(), serde_json::json!("好"))].into_iter().collect(),
+            extra: [(def.id.clone(), serde_json::json!("好"))]
+                .into_iter()
+                .collect(),
             ..Default::default()
         })
         .unwrap();
@@ -166,11 +209,19 @@ fn purge_deleted_fields_removes_revive_path() {
 
     // 同名重建 = 全新字段（不复活）：旧值仍留在条目上但不再挂到任何活跃字段
     let again = store
-        .add_field_def("心情", FieldKind::Select, &serde_json::json!({"choices":["好","差"]}), None)
+        .add_field_def(
+            "心情",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["好","差"]}),
+            None,
+        )
         .unwrap();
     assert_ne!(again.id, def.id);
     let fetched = store.get_item(&item.id).unwrap();
-    assert!(fetched.extra.get(&def.id).is_some(), "清理前的旧值仍在条目 JSON 上");
+    assert!(
+        fetched.extra.get(&def.id).is_some(),
+        "清理前的旧值仍在条目 JSON 上"
+    );
     assert!(fetched.extra.get(&again.id).is_none(), "但不挂到新字段");
 
     // 无软删行时清理为空操作
@@ -247,7 +298,10 @@ fn log_defaults_occurred_at_now_and_rejects_future() {
         .unwrap();
     assert!(item.id.starts_with("log_"));
     assert_eq!(item.status, None, "记录没有状态");
-    assert!(item.occurred_at.unwrap() >= before, "新建 log 默认带 occurred_at");
+    assert!(
+        item.occurred_at.unwrap() >= before,
+        "新建 log 默认带 occurred_at"
+    );
     assert!(item.reminders.is_empty(), "记录默认不提醒");
     assert!(
         item.start_at.is_none() && item.due_at.is_none(),
@@ -315,10 +369,17 @@ fn auto_detect_type_by_content() {
 
     // 裸文本 → task
     let bare = store
-        .add_item(NewItem { title: Some("买牛奶".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("买牛奶".into()),
+            ..Default::default()
+        })
         .unwrap();
     assert_eq!(bare.item_type, ItemType::Task);
-    assert_eq!(bare.status, Some(ItemStatus::Todo), "待办缺省 status = todo");
+    assert_eq!(
+        bare.status,
+        Some(ItemStatus::Todo),
+        "待办缺省 status = todo"
+    );
 }
 
 #[test]
@@ -371,12 +432,18 @@ fn item_type_is_immutable_via_trigger() {
     let t = TempDir::new();
     let store = t.store();
     let task = store
-        .add_item(NewItem { title: Some("买牛奶".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("买牛奶".into()),
+            ..Default::default()
+        })
         .unwrap();
 
     // 绕过应用层直接 UPDATE 也被 trigger 拒绝
     let conn = store.raw_conn().unwrap();
-    let err = conn.execute("UPDATE items SET type = 'log' WHERE id = ?1", params![task.id]);
+    let err = conn.execute(
+        "UPDATE items SET type = 'log' WHERE id = ?1",
+        params![task.id],
+    );
     assert!(err.is_err(), "type 变更应被 trigger 拒绝");
     drop(conn);
     assert_eq!(store.get_item(&task.id).unwrap().item_type, ItemType::Task);
@@ -391,7 +458,10 @@ fn complete_and_reopen_keeps_completed_at_invariant() {
     let t = TempDir::new();
     let store = t.store();
     let task = store
-        .add_item(NewItem { title: Some("写周报".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("写周报".into()),
+            ..Default::default()
+        })
         .unwrap();
     let done = store.complete_task(&task.id).unwrap();
     assert_eq!(done.status, Some(ItemStatus::Done));
@@ -404,7 +474,10 @@ fn complete_and_reopen_keeps_completed_at_invariant() {
 
     // 待办与记录分离：完成待办不再生成影子记录
     let logs = store
-        .list_items(&ListFilter { item_type: Some(ItemType::Log), ..Default::default() })
+        .list_items(&ListFilter {
+            item_type: Some(ItemType::Log),
+            ..Default::default()
+        })
         .unwrap();
     assert!(logs.is_empty());
 
@@ -420,7 +493,10 @@ fn complete_and_reopen_keeps_completed_at_invariant() {
     drop(conn);
     let reopened_store = Store::open(&t.db_path(), t.0.path()).unwrap();
     let logs = reopened_store
-        .list_items(&ListFilter { item_type: Some(ItemType::Log), ..Default::default() })
+        .list_items(&ListFilter {
+            item_type: Some(ItemType::Log),
+            ..Default::default()
+        })
         .unwrap();
     assert!(logs.is_empty(), "遗留影子记录应被清理");
 }
@@ -433,7 +509,10 @@ fn task_views_split_by_status_and_date() {
     // now+1h 在本地 23 点后跑会跨过午夜落进明天，取本地今日正午则任何时刻跑都落在今天
     let due_today = chrono::Local
         .from_local_datetime(
-            &chrono::Local::now().date_naive().and_hms_opt(12, 0, 0).unwrap(),
+            &chrono::Local::now()
+                .date_naive()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
         )
         .single()
         .unwrap()
@@ -453,12 +532,18 @@ fn task_views_split_by_status_and_date() {
         })
         .unwrap();
     let no_due = store
-        .add_item(NewItem { title: Some("无截止".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("无截止".into()),
+            ..Default::default()
+        })
         .unwrap();
 
     let today = store.tasks_view(TaskView::Today, None).unwrap();
     assert!(today.iter().any(|i| i.id == today_due.id));
-    assert!(today.iter().any(|i| i.id == no_due.id), "无截止待办进今天视图");
+    assert!(
+        today.iter().any(|i| i.id == no_due.id),
+        "无截止待办进今天视图"
+    );
 
     let upcoming = store.tasks_view(TaskView::Upcoming, None).unwrap();
     assert_eq!(upcoming.len(), 1);
@@ -471,7 +556,11 @@ fn task_views_split_by_status_and_date() {
     assert_eq!(done.len(), 1);
     assert_eq!(done[0].status, Some(ItemStatus::Done));
     assert!(
-        !store.tasks_view(TaskView::All, None).unwrap().iter().any(|i| i.id == today_due.id),
+        !store
+            .tasks_view(TaskView::All, None)
+            .unwrap()
+            .iter()
+            .any(|i| i.id == today_due.id),
         "已完成不再出现在未完成视图"
     );
 
@@ -538,7 +627,12 @@ fn extra_strict_validation_by_kind() {
 
     // 数字字段必须可解析为数字
     let pace = store
-        .add_field_def("配速", FieldKind::Number, &serde_json::json!({}), Some(ItemType::Log))
+        .add_field_def(
+            "配速",
+            FieldKind::Number,
+            &serde_json::json!({}),
+            Some(ItemType::Log),
+        )
         .unwrap();
     let err = store
         .add_item(NewItem {
@@ -564,7 +658,12 @@ fn extra_patch_replaces_whole_object() {
         })
         .unwrap();
     let mood2 = store
-        .add_field_def("心情", FieldKind::Text, &serde_json::json!({}), Some(ItemType::Task))
+        .add_field_def(
+            "心情",
+            FieldKind::Text,
+            &serde_json::json!({}),
+            Some(ItemType::Task),
+        )
         .unwrap();
 
     let patched = store
@@ -576,7 +675,10 @@ fn extra_patch_replaces_whole_object() {
             },
         )
         .unwrap();
-    assert!(patched.extra.get("fd_priority").is_none(), "extra 为整对象替换而非按键合并");
+    assert!(
+        patched.extra.get("fd_priority").is_none(),
+        "extra 为整对象替换而非按键合并"
+    );
     assert_eq!(patched.extra[mood2.id.as_str()], "平静");
 }
 
@@ -586,7 +688,12 @@ fn field_defs_partial_unique_and_soft_delete() {
     let store = t.store();
 
     let mood = store
-        .add_field_def("心情", FieldKind::Select, &serde_json::json!({"choices":["好","差"]}), Some(ItemType::Log))
+        .add_field_def(
+            "心情",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["好","差"]}),
+            Some(ItemType::Log),
+        )
         .unwrap();
     assert!(mood.id.starts_with("fld_"));
     assert!(!mood.builtin);
@@ -594,7 +701,12 @@ fn field_defs_partial_unique_and_soft_delete() {
     // 活跃同名字段仍被拒（同名全局也不行：同名同 scope 唯一）
     assert_eq!(
         store
-            .add_field_def("心情", FieldKind::Text, &serde_json::json!({}), Some(ItemType::Log))
+            .add_field_def(
+                "心情",
+                FieldKind::Text,
+                &serde_json::json!({}),
+                Some(ItemType::Log)
+            )
             .unwrap_err()
             .code(),
         myday_core::ErrorCode::Conflict
@@ -613,17 +725,28 @@ fn field_defs_partial_unique_and_soft_delete() {
     assert_eq!(deleted.id, mood.id);
     assert!(store.get_field_def(&mood.id).is_err(), "软删后 get 不可见");
     let raw = store.get_item(&item.id).unwrap();
-    assert_eq!(raw.extra[mood.id.as_str()], "好", "软删不清理 extra 历史数据");
+    assert_eq!(
+        raw.extra[mood.id.as_str()],
+        "好",
+        "软删不清理 extra 历史数据"
+    );
 
     // 同名重建 = 复活原字段（同 id，历史值自动重挂；部分唯一索引不覆盖软删行）
     let rebuilt = store
-        .add_field_def("心情", FieldKind::Select, &serde_json::json!({"choices":["好","差"]}), Some(ItemType::Log))
+        .add_field_def(
+            "心情",
+            FieldKind::Select,
+            &serde_json::json!({"choices":["好","差"]}),
+            Some(ItemType::Log),
+        )
         .unwrap();
     assert_eq!(rebuilt.id, mood.id);
 
     // 重命名零成本：不动条目上的值
     let before = store.get_item(&item.id).unwrap();
-    store.update_field_def(&rebuilt.id, Some("情绪"), None, None).unwrap();
+    store
+        .update_field_def(&rebuilt.id, Some("情绪"), None, None)
+        .unwrap();
     let after = store.get_item(&item.id).unwrap();
     assert_eq!(before.extra, after.extra, "改名不重写条目");
     assert_eq!(store.get_field_def(&rebuilt.id).unwrap().name, "情绪");
@@ -651,7 +774,10 @@ fn search_hits_title_note_tag_and_field_name_only_on_used_items() {
         })
         .unwrap();
     store
-        .add_item(NewItem { title: Some("买牛奶".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("买牛奶".into()),
+            ..Default::default()
+        })
         .unwrap();
     // 用了优先级字段的条目 + 定义了字段但没用它的条目
     store
@@ -662,7 +788,10 @@ fn search_hits_title_note_tag_and_field_name_only_on_used_items() {
         })
         .unwrap();
     store
-        .add_item(NewItem { title: Some("无关条目".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("无关条目".into()),
+            ..Default::default()
+        })
         .unwrap();
 
     let hits = store.search("客户", None).unwrap();
@@ -677,7 +806,9 @@ fn search_hits_title_note_tag_and_field_name_only_on_used_items() {
 
     // 搜字段值
     let hits = store.search("高", Some(ItemType::Task)).unwrap();
-    assert!(hits.iter().all(|h| h.item.title.as_deref() == Some("交房租")));
+    assert!(hits
+        .iter()
+        .all(|h| h.item.title.as_deref() == Some("交房租")));
 
     let hits = store.search("牛奶", Some(ItemType::Task)).unwrap();
     assert_eq!(hits.len(), 1);
@@ -693,13 +824,16 @@ fn reminder_due_once_then_snooze_keeps_old_log() {
     let t = TempDir::new();
     let store = t.store();
     // 绝对 spec = 一次性事实；存过去时刻，创建后立即到期
-    let past = (Utc::now() - Duration::minutes(5))
-        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let past =
+        (Utc::now() - Duration::minutes(5)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let task = store
         .add_item(NewItem {
             title: Some("吃药".into()),
             due_at: Some(Utc::now() - Duration::minutes(5)),
-            reminders: vec![NewReminder { spec: past.clone(), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: past.clone(),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .unwrap();
@@ -726,7 +860,9 @@ fn reminder_due_once_then_snooze_keeps_old_log() {
     assert_eq!(tick_once(&store, &counter).unwrap(), 0);
 
     // snooze = 绝对覆盖行：旧日志保留，覆盖行到点重新触发
-    store.snooze(&task.id, Utc::now() - Duration::minutes(1)).unwrap();
+    store
+        .snooze(&task.id, Utc::now() - Duration::minutes(1))
+        .unwrap();
     {
         let conn = store.raw_conn().unwrap();
         let n: i64 = conn
@@ -748,8 +884,14 @@ fn reminder_due_once_then_snooze_keeps_old_log() {
             &task.id,
             ItemPatch {
                 reminders: Some(vec![
-                    NewReminder { spec: r2, channel: "sound".into() },
-                    NewReminder { spec: r3, channel: "popup".into() },
+                    NewReminder {
+                        spec: r2,
+                        channel: "sound".into(),
+                    },
+                    NewReminder {
+                        spec: r3,
+                        channel: "popup".into(),
+                    },
                 ]),
                 ..Default::default()
             },
@@ -791,15 +933,24 @@ fn recurrence_complete_advances_and_uncomplete_rewinds() {
         "推进不写 completed_at（CHECK 封闭：todo 无完成时间）"
     );
     assert_eq!(
-        done.extra.get(myday_core::store::RECURRED_DONE_KEY).and_then(|v| v.as_str()),
-        Some(due_before.to_rfc3339_opts(chrono::SecondsFormat::Secs, true).as_str()),
+        done.extra
+            .get(myday_core::store::RECURRED_DONE_KEY)
+            .and_then(|v| v.as_str()),
+        Some(
+            due_before
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                .as_str()
+        ),
         "记账 = 完成前的截止"
     );
 
     // 取消完成 = 回拨到完成前的那一期，记账清掉
     let back = store.uncomplete_task(&task.id).unwrap();
     assert_eq!(back.due_at, Some(due_before));
-    assert!(back.extra.get(myday_core::store::RECURRED_DONE_KEY).is_none());
+    assert!(back
+        .extra
+        .get(myday_core::store::RECURRED_DONE_KEY)
+        .is_none());
 
     // 记录不支持重复；非法 spec 拒绝
     assert!(store
@@ -852,12 +1003,21 @@ fn recurrence_complete_advances_and_uncomplete_rewinds() {
     let ev = store
         .update_item(
             &ev.id,
-            ItemPatch { recurrence: Some("@monthly:15".into()), ..Default::default() },
+            ItemPatch {
+                recurrence: Some("@monthly:15".into()),
+                ..Default::default()
+            },
         )
         .unwrap();
     assert_eq!(ev.recurrence.as_deref(), Some("@monthly:15"));
     let ev = store
-        .update_item(&ev.id, ItemPatch { clear_recurrence: true, ..Default::default() })
+        .update_item(
+            &ev.id,
+            ItemPatch {
+                clear_recurrence: true,
+                ..Default::default()
+            },
+        )
         .unwrap();
     assert_eq!(ev.recurrence, None);
 }
@@ -869,11 +1029,24 @@ fn stats_summary_counts_heatmap_streaks_and_series() {
 
     // log 模板（pinned 默认 true；名字避开内置的「喝水」等种子）
     let tpl = store
-        .add_template("冥想", Some("健康"), None, ItemType::Log, &serde_json::json!({"title":"冥想"}), &serde_json::json!([]), None)
+        .add_template(
+            "冥想",
+            Some("健康"),
+            None,
+            ItemType::Log,
+            &serde_json::json!({"title":"冥想"}),
+            &serde_json::json!([]),
+            None,
+        )
         .unwrap();
     // number 字段（单位 kg，scope log；名字避开内置的「体重」）
     let fid = store
-        .add_field_def("体脂率", FieldKind::Number, &serde_json::json!({"unit":"%"}), Some(ItemType::Log))
+        .add_field_def(
+            "体脂率",
+            FieldKind::Number,
+            &serde_json::json!({"unit":"%"}),
+            Some(ItemType::Log),
+        )
         .unwrap()
         .id;
 
@@ -954,18 +1127,24 @@ fn conflicting_events_finds_overlaps_and_expands_recurrence() {
         .unwrap();
 
     // 相交命中；紧邻不命中；排除自身不命中
-    let hits = store.conflicting_events(at(10, 30), at(10, 45), None).unwrap();
+    let hits = store
+        .conflicting_events(at(10, 30), at(10, 45), None)
+        .unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].title.as_deref(), Some("评审"));
     assert!(store
         .conflicting_events(at(11, 0), at(11, 30), None)
         .unwrap()
         .is_empty());
-    let hits = store.conflicting_events(at(10, 15), at(10, 40), Some(&hits[0].id)).unwrap();
+    let hits = store
+        .conflicting_events(at(10, 15), at(10, 40), Some(&hits[0].id))
+        .unwrap();
     assert!(hits.is_empty(), "排除自身后无冲突");
 
     // 重复日程按展开判定
-    let hits = store.conflicting_events(at(22, 15), at(22, 45), None).unwrap();
+    let hits = store
+        .conflicting_events(at(22, 15), at(22, 45), None)
+        .unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].title.as_deref(), Some("值班"));
 }
@@ -984,7 +1163,13 @@ fn reminder_catchup_window_splits_fire_and_missed() {
         missed_titles: Mutex<Vec<String>>,
     }
     impl Notifier for Rec {
-        fn notify(&self, _: &Reminder, _: &Item, _: chrono::DateTime<chrono::Utc>, _: &[&'static str]) {
+        fn notify(
+            &self,
+            _: &Reminder,
+            _: &Item,
+            _: chrono::DateTime<chrono::Utc>,
+            _: &[&'static str],
+        ) {
             self.fired.fetch_add(1, Ordering::SeqCst);
         }
         fn notify_missed(&self, count: usize, lines: &[(String, String)]) {
@@ -1008,7 +1193,10 @@ fn reminder_catchup_window_splits_fire_and_missed() {
     store
         .add_item(NewItem {
             title: Some("新鲜的".into()),
-            reminders: vec![NewReminder { spec: abs(5), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: abs(5),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .unwrap();
@@ -1016,7 +1204,10 @@ fn reminder_catchup_window_splits_fire_and_missed() {
     store
         .add_item(NewItem {
             title: Some("很久以前的".into()),
-            reminders: vec![NewReminder { spec: abs(180), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: abs(180),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .unwrap();
@@ -1024,7 +1215,10 @@ fn reminder_catchup_window_splits_fire_and_missed() {
     assert_eq!(tick_once(&store, &rec).unwrap(), 1);
     assert_eq!(rec.fired.load(Ordering::SeqCst), 1);
     assert_eq!(rec.missed.load(Ordering::SeqCst), 1);
-    assert_eq!(rec.missed_titles.lock().unwrap().as_slice(), ["很久以前的".to_string()]);
+    assert_eq!(
+        rec.missed_titles.lock().unwrap().as_slice(),
+        ["很久以前的".to_string()]
+    );
 
     // 两桶都已入 reminder_log：第二轮零处理
     assert_eq!(tick_once(&store, &rec).unwrap(), 0);
@@ -1035,7 +1229,10 @@ fn reminder_catchup_window_splits_fire_and_missed() {
     store
         .add_item(NewItem {
             title: Some("刚建的".into()),
-            reminders: vec![NewReminder { spec: abs(1), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: abs(1),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .unwrap();
@@ -1125,7 +1322,11 @@ fn template_defaults_dual_namespace() {
             ..Default::default()
         })
         .unwrap();
-    assert_eq!(with_title.title.as_deref(), Some("早上称重"), "显式标题优先");
+    assert_eq!(
+        with_title.title.as_deref(),
+        Some("早上称重"),
+        "显式标题优先"
+    );
     assert!(
         with_title.extra.get("title").is_none(),
         "列键不得混入 extra"
@@ -1139,27 +1340,67 @@ fn template_invalid_defaults_rejected_at_save() {
 
     // 未知列
     let err = store
-        .add_template("坏模板", None, None, ItemType::Log, &serde_json::json!({ "nonexistent_column": 1 }), &serde_json::json!([]), None)
+        .add_template(
+            "坏模板",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({ "nonexistent_column": 1 }),
+            &serde_json::json!([]),
+            None,
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
     // 列对该类型无意义：status 仅 task 模板可用
     let err = store
-        .add_template("坏模板", None, None, ItemType::Log, &serde_json::json!({ "status": "todo" }), &serde_json::json!([]), None)
+        .add_template(
+            "坏模板",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({ "status": "todo" }),
+            &serde_json::json!([]),
+            None,
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
     // 非字段 id 的键
     let err = store
-        .add_template("坏模板", None, None, ItemType::Log, &serde_json::json!({ "咖啡": 1 }), &serde_json::json!([]), None)
+        .add_template(
+            "坏模板",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({ "咖啡": 1 }),
+            &serde_json::json!([]),
+            None,
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
     // scope 不匹配：task 字段用在 log 模板
     let err = store
-        .add_template("坏模板", None, None, ItemType::Log, &serde_json::json!({ "fd_priority": "高" }), &serde_json::json!([]), None)
+        .add_template(
+            "坏模板",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({ "fd_priority": "高" }),
+            &serde_json::json!([]),
+            None,
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
     // 字段值违反 kind：select 超出 choices
     let err = store
-        .add_template("坏模板", None, None, ItemType::Task, &serde_json::json!({ "fd_priority": "紧急" }), &serde_json::json!([]), None)
+        .add_template(
+            "坏模板",
+            None,
+            None,
+            ItemType::Task,
+            &serde_json::json!({ "fd_priority": "紧急" }),
+            &serde_json::json!([]),
+            None,
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
 }
@@ -1186,7 +1427,15 @@ fn template_crud_pinned_and_item_apply() {
 
     // 同名冲突
     assert!(matches!(
-        store.add_template("饮茶", None, None, ItemType::Log, &serde_json::json!({}), &serde_json::json!([]), None),
+        store.add_template(
+            "饮茶",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({}),
+            &serde_json::json!([]),
+            None
+        ),
         Err(myday_core::MyDayError::Conflict(_))
     ));
 
@@ -1207,14 +1456,20 @@ fn template_crud_pinned_and_item_apply() {
 
     // 按 ID 引用模板
     let item = store
-        .add_item(NewItem { template_id: Some(tpl.id.clone()), ..Default::default() })
+        .add_item(NewItem {
+            template_id: Some(tpl.id.clone()),
+            ..Default::default()
+        })
         .unwrap();
     assert_eq!(item.title.as_deref(), Some("饮茶打卡"));
     assert_eq!(item.template_id.as_deref(), Some(tpl.id.as_str()));
 
     // 钉选开关
     store.set_template_pinned(&tpl.id, false).unwrap();
-    assert!(!store.get_template(&tpl.id).unwrap().pinned, "取消按钮不删除模板");
+    assert!(
+        !store.get_template(&tpl.id).unwrap().pinned,
+        "取消按钮不删除模板"
+    );
 
     // 删除：已创建条目的值不受影响，悬挂引用清除
     store.delete_template(&tpl.id).unwrap();
@@ -1223,8 +1478,28 @@ fn template_crud_pinned_and_item_apply() {
     assert_eq!(after.title.as_deref(), Some("饮茶打卡"));
 
     // 排序交换与端点移动
-    let a = store.add_template("aa", None, None, ItemType::Log, &serde_json::json!({}), &serde_json::json!([]), None).unwrap();
-    let b = store.add_template("bb", None, None, ItemType::Log, &serde_json::json!({}), &serde_json::json!([]), None).unwrap();
+    let a = store
+        .add_template(
+            "aa",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({}),
+            &serde_json::json!([]),
+            None,
+        )
+        .unwrap();
+    let b = store
+        .add_template(
+            "bb",
+            None,
+            None,
+            ItemType::Log,
+            &serde_json::json!({}),
+            &serde_json::json!([]),
+            None,
+        )
+        .unwrap();
     store.move_template(&b.id, true).unwrap();
     let list = store.list_templates().unwrap();
     let pos = |n: &str| list.iter().position(|x| x.name == n).unwrap();
@@ -1248,7 +1523,10 @@ fn list_filter_deserializes_partial_json() {
     // changed_on：日期字符串 → NaiveDate
     let f: ListFilter =
         serde_json::from_str(r#"{"changed_on":"2026-09-16"}"#).expect("changed_on filter");
-    assert_eq!(f.changed_on, Some(chrono::NaiveDate::from_ymd_opt(2026, 9, 16).unwrap()));
+    assert_eq!(
+        f.changed_on,
+        Some(chrono::NaiveDate::from_ymd_opt(2026, 9, 16).unwrap())
+    );
 }
 
 #[test]
@@ -1265,14 +1543,26 @@ fn log_timeline_orders_by_occurred_at_and_date_range() {
         })
         .unwrap();
     store
-        .add_item(NewItem { item_type: Some(ItemType::Log), title: Some("现在的记录".into()), ..Default::default() })
+        .add_item(NewItem {
+            item_type: Some(ItemType::Log),
+            title: Some("现在的记录".into()),
+            ..Default::default()
+        })
         .unwrap();
 
     let items = store
-        .list_items(&ListFilter { item_type: Some(ItemType::Log), order: ListOrder::Desc, ..Default::default() })
+        .list_items(&ListFilter {
+            item_type: Some(ItemType::Log),
+            order: ListOrder::Desc,
+            ..Default::default()
+        })
         .unwrap();
     assert_eq!(items.len(), 2);
-    assert_eq!(items[0].title.as_deref(), Some("现在的记录"), "按 occurred_at 倒序");
+    assert_eq!(
+        items[0].title.as_deref(),
+        Some("现在的记录"),
+        "按 occurred_at 倒序"
+    );
 
     // from/to 锚点 = occurred_at
     let items = store
@@ -1295,7 +1585,10 @@ fn changed_on_filters_by_creation_or_modification_day() {
     let yesterday = today - chrono::Duration::days(1);
 
     let log = store
-        .add_item(NewItem { title: Some("今天的记录".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("今天的记录".into()),
+            ..Default::default()
+        })
         .unwrap();
     let ev = store
         .add_item(NewItem {
@@ -1305,22 +1598,43 @@ fn changed_on_filters_by_creation_or_modification_day() {
         })
         .unwrap();
     let old = store
-        .add_item(NewItem { title: Some("昨天建的待办".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("昨天建的待办".into()),
+            ..Default::default()
+        })
         .unwrap();
     store
-        .update_item(&old.id, ItemPatch { title: Some("昨天建的待办（今天改）".into()), ..Default::default() })
+        .update_item(
+            &old.id,
+            ItemPatch {
+                title: Some("昨天建的待办（今天改）".into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
     let _ = log;
 
     let activity = store
-        .list_items(&ListFilter { changed_on: Some(today), ..Default::default() })
+        .list_items(&ListFilter {
+            changed_on: Some(today),
+            ..Default::default()
+        })
         .unwrap();
     let ids: Vec<&str> = activity.iter().map(|i| i.id.as_str()).collect();
-    assert!(ids.contains(&ev.id.as_str()), "明天日程今天创建，应出现在今日活动");
-    assert!(ids.contains(&old.id.as_str()), "昨天待办今天修改，应出现在今日活动");
+    assert!(
+        ids.contains(&ev.id.as_str()),
+        "明天日程今天创建，应出现在今日活动"
+    );
+    assert!(
+        ids.contains(&old.id.as_str()),
+        "昨天待办今天修改，应出现在今日活动"
+    );
 
     let yesterday_activity = store
-        .list_items(&ListFilter { changed_on: Some(yesterday), ..Default::default() })
+        .list_items(&ListFilter {
+            changed_on: Some(yesterday),
+            ..Default::default()
+        })
         .unwrap();
     assert!(yesterday_activity.is_empty(), "没有昨天创建/修改的条目");
 }
@@ -1374,7 +1688,10 @@ fn delete_trash_restore_purge_lifecycle() {
 
     // 对活跃条目彻底删除被拒绝（必须先软删）
     let active = store
-        .add_item(NewItem { title: Some("活跃".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("活跃".into()),
+            ..Default::default()
+        })
         .unwrap();
     assert!(store.purge_item(&active.id).is_err());
 }
@@ -1394,7 +1711,13 @@ fn update_patch_clear_time_fields() {
         .unwrap();
 
     let cleared = store
-        .update_item(&item.id, ItemPatch { clear_due_at: true, ..Default::default() })
+        .update_item(
+            &item.id,
+            ItemPatch {
+                clear_due_at: true,
+                ..Default::default()
+            },
+        )
         .unwrap();
     assert!(cleared.due_at.is_none());
     assert!(cleared.start_at.is_some(), "未触碰的字段不动");
@@ -1408,25 +1731,47 @@ fn update_patch_clear_time_fields() {
         })
         .unwrap();
     let err = store
-        .update_item(&ev.id, ItemPatch { clear_start_at: true, ..Default::default() })
+        .update_item(
+            &ev.id,
+            ItemPatch {
+                clear_start_at: true,
+                ..Default::default()
+            },
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
 
     // log 不可改 start_at（发生时间走 occurred_at）
     let log = store
-        .add_item(NewItem { item_type: Some(ItemType::Log), title: Some("记录".into()), ..Default::default() })
+        .add_item(NewItem {
+            item_type: Some(ItemType::Log),
+            title: Some("记录".into()),
+            ..Default::default()
+        })
         .unwrap();
     let err = store
-        .update_item(&log.id, ItemPatch { start_at: Some(Utc::now()), ..Default::default() })
+        .update_item(
+            &log.id,
+            ItemPatch {
+                start_at: Some(Utc::now()),
+                ..Default::default()
+            },
+        )
         .unwrap_err();
     assert_eq!(err.code(), myday_core::ErrorCode::Invalid);
     let patched = store
         .update_item(
             &log.id,
-            ItemPatch { occurred_at: Some((Utc::now() - Duration::hours(1)).trunc_subsecs(0)), ..Default::default() },
+            ItemPatch {
+                occurred_at: Some((Utc::now() - Duration::hours(1)).trunc_subsecs(0)),
+                ..Default::default()
+            },
         )
         .unwrap();
-    assert_eq!(patched.occurred_at, Some((Utc::now() - Duration::hours(1)).trunc_subsecs(0)));
+    assert_eq!(
+        patched.occurred_at,
+        Some((Utc::now() - Duration::hours(1)).trunc_subsecs(0))
+    );
 }
 
 // ----------------------------------------------------------------------
@@ -1514,7 +1859,11 @@ fn legacy_db_is_backed_up_then_rebuilt() {
     let store = Store::open(&db, t.0.path()).unwrap();
     // 旧表被 DROP，新 schema 就位并有种子
     assert!(store.get_item("old_1").is_err(), "旧数据不保留");
-    assert!(store.list_templates().unwrap().iter().any(|x| x.id == "tpl_water"));
+    assert!(store
+        .list_templates()
+        .unwrap()
+        .iter()
+        .any(|x| x.id == "tpl_water"));
     let conn = store.raw_conn().unwrap();
     let occurred: bool = conn
         .prepare("SELECT COUNT(*) FROM pragma_table_info('items') WHERE name = 'occurred_at'")
@@ -1528,7 +1877,9 @@ fn legacy_db_is_backed_up_then_rebuilt() {
     let mut backups = std::fs::read_dir(t.0.path().join("backups")).unwrap();
     let backup = backups.next().expect("备份文件应存在").unwrap();
     let bconn = rusqlite::Connection::open(backup.path()).unwrap();
-    let n: i64 = bconn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0)).unwrap();
+    let n: i64 = bconn
+        .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(n, 1, "备份里保留旧数据");
 }
 
@@ -1554,9 +1905,12 @@ fn baseline_db_migrates_in_place_without_rebuild() {
         // 模拟 v5 库：去掉 v6/v7 新增列（先删引用 deleted_at 的索引）后把
         // user_version 降到基线，重开必须沿迁移链 4→…→当前版本逐级升级
         let conn = store.raw_conn().unwrap();
-        conn.execute("DROP INDEX IF EXISTS idx_items_trash", []).unwrap();
-        conn.execute("ALTER TABLE items DROP COLUMN deleted_at", []).unwrap();
-        conn.execute("ALTER TABLE items DROP COLUMN recurrence_exdates", []).unwrap();
+        conn.execute("DROP INDEX IF EXISTS idx_items_trash", [])
+            .unwrap();
+        conn.execute("ALTER TABLE items DROP COLUMN deleted_at", [])
+            .unwrap();
+        conn.execute("ALTER TABLE items DROP COLUMN recurrence_exdates", [])
+            .unwrap();
         conn.pragma_update(None, "user_version", 4).unwrap();
     }
     drop(store);
@@ -1592,8 +1946,6 @@ fn baseline_db_migrates_in_place_without_rebuild() {
     }
 }
 
-
-
 mod window_and_tokens {
     use super::*;
     use chrono::TimeZone;
@@ -1601,9 +1953,7 @@ mod window_and_tokens {
     fn day_bounds_utc(y: i32, m: u32, d: u32) -> (chrono::DateTime<Utc>, chrono::DateTime<Utc>) {
         // 测试内直接用 UTC 边界写库 / 查询（窗口查询本身只比较时间戳）
         let from = chrono::Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap();
-        let to = chrono::Utc
-            .with_ymd_and_hms(y, m, d, 23, 59, 59)
-            .unwrap();
+        let to = chrono::Utc.with_ymd_and_hms(y, m, d, 23, 59, 59).unwrap();
         (from, to)
     }
 
@@ -1614,53 +1964,65 @@ mod window_and_tokens {
         let base = chrono::Utc.with_ymd_and_hms(2026, 9, 16, 0, 0, 0).unwrap();
 
         // 1. 普通日程：当天开始
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Event),
-            title: Some("当天日程".into()),
-            start_at: Some(base + Duration::hours(10)),
-            end_at: Some(base + Duration::hours(11)),
-            ..Default::default()
-        }).unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Event),
+                title: Some("当天日程".into()),
+                start_at: Some(base + Duration::hours(10)),
+                end_at: Some(base + Duration::hours(11)),
+                ..Default::default()
+            })
+            .unwrap();
 
         // 2. 跨天日程：15 号开始 17 号结束 → 16 日窗口按区间相交命中
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Event),
-            title: Some("跨天日程".into()),
-            start_at: Some(base - Duration::hours(20)),
-            end_at: Some(base + Duration::hours(30)),
-            ..Default::default()
-        }).unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Event),
+                title: Some("跨天日程".into()),
+                start_at: Some(base - Duration::hours(20)),
+                end_at: Some(base + Duration::hours(30)),
+                ..Default::default()
+            })
+            .unwrap();
 
         // 3. due-only 待办（无 start_at）：旧日历完全看不见
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Task),
-            title: Some("当天到期".into()),
-            due_at: Some(base + Duration::hours(18)),
-            ..Default::default()
-        }).unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Task),
+                title: Some("当天到期".into()),
+                due_at: Some(base + Duration::hours(18)),
+                ..Default::default()
+            })
+            .unwrap();
 
         // 4. 记录：occurred_at 当天
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Log),
-            title: Some("当天记录".into()),
-            occurred_at: Some(base + Duration::hours(8)),
-            ..Default::default()
-        }).unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Log),
+                title: Some("当天记录".into()),
+                occurred_at: Some(base + Duration::hours(8)),
+                ..Default::default()
+            })
+            .unwrap();
 
         // 干扰项：17 号的日程 / 15 号的记录
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Event),
-            title: Some("隔天日程".into()),
-            start_at: Some(base + Duration::hours(30)),
-            end_at: Some(base + Duration::hours(31)),
-            ..Default::default()
-        }).unwrap();
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Log),
-            title: Some("前一天记录".into()),
-            occurred_at: Some(base - Duration::hours(5)),
-            ..Default::default()
-        }).unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Event),
+                title: Some("隔天日程".into()),
+                start_at: Some(base + Duration::hours(30)),
+                end_at: Some(base + Duration::hours(31)),
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Log),
+                title: Some("前一天记录".into()),
+                occurred_at: Some(base - Duration::hours(5)),
+                ..Default::default()
+            })
+            .unwrap();
 
         let (from, to) = day_bounds_utc(2026, 9, 16);
         let got = store.list_items_window(from, to, None).unwrap();
@@ -1673,7 +2035,9 @@ mod window_and_tokens {
         assert!(!titles.contains(&"前一天记录"));
 
         // 按类型过滤
-        let events = store.list_items_window(from, to, Some(ItemType::Event)).unwrap();
+        let events = store
+            .list_items_window(from, to, Some(ItemType::Event))
+            .unwrap();
         assert_eq!(events.len(), 2);
     }
 
@@ -1682,24 +2046,30 @@ mod window_and_tokens {
         let t = TempDir::new();
         let store = t.store();
         let base = chrono::Utc.with_ymd_and_hms(2026, 9, 16, 0, 0, 0).unwrap();
-        store.add_item(NewItem {
-            item_type: Some(ItemType::Task),
-            title: Some("有开始的任务".into()),
-            start_at: Some(base + Duration::hours(9)),
-            due_at: Some(base + Duration::hours(18)),
-            ..Default::default()
-        }).unwrap();
+        store
+            .add_item(NewItem {
+                item_type: Some(ItemType::Task),
+                title: Some("有开始的任务".into()),
+                start_at: Some(base + Duration::hours(9)),
+                due_at: Some(base + Duration::hours(18)),
+                ..Default::default()
+            })
+            .unwrap();
         // start 范围过滤（AND 语义）
-        let got = store.list_items(&ListFilter {
-            start_from: Some(base + Duration::hours(8)),
-            start_to: Some(base + Duration::hours(10)),
-            ..Default::default()
-        }).unwrap();
+        let got = store
+            .list_items(&ListFilter {
+                start_from: Some(base + Duration::hours(8)),
+                start_to: Some(base + Duration::hours(10)),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(got.len(), 1);
-        let got = store.list_items(&ListFilter {
-            start_from: Some(base + Duration::hours(20)),
-            ..Default::default()
-        }).unwrap();
+        let got = store
+            .list_items(&ListFilter {
+                start_from: Some(base + Duration::hours(20)),
+                ..Default::default()
+            })
+            .unwrap();
         assert!(got.is_empty());
     }
 
@@ -1737,15 +2107,14 @@ mod window_and_tokens {
         let end = item.end_at.unwrap().with_timezone(&chrono::Local);
         assert_eq!(start.date_naive(), anchor, "当天 9 点 = 锚点日");
         assert_eq!(start.format("%H:%M").to_string(), "09:00");
-        assert_eq!(
-            (end - start).num_minutes(),
-            30,
-            "@start+30m = 开始后半小时"
-        );
+        assert_eq!((end - start).num_minutes(), 30, "@start+30m = 开始后半小时");
 
         // 不指定锚点 = 今天
         let today = store
-            .add_item(NewItem { template_id: Some(tpl.name.clone()), ..Default::default() })
+            .add_item(NewItem {
+                template_id: Some(tpl.name.clone()),
+                ..Default::default()
+            })
             .unwrap()
             .start_at
             .unwrap()
@@ -1759,26 +2128,76 @@ mod window_and_tokens {
         let t = TempDir::new();
         let store = t.store();
 
-        assert!(store
-            .add_template("坏token", None, None, ItemType::Event,
-                &serde_json::json!({ "start_at": "@foo" }), &serde_json::json!([]), None)
-            .is_err(), "未知 token 拒绝");
-        assert!(store
-            .add_template("start基准滥用", None, None, ItemType::Event,
-                &serde_json::json!({ "start_at": "@start+30m" }), &serde_json::json!([]), None)
-            .is_err(), "@start 仅 end_at 可用");
-        assert!(store
-            .add_template("未来记录", None, None, ItemType::Log,
-                &serde_json::json!({ "occurred_at": "@d+1T09:00" }), &serde_json::json!([]), None)
-            .is_err(), "occurred_at 不允许未来方向占位");
-        assert!(store
-            .add_template("列误用", None, None, ItemType::Log,
-                &serde_json::json!({ "occurred_at": "@now-30m" }), &serde_json::json!([]), None)
-            .is_ok(), "log 模板允许过去方向 occurred 占位");
-        assert!(store
-            .add_template("绝对时间默认", None, None, ItemType::Event,
-                &serde_json::json!({ "start_at": "2026-09-20T09:00:00Z" }), &serde_json::json!([]), None)
-            .is_err(), "时间默认只收 @ 占位（模板存意图，条目存事实）");
+        assert!(
+            store
+                .add_template(
+                    "坏token",
+                    None,
+                    None,
+                    ItemType::Event,
+                    &serde_json::json!({ "start_at": "@foo" }),
+                    &serde_json::json!([]),
+                    None
+                )
+                .is_err(),
+            "未知 token 拒绝"
+        );
+        assert!(
+            store
+                .add_template(
+                    "start基准滥用",
+                    None,
+                    None,
+                    ItemType::Event,
+                    &serde_json::json!({ "start_at": "@start+30m" }),
+                    &serde_json::json!([]),
+                    None
+                )
+                .is_err(),
+            "@start 仅 end_at 可用"
+        );
+        assert!(
+            store
+                .add_template(
+                    "未来记录",
+                    None,
+                    None,
+                    ItemType::Log,
+                    &serde_json::json!({ "occurred_at": "@d+1T09:00" }),
+                    &serde_json::json!([]),
+                    None
+                )
+                .is_err(),
+            "occurred_at 不允许未来方向占位"
+        );
+        assert!(
+            store
+                .add_template(
+                    "列误用",
+                    None,
+                    None,
+                    ItemType::Log,
+                    &serde_json::json!({ "occurred_at": "@now-30m" }),
+                    &serde_json::json!([]),
+                    None
+                )
+                .is_ok(),
+            "log 模板允许过去方向 occurred 占位"
+        );
+        assert!(
+            store
+                .add_template(
+                    "绝对时间默认",
+                    None,
+                    None,
+                    ItemType::Event,
+                    &serde_json::json!({ "start_at": "2026-09-20T09:00:00Z" }),
+                    &serde_json::json!([]),
+                    None
+                )
+                .is_err(),
+            "时间默认只收 @ 占位（模板存意图，条目存事实）"
+        );
     }
 }
 
@@ -1864,7 +2283,10 @@ fn relative_reminder_spec_follows_time_changes() {
         .add_item(NewItem {
             item_type: Some(ItemType::Task),
             title: Some("坏spec".into()),
-            reminders: vec![NewReminder { spec: "@foo".into(), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: "@foo".into(),
+                channel: "notify".into()
+            }],
             ..Default::default()
         })
         .is_err());
@@ -1892,13 +2314,23 @@ fn daily_spec_expands_per_day_and_dedups() {
         .unwrap();
 
     let occ = occurrences("@dailyT09:00", &event);
-    assert!((4..=7).contains(&occ.len()), "7 天期间应展开 5~7 个时刻，实际 {}", occ.len());
+    assert!(
+        (4..=7).contains(&occ.len()),
+        "7 天期间应展开 5~7 个时刻，实际 {}",
+        occ.len()
+    );
     assert!(occ.windows(2).all(|w| w[0] < w[1]), "升序且无重复");
 
     // 第一轮全部到期时刻要么补发（窗口内）要么聚合（窗口外错过）；第二轮双零（reminder_log 去重）
     struct Tally(AtomicUsize, AtomicUsize);
     impl myday_core::reminder::Notifier for Tally {
-        fn notify(&self, _: &Reminder, _: &Item, _: chrono::DateTime<chrono::Utc>, _: &[&'static str]) {
+        fn notify(
+            &self,
+            _: &Reminder,
+            _: &Item,
+            _: chrono::DateTime<chrono::Utc>,
+            _: &[&'static str],
+        ) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
         fn notify_missed(&self, count: usize, _lines: &[(String, String)]) {
@@ -1946,23 +2378,33 @@ fn convert_task_to_event_moves_everything() {
             tags: vec!["工作".into()],
             extra: serde_json::json!({"fd_priority": "高"}),
             reminders: vec![
-                NewReminder { spec: "@due-30m".into(), channel: "notify".into() },
                 NewReminder {
-                    spec: (Utc::now() + Duration::hours(2)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    spec: "@due-30m".into(),
+                    channel: "notify".into(),
+                },
+                NewReminder {
+                    spec: (Utc::now() + Duration::hours(2))
+                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                     channel: "notify".into(),
                 },
             ],
             ..Default::default()
         })
         .unwrap();
-    store.add_attachment_bytes(&task.id, b"png-bytes", "png").unwrap();
+    store
+        .add_attachment_bytes(&task.id, b"png-bytes", "png")
+        .unwrap();
 
     let ev = store.convert_task_to_event(&task.id).unwrap();
     assert_eq!(ev.item_type, ItemType::Event);
     assert_eq!(ev.start_at, Some(due));
     assert_eq!(ev.end_at, Some(due + Duration::hours(1)));
     assert_eq!(ev.tags, vec!["工作".to_string()]);
-    assert_eq!(ev.extra.get("fd_priority"), None, "task 专属字段（优先级）不入日程");
+    assert_eq!(
+        ev.extra.get("fd_priority"),
+        None,
+        "task 专属字段（优先级）不入日程"
+    );
     // 提醒映射：@due-30m → @start-30m；绝对时刻原样
     assert!(ev.reminders.iter().any(|r| r.spec == "@start-30m"));
     assert_eq!(ev.reminders.len(), 2);
@@ -1991,7 +2433,9 @@ fn event_to_log_copies_and_keeps_event() {
             ..Default::default()
         })
         .unwrap();
-    store.add_attachment_bytes(&ev.id, b"img-data", "png").unwrap();
+    store
+        .add_attachment_bytes(&ev.id, b"img-data", "png")
+        .unwrap();
     let ev = store.get_item(&ev.id).unwrap();
 
     let log = store.event_to_log(&ev.id).unwrap();
@@ -2030,14 +2474,24 @@ fn reminder_history_and_unread_count() {
     store
         .add_item(NewItem {
             title: Some("到点的事".into()),
-            reminders: vec![NewReminder { spec: abs(10), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: abs(10),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .unwrap();
 
     struct Noop;
     impl Notifier for Noop {
-        fn notify(&self, _: &Reminder, _: &Item, _: chrono::DateTime<chrono::Utc>, _: &[&'static str]) {}
+        fn notify(
+            &self,
+            _: &Reminder,
+            _: &Item,
+            _: chrono::DateTime<chrono::Utc>,
+            _: &[&'static str],
+        ) {
+        }
         fn notify_missed(&self, _: usize, _: &[(String, String)]) {}
     }
     tick_once(&store, &Noop).unwrap();
@@ -2049,10 +2503,16 @@ fn reminder_history_and_unread_count() {
     // 未读：seen 之前 0 条，seen 早于 remind_at 则 1 条
     assert_eq!(store.reminder_unread_count(Some(Utc::now())).unwrap(), 0);
     assert_eq!(
-        store.reminder_unread_count(Some(Utc::now() - Duration::hours(1))).unwrap(),
+        store
+            .reminder_unread_count(Some(Utc::now() - Duration::hours(1)))
+            .unwrap(),
         1
     );
-    assert_eq!(store.reminder_unread_count(None).unwrap(), 0, "首次使用无未读");
+    assert_eq!(
+        store.reminder_unread_count(None).unwrap(),
+        0,
+        "首次使用无未读"
+    );
 }
 
 #[test]
@@ -2071,19 +2531,31 @@ fn stats_summary_respects_days_window() {
             .unwrap()
     };
     mk_log(40, 70.0); // 窗口外
-    mk_log(5, 71.5);  // 窗口内
-    mk_log(2, 72.0);  // 窗口内
+    mk_log(5, 71.5); // 窗口内
+    mk_log(2, 72.0); // 窗口内
     let s30 = store.stats_summary(30).unwrap();
     assert_eq!(s30.heatmap.len(), 30, "热力图按窗口天数");
     assert_eq!(s30.heatmap.iter().map(|d| d.count).sum::<i64>(), 2);
-    let series = s30.series.iter().find(|s| s.field_id == "fd_weight_kg").unwrap();
+    let series = s30
+        .series
+        .iter()
+        .find(|s| s.field_id == "fd_weight_kg")
+        .unwrap();
     assert_eq!(series.points.len(), 2, "40 天前的点不在 30 天窗口");
     let s365 = store.stats_summary(365).unwrap();
     assert_eq!(s365.heatmap.len(), 365);
-    let series = s365.series.iter().find(|s| s.field_id == "fd_weight_kg").unwrap();
+    let series = s365
+        .series
+        .iter()
+        .find(|s| s.field_id == "fd_weight_kg")
+        .unwrap();
     assert_eq!(series.points.len(), 3);
     // 下限保护
-    assert_eq!(store.stats_summary(1).unwrap().heatmap.len(), 7, "窗口下限 7 天");
+    assert_eq!(
+        store.stats_summary(1).unwrap().heatmap.len(),
+        7,
+        "窗口下限 7 天"
+    );
 }
 
 #[test]
@@ -2098,7 +2570,10 @@ fn export_ics_events_todos_alarms() {
             start_at: Some(base),
             end_at: Some(base + Duration::hours(1)),
             recurrence: Some("@weekly:3".into()),
-            reminders: vec![NewReminder { spec: "@start-10m".into(), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: "@start-10m".into(),
+                channel: "notify".into(),
+            }],
             tags: vec!["工作".into()],
             ..Default::default()
         })
@@ -2107,7 +2582,10 @@ fn export_ics_events_todos_alarms() {
         .add_item(NewItem {
             title: Some("交周报".into()),
             due_at: Some(base + Duration::days(2)),
-            reminders: vec![NewReminder { spec: "@due-1h".into(), channel: "notify".into() }],
+            reminders: vec![NewReminder {
+                spec: "@due-1h".into(),
+                channel: "notify".into(),
+            }],
             ..Default::default()
         })
         .unwrap();
@@ -2157,13 +2635,19 @@ fn backup_zip_contains_db_and_attachments_and_rotates() {
             ..Default::default()
         })
         .unwrap();
-    store.add_attachment_bytes(&item.id, b"file-body", "png").unwrap();
+    store
+        .add_attachment_bytes(&item.id, b"file-body", "png")
+        .unwrap();
 
     // 预置 7 份旧备份，触发轮换
     let dir = t.0.path().join("backups");
     std::fs::create_dir_all(&dir).unwrap();
     for i in 0..7 {
-        std::fs::write(dir.join(format!("myday-backup-2020010{i}-000000.zip")), b"old").unwrap();
+        std::fs::write(
+            dir.join(format!("myday-backup-2020010{i}-000000.zip")),
+            b"old",
+        )
+        .unwrap();
     }
 
     let target = myday_core::backup::backup_zip(&store).unwrap();
@@ -2182,7 +2666,10 @@ fn backup_zip_contains_db_and_attachments_and_rotates() {
     let mut names: Vec<String> = ar.file_names().map(str::to_string).collect();
     names.sort();
     assert!(names.iter().any(|n| n == "myday.db"));
-    assert!(names.iter().any(|n| n.starts_with("attachments/")), "附件入包: {names:?}");
+    assert!(
+        names.iter().any(|n| n.starts_with("attachments/")),
+        "附件入包: {names:?}"
+    );
 }
 
 // ----------------------------------------------------------------------
@@ -2218,11 +2705,19 @@ fn recurrence_end_conditions_full_flow() {
     store.complete_task(&task.id).unwrap();
     let once = store.get_item(&task.id).unwrap();
     assert_eq!(once.due_at.unwrap(), day(2, 9));
-    assert_eq!(once.recurrence.as_deref(), Some("@daily;count=2"), "剩余期数递减");
+    assert_eq!(
+        once.recurrence.as_deref(),
+        Some("@daily;count=2"),
+        "剩余期数递减"
+    );
     store.uncomplete_task(&once.id).unwrap();
     let rewound = store.get_item(&task.id).unwrap();
     assert_eq!(rewound.due_at.unwrap(), day(1, 9), "回拨到完成前那期");
-    assert_eq!(rewound.recurrence.as_deref(), Some("@daily;count=3"), "剩余期数恢复");
+    assert_eq!(
+        rewound.recurrence.as_deref(),
+        Some("@daily;count=3"),
+        "剩余期数恢复"
+    );
     assert!(rewound.extra.get("recurred_done_at").is_none());
 
     // 完成两次 = 推进两期
@@ -2233,7 +2728,12 @@ fn recurrence_end_conditions_full_flow() {
     // 第三次完成：次数耗尽 → 正常完成（done），不再推进也不报错
     store.complete_task(&task.id).unwrap();
     let done = store.get_item(&task.id).unwrap();
-    eprintln!("DEBUG after 3rd: status={:?} due={:?} recurred={:?}", done.status, done.due_at, done.extra.get("recurred_done_at"));
+    eprintln!(
+        "DEBUG after 3rd: status={:?} due={:?} recurred={:?}",
+        done.status,
+        done.due_at,
+        done.extra.get("recurred_done_at")
+    );
     assert_eq!(done.status, Some(ItemStatus::Done), "耗尽后完成 = 系列终结");
     assert!(done.completed_at.is_some());
 
@@ -2299,15 +2799,24 @@ fn detach_and_skip_occurrence() {
     assert_eq!(still_there.len(), 1);
 
     // skip：仅删除 9/30 这期（不新建条目）
-    let skipped = store.skip_occurrence(&ev.id, utc_date_at(2026, 9, 30, 9)).unwrap();
+    let skipped = store
+        .skip_occurrence(&ev.id, utc_date_at(2026, 9, 30, 9))
+        .unwrap();
     assert_eq!(skipped.recurrence_exdates.len(), 2);
 
     // 不对应任何发生的时刻被拒绝；非重复条目被拒绝
-    assert!(store.skip_occurrence(&ev.id, utc_date_at(2026, 9, 24, 9)).is_err());
+    assert!(store
+        .skip_occurrence(&ev.id, utc_date_at(2026, 9, 24, 9))
+        .is_err());
     let plain = store
-        .add_item(NewItem { title: Some("单次".into()), ..Default::default() })
+        .add_item(NewItem {
+            title: Some("单次".into()),
+            ..Default::default()
+        })
         .unwrap();
-    assert!(store.skip_occurrence(&plain.id, utc_date_at(2026, 9, 24, 9)).is_err());
+    assert!(store
+        .skip_occurrence(&plain.id, utc_date_at(2026, 9, 24, 9))
+        .is_err());
 }
 
 /// 本地时区某日某点的 UTC 时刻（与 next_after 的本地钟点语义一致）

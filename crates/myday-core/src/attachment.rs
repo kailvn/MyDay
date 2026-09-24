@@ -34,12 +34,11 @@ impl Store {
         self.get_item(item_id)?;
         let ext = ext.trim_start_matches('.').to_ascii_lowercase();
         if ext.is_empty() || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return Err(MyDayError::Invalid(format!("bad attachment extension: {ext}")));
+            return Err(MyDayError::Invalid(format!(
+                "bad attachment extension: {ext}"
+            )));
         }
-        let file_stem = format!(
-            "att_{}",
-            &uuid::Uuid::new_v4().simple().to_string()[..12]
-        );
+        let file_stem = format!("att_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
         let rel_path = format!("attachments/{item_id}/{file_stem}.{ext}");
         let abs = self.data_root().join(&rel_path);
         if let Some(parent) = abs.parent() {
@@ -118,7 +117,9 @@ impl Store {
         };
         let mut moves: Vec<(i64, String)> = Vec::new();
         for (att_id, rel) in rows {
-            let Some(name) = rel.rsplit('/').next() else { continue };
+            let Some(name) = rel.rsplit('/').next() else {
+                continue;
+            };
             let new_rel = format!("attachments/{to_id}/{name}");
             let from_abs = self.data_root().join(&rel);
             let to_abs = self.data_root().join(&new_rel);
@@ -149,8 +150,8 @@ impl Store {
     pub fn copy_item_attachments(&self, from_id: &str, to_id: &str) -> Result<()> {
         let rows: Vec<(String, String, i64)> = {
             let conn = self.lock()?;
-            let mut stmt = conn
-                .prepare("SELECT rel_path, mime, size FROM attachments WHERE item_id = ?1")?;
+            let mut stmt =
+                conn.prepare("SELECT rel_path, mime, size FROM attachments WHERE item_id = ?1")?;
             let rows = stmt
                 .query_map(rusqlite::params![from_id], |r| {
                     Ok((
@@ -166,7 +167,9 @@ impl Store {
         let conn = self.lock()?;
         let tx = conn.unchecked_transaction()?;
         for (rel, mime, size) in rows {
-            let Some(ext) = rel.rsplit('.').next() else { continue };
+            let Some(ext) = rel.rsplit('.').next() else {
+                continue;
+            };
             let stem = format!("att_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
             let new_rel = format!("attachments/{to_id}/{stem}.{ext}");
             let from_abs = self.data_root().join(&rel);

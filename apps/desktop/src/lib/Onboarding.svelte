@@ -44,7 +44,7 @@
 </script>
 
 {#if visible}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
   <div class="overlay" role="presentation">
     <div
       class="modal"

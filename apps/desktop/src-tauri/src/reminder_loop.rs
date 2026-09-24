@@ -23,22 +23,28 @@ struct DesktopNotifier {
 /// 通知摘要 / 正文的本地化组装（时间格式两侧统一 `MM-DD HH:MM`）。
 fn render(lang: Lang, item: &Item, at: chrono::DateTime<chrono::Utc>) -> (String, String) {
     let s = strings(lang);
-    let time = at.with_timezone(&chrono::Local).format("%m-%d %H:%M").to_string();
+    let time = at
+        .with_timezone(&chrono::Local)
+        .format("%m-%d %H:%M")
+        .to_string();
     match item.item_type {
         ItemType::Task => (
-            s.sum_task.replace("{title}", &myday_core::model::display_title(item)),
+            s.sum_task
+                .replace("{title}", &myday_core::model::display_title(item)),
             item.due_at
                 .map(|_| s.body_task_due.replace("{time}", &time))
                 .unwrap_or_else(|| s.body_task_plain.into()),
         ),
         ItemType::Event => (
-            s.sum_event.replace("{title}", &myday_core::model::display_title(item)),
+            s.sum_event
+                .replace("{title}", &myday_core::model::display_title(item)),
             item.start_at
                 .map(|_| s.body_event_start.replace("{time}", &time))
                 .unwrap_or_else(|| s.body_event_plain.into()),
         ),
         ItemType::Log => (
-            s.sum_log.replace("{title}", &myday_core::model::display_title(item)),
+            s.sum_log
+                .replace("{title}", &myday_core::model::display_title(item)),
             s.body_log.into(),
         ),
     }
@@ -72,22 +78,24 @@ impl Notifier for DesktopNotifier {
             .map(|id| (id.to_string(), action_label(lang, id).to_string()))
             .collect();
         // wait_for_action 会阻塞到通知关闭，必须独立线程，否则卡死提醒环。
-        let _ = std::thread::Builder::new().name("myday-notify".into()).spawn(move || {
-            // builder 方法返回 &mut Self，链式赋值会借用临时值，须逐条语句调用
-            let mut n = notify_rust::Notification::new();
-            n.appname("MyDay").summary(&summary).body(&body);
-            for (id, label) in &labels {
-                n.action(id, label);
-            }
-            // 通知本体点击 = 打开定位（GNOME 上 default action 由通知体触发）
-            n.action("default", action_label(lang, "default"));
-            match n.show() {
-                Ok(handle) => handle.wait_for_action(|action| {
-                    dispatch_action(&app, &store, action, &item_id);
-                }),
-                Err(e) => logging::log(&format!("myday: 发送通知失败: {e}")),
-            }
-        });
+        let _ = std::thread::Builder::new()
+            .name("myday-notify".into())
+            .spawn(move || {
+                // builder 方法返回 &mut Self，链式赋值会借用临时值，须逐条语句调用
+                let mut n = notify_rust::Notification::new();
+                n.appname("MyDay").summary(&summary).body(&body);
+                for (id, label) in &labels {
+                    n.action(id, label);
+                }
+                // 通知本体点击 = 打开定位（GNOME 上 default action 由通知体触发）
+                n.action("default", action_label(lang, "default"));
+                match n.show() {
+                    Ok(handle) => handle.wait_for_action(|action| {
+                        dispatch_action(&app, &store, action, &item_id);
+                    }),
+                    Err(e) => logging::log(&format!("myday: 发送通知失败: {e}")),
+                }
+            });
         // 通知无法保证携带可靠回调：同时记录待定位条目兜底。
         let _ = tauri::Emitter::emit(
             &self.app,
@@ -105,7 +113,10 @@ impl Notifier for DesktopNotifier {
             body.push('\n');
         }
         if count > lines.len() {
-            body.push_str(&s.missed_more.replace("{n}", &(count - lines.len()).to_string()));
+            body.push_str(
+                &s.missed_more
+                    .replace("{n}", &(count - lines.len()).to_string()),
+            );
         }
         if let Err(e) = notify_rust::Notification::new()
             .appname("MyDay")
@@ -136,7 +147,8 @@ fn dispatch_action(app: &tauri::AppHandle, store: &Store, action: &str, item_id:
         }
         "default" | "open" => {
             crate::show_main(app);
-            let _ = tauri::Emitter::emit(app, "reminder-fired", serde_json::json!({ "id": item_id }));
+            let _ =
+                tauri::Emitter::emit(app, "reminder-fired", serde_json::json!({ "id": item_id }));
         }
         // "closed"（无操作关闭）等其余动作不处理
         _ => {}

@@ -33,7 +33,10 @@
     onsaved: (title: string, cfg: WidgetConfig) => void;
   } = $props();
 
+  // 一次性取 props 初值作可编辑种子（编辑期间不跟随外部变化）
+  // svelte-ignore state_referenced_locally
   let cfg = $state<WidgetConfig>(cloneConfig(config));
+  // svelte-ignore state_referenced_locally
   let title = $state<string>(config.title ?? name);
   let error = $state("");
   let busy = $state(false);
