@@ -1,0 +1,16 @@
+[
+  {
+    "identifier": "mobile-notification",
+    "description": "移动端系统通知（tauri-plugin-notification 仅移动端依赖，权限随 platforms 限定，桌面构建不受影响）",
+    "windows": ["main"],
+    "platforms": ["android", "iOS"],
+    "permissions": ["notification:default"]
+  },
+  {
+    "identifier": "mobile-barcode",
+    "description": "扫码配对：扫桌面端同步二维码自动填地址与配对码（仅移动端）",
+    "windows": ["main"],
+    "platforms": ["android", "iOS"],
+    "permissions": ["barcode-scanner:default"]
+  }
+]

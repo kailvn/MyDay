@@ -32,7 +32,7 @@ jobs:
       - name: pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 12
 
       - name: Node 22
         uses: actions/setup-node@v4
@@ -66,3 +66,39 @@ jobs:
       - name: Playwright e2e（真 Chromium，浏览器 mock 模式）
         working-directory: apps/desktop
         run: pnpm e2e
+
+  # 移动端 Rust 代码只在 Android 目标编译（cfg(mobile)），主机测试覆盖不到，
+  # 用交叉 cargo check 防编译回归（无需 NDK：check 不链接）
+  android-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust 工具链（Android arm64 目标）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: android-check
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 前端依赖与构建（tauri context 引用 dist）
+        working-directory: apps/desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: 交叉编译检查
+        run: cargo check -p myday-desktop --target aarch64-linux-android

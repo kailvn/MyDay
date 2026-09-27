@@ -303,6 +303,10 @@ pub struct NewItem {
     /// 绝对提醒时间集合；空 = 按设置自动补一条（未来时间才生效）
     #[serde(default)]
     pub reminders: Vec<NewReminder>,
+    /// 显式「无提醒」：reminders 为空且本位为 true 时不自动补默认提醒
+    /// （移动端提醒选择器选「无」用；桌面不传则行为不变）。
+    #[serde(default)]
+    pub skip_default_reminder: bool,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]

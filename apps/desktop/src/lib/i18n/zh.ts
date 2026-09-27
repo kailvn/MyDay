@@ -12,6 +12,7 @@ import { part_help } from "./parts/help";
 import { part_chrome } from "./parts/chrome";
 import { part_calendar } from "./parts/calendar";
 import { part_panel } from "./parts/panel";
+import { part_mobile } from "./parts/mobile";
 
 export const zh = {
   ...part_common,
@@ -24,6 +25,7 @@ export const zh = {
   ...part_chrome,
   ...part_calendar,
   ...part_panel,
+  ...part_mobile,
 } as const;
 
 export type MessageKey = keyof typeof zh;

@@ -4,6 +4,29 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 功能详情见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
+## [1.3.0] - 2026-09-27
+
+### 新增
+- 移动端（Android）：日历月视图为主页（Outlook 式撑满网格、细线分隔、节假日暖色 chip + 休/班角标、首日带月份）+ 快速添加 FAB（单行自然语言识别，复用桌面解析器）+ 回收站 + 底部弹层体系；条目移动端可看不可编辑，轻操作仅完成 / 删除
+- 局域网同步 v1（无云服务器、非实时）：条目级 LWW + 冲突副本（败者内容永不消失）、删除以墓碑传播进回收站、每条目独立事务任意中断重跑收敛；桌面端 axum 服务（设置 → 移动端同步，Bearer token 鉴权，随启动恢复）+ 手机端客户端（reqwest 原生栈 / 默认网关探测）；**配置随索引单向对齐**——模板与活跃字段定义从桌面整包下发（手机只消费不生产）
+- 手机扫码配对：桌面同步小节显示二维码（`myday-sync://ip:port/token`），手机「扫码填写」（`tauri-plugin-barcode-scanner`）自动填入并立即同步
+- 记录调用模板：移动端快速添加「记录」类型展示同步下发的模板 chips + 字段表单（text / number / select / multiselect / bool / date / url 按定义渲染，数字带单位），保存带 template_id 与字段值 extra
+- 日程 / 待办提醒选择器：跟随默认 / 无 / 准时 / 提前 5、15、30 分钟 / 1 小时 / 1 天（映射 `@start±` / `@due±` 相对 spec，条目改时间自动跟随；「无」由 `skip_default_reminder` 显式表达，跳过按设置自动补默认提醒）；条目详情只读展示提醒人话文案
+- CI：新增 Android 交叉编译检查 job（aarch64 `cargo check`，防 `cfg(mobile)` 代码编译回归）；Release 工作流追加 Android arm64 APK 构建 + 密钥库签名 + 自动发布到 GitHub Release（pnpm 统一 12）
+- Android 签名脚本 `scripts/sign-android-apk.sh`（zipalign + apksigner，密钥库经环境变量 / GitHub Secrets 提供，不入仓库）
+
+### 变更
+- 同步读取批量化：`hydrate_many` / `load_items_full` 整批查询（无论条目数，附属共 3 批），消灭逐条 N+1；写入保持每条目独立事务（中断收敛不变）
+- 删除 / 恢复推进 `updated_at`：LWW 只认时间戳，不推进则墓碑 / 复活传播不到对端（真机踩坑）；新增删除传播与时间戳推进回归测试
+- 同步完成后两端广播刷新（桌面 push 应用后 emit data-changed、手机拉取后同），界面不再需要重启 / 重进才看到同步结果
+- 移动端危险操作改两段式确认（删除 / 清空回收站 / 彻底删除）：`window.confirm` 在 Tauri Android WebView 静默返回 false 导致操作无声取消（真机踩坑），全部弃用；回收站操作失败信息改为页面内可见
+- Android 返回键：弹层开着时先关最上层（详情 → 添加 → 同步 → 日议程 → 回收站），全部关闭后才退出应用
+
+### 修复
+- 移动端 `toast` 误作函数调用（实际是带 `show` 方法的对象）：回收站清空 / 恢复、同步提示等全部抛 `TypeError` 被 catch 吞掉——表现为「清空成功但界面不刷新、重进才对」；改 `toast.show` 后链路恢复，失败提示可见
+- 移动端节假日查询误用纯数据模块，异步装载后不触发重渲（日历永远不显示节日）——改响应式包装
+- 相邻月首日日号误用显示月份（10 月 1 日在 9 月网格显示「9月1日」）——按格子真实月份
+
 ## [1.2.0] - 2026-09-24
 
 ### 新增

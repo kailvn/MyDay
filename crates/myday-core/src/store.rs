@@ -775,12 +775,13 @@ impl Store {
             _ => None,
         };
 
-        // 提醒：显式集合优先；否则按设置补一条默认提醒（未来时间才生效）
+        // 提醒：显式集合优先；否则按设置补一条默认提醒（未来时间才生效）；
+        // skip_default_reminder = 显式「无」，跳过自动补（移动端提醒选择器）
         let mut reminders = new.reminders.clone();
         for r in &reminders {
             validate_reminder_spec(&r.spec)?;
         }
-        if reminders.is_empty() {
+        if reminders.is_empty() && !new.skip_default_reminder {
             let minutes = get_setting_on(&conn, "default_reminder_minutes")
                 .ok()
                 .flatten()
@@ -1606,8 +1607,9 @@ impl Store {
         let item = self.get_item(id)?;
         if item.deleted_at.is_none() {
             let conn = self.lock()?;
+            // updated_at 同步推进：LWW 只认时间戳,墓碑不推进就传不到对端
             conn.execute(
-                "UPDATE items SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                "UPDATE items SET deleted_at = ?2, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
                 params![id, dt(Utc::now())],
             )?;
         }
@@ -1619,9 +1621,10 @@ impl Store {
         let item = self.get_item(id)?;
         if item.deleted_at.is_some() {
             let conn = self.lock()?;
+            // updated_at 同步推进：否则「恢复」在对端看来仍是墓碑,会被再次删掉
             conn.execute(
-                "UPDATE items SET deleted_at = NULL WHERE id = ?1",
-                params![id],
+                "UPDATE items SET deleted_at = NULL, updated_at = ?2 WHERE id = ?1",
+                params![id, dt(Utc::now())],
             )?;
         }
         self.get_item(id)
@@ -1972,6 +1975,7 @@ impl Store {
             template_id: None,
             anchor_day: None,
             reminders,
+            skip_default_reminder: false,
             tags: task.tags.clone(),
             idempotency_key: None,
             extra,
@@ -2726,7 +2730,7 @@ impl Store {
     }
 
     /// 填充 tags / attachments / reminders。
-    fn hydrate(conn: &Connection, item: &mut Item) -> Result<()> {
+    pub(crate) fn hydrate(conn: &Connection, item: &mut Item) -> Result<()> {
         let mut stmt = conn.prepare(
             "SELECT t.name FROM item_tags it JOIN tags t ON t.id = it.tag_id \
              WHERE it.item_id = ?1 ORDER BY t.name",
@@ -2757,6 +2761,70 @@ impl Store {
         })?;
         item.reminders = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         drop(stmt);
+        Ok(())
+    }
+
+    /// [`Self::hydrate`] 的批量版：无论多少条，tags / attachments / reminders 各一批
+    /// 查询（SQLite 变量上限内分块），按 item_id 归还。同步整包交换场景用，
+    /// 避免「每条 3 查询」的 N+1。每条目内部的排序口径与单条版一致。
+    pub(crate) fn hydrate_many(conn: &Connection, items: &mut [Item]) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let idx: std::collections::HashMap<String, usize> = items
+            .iter()
+            .enumerate()
+            .map(|(i, it)| (it.id.clone(), i))
+            .collect();
+        let ids: Vec<String> = idx.keys().cloned().collect();
+        for chunk in ids.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+
+            let mut stmt = conn.prepare(&format!(
+                "SELECT it.item_id, t.name FROM item_tags it JOIN tags t ON t.id = it.tag_id \
+                 WHERE it.item_id IN ({placeholders}) ORDER BY t.name"
+            ))?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk), |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            for (item_id, name) in rows.collect::<std::result::Result<Vec<_>, _>>()? {
+                if let Some(i) = idx.get(&item_id) {
+                    items[*i].tags.push(name);
+                }
+            }
+            drop(stmt);
+
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, item_id, rel_path, mime, size, created_at FROM attachments \
+                 WHERE item_id IN ({placeholders}) ORDER BY created_at"
+            ))?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk), attachment_mapper)?;
+            for att in rows.collect::<std::result::Result<Vec<_>, _>>()? {
+                if let Some(i) = idx.get(&att.item_id) {
+                    items[*i].attachments.push(att);
+                }
+            }
+            drop(stmt);
+
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, item_id, spec, channel FROM reminders \
+                 WHERE item_id IN ({placeholders}) ORDER BY id"
+            ))?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk), |r| {
+                Ok(Reminder {
+                    id: r.get(0)?,
+                    item_id: r.get(1)?,
+                    spec: r.get(2)?,
+                    channel: r.get(3)?,
+                })
+            })?;
+            for rem in rows.collect::<std::result::Result<Vec<_>, _>>()? {
+                if let Some(i) = idx.get(&rem.item_id) {
+                    items[*i].reminders.push(rem);
+                }
+            }
+            drop(stmt);
+        }
         Ok(())
     }
 }
@@ -2978,7 +3046,7 @@ fn local_day_bounds_utc(day: NaiveDate) -> (String, String) {
     (dt(to_utc(start)), dt(to_utc(end)))
 }
 
-fn item_mapper(row: &Row) -> rusqlite::Result<Item> {
+pub(crate) fn item_mapper(row: &Row) -> rusqlite::Result<Item> {
     Ok(Item {
         id: row.get("id")?,
         item_type: match row.get::<_, String>("type")?.as_str() {
@@ -3055,7 +3123,7 @@ fn attachment_mapper(row: &Row) -> rusqlite::Result<Attachment> {
 }
 
 /// templates 行映射（列序：id, name, tag, defaults, note, sort, builtin, icon, item_type, pinned, fields）
-fn template_mapper(row: &Row) -> rusqlite::Result<Template> {
+pub(crate) fn template_mapper(row: &Row) -> rusqlite::Result<Template> {
     Ok(Template {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -3086,7 +3154,7 @@ fn template_mapper(row: &Row) -> rusqlite::Result<Template> {
 }
 
 /// field_defs 行映射（列序：id, name, kind, options, scope, sort, builtin）
-fn field_def_mapper(row: &Row) -> rusqlite::Result<FieldDef> {
+pub(crate) fn field_def_mapper(row: &Row) -> rusqlite::Result<FieldDef> {
     Ok(FieldDef {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -3146,7 +3214,7 @@ pub(crate) fn opt_dt(t: Option<DateTime<Utc>>) -> Option<String> {
 }
 
 /// 单次例外列存库格式：RFC3339 字符串的 JSON 数组；空集存 NULL。
-fn exdates_json(v: &[DateTime<Utc>]) -> Option<String> {
+pub(crate) fn exdates_json(v: &[DateTime<Utc>]) -> Option<String> {
     if v.is_empty() {
         return None;
     }

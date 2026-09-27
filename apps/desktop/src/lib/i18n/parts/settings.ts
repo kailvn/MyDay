@@ -3,6 +3,19 @@
  * key 基准：part_settings（中文），part_settings_en 与之一一对应。
  */
 export const part_settings = {
+  'settings.sync': '移动端同步',
+  'settings.syncHint': '手机与电脑在同一局域网（或 USB 网络共享 / 热点）时，可在手机端手动同步。无云端，数据不出局域网。',
+  'settings.syncStart': '开启同步服务',
+  'settings.syncStop': '停止同步服务',
+  'settings.syncRegen': '重新生成配对码',
+  'settings.syncStatus': '状态',
+  'settings.syncOn': '监听中',
+  'settings.syncOff': '未运行',
+  'settings.syncAddr': '地址',
+  'settings.syncToken': '配对码',
+  'settings.syncLast': '上次同步',
+  'settings.syncHint2': '冲突策略：两端同时改动同一条时，保留较新版本，另一版本存为带「同步冲突」标签的副本，不会丢失。',
+  'settings.syncQrHint': '手机端打开 ⇄ 同步弹层，点「扫码填写」对准此码——自动填入地址与配对码并立即同步。',
   // ---- SettingsView：数据与 IPC ----
   'settings.title': '设置',
   'settings.dataIpc': '数据与 IPC',
@@ -109,6 +122,19 @@ export const part_settings = {
 } as const;
 
 export const part_settings_en = {
+  'settings.sync': 'Mobile sync',
+  'settings.syncHint': 'With the phone on the same LAN (or USB tethering / hotspot), sync manually from the phone. No cloud — data never leaves the LAN.',
+  'settings.syncStart': 'Start sync server',
+  'settings.syncStop': 'Stop sync server',
+  'settings.syncRegen': 'Regenerate pairing code',
+  'settings.syncStatus': 'Status',
+  'settings.syncOn': 'Listening',
+  'settings.syncOff': 'Not running',
+  'settings.syncAddr': 'Address',
+  'settings.syncToken': 'Pairing code',
+  'settings.syncLast': 'Last sync',
+  'settings.syncHint2': 'Conflict policy: when both sides edit the same item, the newer wins and the other version is kept as a copy tagged with the sync-conflict label. Nothing is lost.',
+  'settings.syncQrHint': 'Open the sync sheet on the phone and tap "Scan QR code" aiming at this code — address and pairing code are filled in and a sync starts immediately.',
   // ---- SettingsView: data & IPC ----
   'settings.title': 'Settings',
   'settings.dataIpc': 'Data & IPC',

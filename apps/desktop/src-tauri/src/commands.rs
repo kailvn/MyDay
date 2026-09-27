@@ -4,14 +4,18 @@
 
 use base64::Engine;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "windows")]
+#[cfg(all(desktop, target_os = "windows"))]
 use std::process::Command;
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(desktop, not(target_os = "windows")))]
 use std::process::{Command, Stdio};
-use tauri::{Manager, State};
+#[cfg(desktop)]
+use tauri::Manager;
+use tauri::State;
 
 use myday_core::model::*;
-use myday_core::store::{ListFilter, Store, TaskView};
+#[cfg(desktop)]
+use myday_core::store::Store;
+use myday_core::store::{ListFilter, TaskView};
 
 use crate::AppState;
 
@@ -748,37 +752,40 @@ pub fn set_setting(
     state.store.set_setting(&key, &value).map_err(err_string)
 }
 
-/// 应用信息（设置页展示）。
+/// 应用信息（设置页展示）。移动端无 IPC socket / 显示后端概念，只报版本与数据目录。
 #[tauri::command]
 pub fn app_info(state: State<'_, AppState>) -> serde_json::Value {
-    serde_json::json!({
+    #[cfg(desktop)]
+    let mut info = serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "data_root": state.store.data_root().to_string_lossy(),
-        "socket_path": myday_core::socket_endpoint().unwrap_or_else(|e| e.to_string()),
+    });
+    #[cfg(not(desktop))]
+    let info = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "data_root": state.store.data_root().to_string_lossy(),
+    });
+    #[cfg(desktop)]
+    {
+        info["socket_path"] =
+            serde_json::json!(myday_core::socket_endpoint().unwrap_or_else(|e| e.to_string()));
         // 显示后端（OVERLAY-SPEC §2）：wayland = 原生降级（无置顶/定位），设置页提示用
-        "backend": if crate::platform::native_wayland() { "wayland" } else { "x11" },
-    })
-}
-
-// ----------------------------------------------------------------------
-// 文件链接：条目只记路径（extra["文件"]），不复制文件
-// ----------------------------------------------------------------------
-
-#[cfg(not(target_os = "windows"))]
-fn file_uri(p: &Path) -> String {
-    let mut out = String::from("file://");
-    for b in p.as_os_str().to_string_lossy().as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                out.push(*b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
+        info["backend"] = serde_json::json!(if crate::platform::native_wayland() {
+            "wayland"
+        } else {
+            "x11"
+        });
     }
-    out
+    info
 }
+
+// ----------------------------------------------------------------------
+// 文件链接：条目只记路径（extra["文件"]），不复制文件（桌面专属：
+// 依赖系统文件管理器 / xdg-open，移动端无此概念）
+// ----------------------------------------------------------------------
 
 /// 用系统默认程序打开文件 / 目录。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_file_path(path: String) -> std::result::Result<(), String> {
     let p = Path::new(&path);
@@ -797,6 +804,7 @@ pub fn path_is_dir(path: String) -> bool {
 
 /// 在文件管理器中定位文件（Windows 用 explorer /select；其余走 FileManager1 标准接口，
 /// 不可用时回退为打开所在目录）。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn reveal_file_path(path: String) -> std::result::Result<(), String> {
     let p = Path::new(&path);
@@ -808,6 +816,7 @@ pub fn reveal_file_path(path: String) -> std::result::Result<(), String> {
 
 /// 打开日志目录（设置 → 数据与 IPC）。目录可能尚不存在（还没写过日志），
 /// 先建出来再打开，保证「打开」一定有落点。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_log_dir() -> std::result::Result<(), String> {
     let dir = crate::logging::log_dir().ok_or("[INTERNAL] 日志未初始化")?;
@@ -817,6 +826,7 @@ pub fn open_log_dir() -> std::result::Result<(), String> {
 
 /// 开机自启当前状态（tauri-plugin-autostart：Linux 写 XDG autostart，
 /// Windows 写 HKCU Run 键）。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn get_autostart(app: tauri::AppHandle) -> std::result::Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
@@ -825,6 +835,7 @@ pub fn get_autostart(app: tauri::AppHandle) -> std::result::Result<bool, String>
         .map_err(|e| format!("[INTERNAL] {e}"))
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn set_autostart(app: tauri::AppHandle, enable: bool) -> std::result::Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
@@ -837,7 +848,7 @@ pub fn set_autostart(app: tauri::AppHandle, enable: bool) -> std::result::Result
 }
 
 /// 切换界面语言（设置页）：落库 + 托盘文案 / 副窗口标题即时跟随；
-/// 前端自己监听结果重渲染（i18n store 在前端）。
+/// 前端自己监听结果重渲染（i18n store 在前端）。移动端只落库，重渲染由前端完成。
 #[tauri::command]
 pub fn set_ui_lang(
     app: tauri::AppHandle,
@@ -852,11 +863,28 @@ pub fn set_ui_lang(
         .store
         .set_setting("ui_lang", &value)
         .map_err(err_string)?;
+    #[cfg(desktop)]
     crate::apply_language(&state.store, &app);
+    #[cfg(not(desktop))]
+    let _ = &app;
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn file_uri(p: &Path) -> String {
+    let mut out = String::from("file://");
+    for b in p.as_os_str().to_string_lossy().as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(*b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
 fn reveal_impl(p: &Path) -> std::result::Result<(), String> {
     // explorer.exe 对 /select 总是返回非零退出码，spawn 成功即视为已打开。
     let win_path = p.as_os_str().to_string_lossy().replace('/', "\\");
@@ -867,7 +895,7 @@ fn reveal_impl(p: &Path) -> std::result::Result<(), String> {
         .map_err(|e| format!("[IO] 定位文件失败: {e}"))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(desktop, target_os = "windows"))]
 fn open_with_default(p: &Path) -> std::result::Result<(), String> {
     // `start` 把第一个带引号的参数当窗口标题，必须先补一个空标题。
     let win_path = p.as_os_str().to_string_lossy().replace('/', "\\");
@@ -879,7 +907,7 @@ fn open_with_default(p: &Path) -> std::result::Result<(), String> {
         .map_err(|e| format!("[IO] 打开失败: {e}"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(desktop, not(target_os = "windows")))]
 fn open_with_default(p: &Path) -> std::result::Result<(), String> {
     Command::new("xdg-open")
         .arg(p)
@@ -888,7 +916,7 @@ fn open_with_default(p: &Path) -> std::result::Result<(), String> {
         .map_err(|e| format!("[IO] 打开失败: {e}"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(desktop, not(target_os = "windows")))]
 fn reveal_impl(p: &Path) -> std::result::Result<(), String> {
     let uri = file_uri(p);
     let shown = Command::new("gdbus")
@@ -921,6 +949,7 @@ fn reveal_impl(p: &Path) -> std::result::Result<(), String> {
 }
 
 /// 主窗口内的快速添加入口：弹出快速窗口并预填。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_quick_add(
     app: tauri::AppHandle,
@@ -933,11 +962,13 @@ pub fn open_quick_add(
 }
 
 // ----------------------------------------------------------------------
-// 今日悬浮窗（OVERLAY-SPEC）：求值在 myday_core::overlay，窗口控制走
-// 自定义 Rust 命令（§2.2 决策 D4），配置存 settings KV（key 统一 overlay. 前缀）
+// 今日悬浮窗（OVERLAY-SPEC，桌面专属窗口形态，移动端整段不编译）：求值在
+// myday_core::overlay，窗口控制走自定义 Rust 命令（§2.2 决策 D4），配置存
+// settings KV（key 统一 overlay. 前缀）
 // ----------------------------------------------------------------------
 
 /// 悬浮窗自定义位置（逻辑坐标）。
+#[cfg(desktop)]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OverlayPos {
     pub x: f64,
@@ -945,6 +976,7 @@ pub struct OverlayPos {
 }
 
 /// 悬浮窗自定义尺寸（逻辑坐标，OVERLAY-SPEC v1.1 §3）。
+#[cfg(desktop)]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OverlaySize {
     pub w: f64,
@@ -952,11 +984,16 @@ pub struct OverlaySize {
 }
 
 /// 尺寸下限（内容可读的最低保障）与上限（防呆）。
+#[cfg(desktop)]
 const OVERLAY_MIN_W: f64 = 220.0;
+#[cfg(desktop)]
 const OVERLAY_MIN_H: f64 = 280.0;
+#[cfg(desktop)]
 const OVERLAY_MAX_W: f64 = 1200.0;
+#[cfg(desktop)]
 const OVERLAY_MAX_H: f64 = 1600.0;
 
+#[cfg(desktop)]
 fn clamp_overlay_size(w: f64, h: f64) -> OverlaySize {
     OverlaySize {
         w: w.clamp(OVERLAY_MIN_W, OVERLAY_MAX_W),
@@ -965,6 +1002,7 @@ fn clamp_overlay_size(w: f64, h: f64) -> OverlaySize {
 }
 
 /// 悬浮窗配置（整体读写 JSON，§6；缺省值见 [`OverlayConfig::default`]）。
+#[cfg(desktop)]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct OverlayConfig {
@@ -985,6 +1023,7 @@ pub struct OverlayConfig {
     pub expand_summary: bool,
 }
 
+#[cfg(desktop)]
 impl Default for OverlayConfig {
     fn default() -> Self {
         Self {
@@ -1001,8 +1040,10 @@ impl Default for OverlayConfig {
 }
 
 /// 合法 show 分档白名单。
+#[cfg(desktop)]
 const OVERLAY_SHOW: [&str; 3] = ["all", "events", "tasks"];
 
+#[cfg(desktop)]
 fn normalize_overlay_show(v: &str) -> String {
     if OVERLAY_SHOW.contains(&v) {
         v.to_string()
@@ -1011,6 +1052,7 @@ fn normalize_overlay_show(v: &str) -> String {
     }
 }
 
+#[cfg(desktop)]
 pub(crate) fn overlay_config(store: &Store) -> std::result::Result<OverlayConfig, String> {
     let get = |k: &str| store.get_setting(k).map_err(err_string).unwrap_or(None);
     Ok(OverlayConfig {
@@ -1039,6 +1081,7 @@ pub(crate) fn overlay_config(store: &Store) -> std::result::Result<OverlayConfig
     })
 }
 
+#[cfg(desktop)]
 fn save_overlay_config(store: &Store, cfg: &OverlayConfig) -> std::result::Result<(), String> {
     store
         .set_setting("overlay.enabled", &cfg.enabled.to_string())
@@ -1094,6 +1137,7 @@ fn save_overlay_config(store: &Store, cfg: &OverlayConfig) -> std::result::Resul
 }
 
 /// 托盘复选项与配置保持同步（设置页改动后托盘勾选状态跟随）。
+#[cfg(desktop)]
 pub(crate) fn sync_tray(app: &tauri::AppHandle, cfg: &OverlayConfig) {
     if let Some(menu) = app.try_state::<crate::OverlayTrayMenu>() {
         let _ = menu.show.set_checked(cfg.enabled);
@@ -1101,12 +1145,14 @@ pub(crate) fn sync_tray(app: &tauri::AppHandle, cfg: &OverlayConfig) {
     }
 }
 
+#[cfg(desktop)]
 fn overlay_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     app.get_webview_window("overlay")
 }
 
 /// 计算悬浮窗应落的位置（逻辑坐标）：custom_pos 优先，否则按 corner 吸附
 /// 工作区（扣任务栏）边缘，边距 12 逻辑像素；任何来源都做边界收敛（§3）。
+#[cfg(desktop)]
 fn overlay_target_position(
     win: &tauri::WebviewWindow,
     cfg: &OverlayConfig,
@@ -1152,6 +1198,7 @@ fn overlay_target_position(
 
 /// 把 locked / size / corner / custom_pos 落到真实窗口（§7）。原生 Wayland
 /// 降级时跳过定位（合成器接管移动，坐标语义不稳），尺寸仍尝试设置。
+#[cfg(desktop)]
 fn apply_overlay_window_state(
     app: &tauri::AppHandle,
     cfg: &OverlayConfig,
@@ -1175,6 +1222,7 @@ fn apply_overlay_window_state(
 }
 
 /// 配置变更后的共同收尾：托盘同步 + 窗口状态落地 + 前端广播。
+#[cfg(desktop)]
 fn after_overlay_config_change(
     app: &tauri::AppHandle,
     cfg: &OverlayConfig,
@@ -1187,6 +1235,7 @@ fn after_overlay_config_change(
 }
 
 /// 今日悬浮窗数据（OVERLAY-SPEC §4 求值，语义唯一实现在 myday-core）。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn overlay_today(
     state: State<'_, AppState>,
@@ -1195,6 +1244,7 @@ pub fn overlay_today(
     myday_core::overlay::today_overlay(&state.store, today).map_err(err_string)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn get_overlay_config(
     state: State<'_, AppState>,
@@ -1202,6 +1252,7 @@ pub fn get_overlay_config(
     overlay_config(&state.store)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn set_overlay_config(
     app: tauri::AppHandle,
@@ -1213,6 +1264,7 @@ pub fn set_overlay_config(
 }
 
 /// 锁定（穿透）开关：托盘「悬浮窗锁定」与设置页共用。
+#[cfg(desktop)]
 pub(crate) fn set_overlay_locked(
     app: &tauri::AppHandle,
     store: &Store,
@@ -1226,6 +1278,7 @@ pub(crate) fn set_overlay_locked(
 
 /// 显示 / 隐藏悬浮窗（托盘与主窗口设置共用）。`persist` = 是否写
 /// `overlay.enabled`（托盘开关持久化；启动恢复与 --overlay 唤起不写）。
+#[cfg(desktop)]
 pub(crate) fn set_overlay_visible(
     app: &tauri::AppHandle,
     store: &Store,
@@ -1254,6 +1307,7 @@ pub(crate) fn set_overlay_visible(
     Ok(())
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn overlay_set_visible(
     app: tauri::AppHandle,
@@ -1264,6 +1318,7 @@ pub fn overlay_set_visible(
 }
 
 /// 拖动结束后持久化当前位置（前端 onMoved 防抖后调用；§3 位置持久化）。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn overlay_save_drag_pos(
     app: tauri::AppHandle,
@@ -1291,6 +1346,7 @@ pub fn overlay_save_drag_pos(
 }
 
 /// 拖边调整尺寸后持久化当前大小（前端 onResized 防抖后调用；v1.1 §3/§6）。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn overlay_save_resize_size(
     app: tauri::AppHandle,
@@ -1316,6 +1372,7 @@ pub fn overlay_save_resize_size(
 }
 
 /// 悬浮窗点击条目 / 摘要行：前置主窗口（P1 不做定位联动，§5.4）。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn overlay_show_main(app: tauri::AppHandle) -> std::result::Result<(), String> {
     crate::show_main(&app);
@@ -1323,6 +1380,7 @@ pub fn overlay_show_main(app: tauri::AppHandle) -> std::result::Result<(), Strin
 }
 
 /// 窗口状态重放（前端配置面板 / 独立调用）：重读配置落到真实窗口。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn overlay_apply_window_state(
     app: tauri::AppHandle,
@@ -1330,4 +1388,193 @@ pub fn overlay_apply_window_state(
 ) -> std::result::Result<(), String> {
     let cfg = overlay_config(&state.store)?;
     apply_overlay_window_state(&app, &cfg)
+}
+
+/// invoke 命令注册表：桌面 / 移动共用同一张表。
+/// 数据面命令两端可用；窗口 / 托盘 / IPC / 文件管理器相关命令在条目上标注
+/// `#[cfg(desktop)]`（generate_handler 会把属性转写到 match 分支，移动构建时
+/// 整条剔除，不需要维护第二张表）。
+pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // ---- 条目 CRUD 与视图查询（两端共用）----
+        list_items,
+        list_items_window,
+        tasks_view,
+        get_item,
+        add_item,
+        update_item,
+        delete_item,
+        list_trash,
+        restore_item,
+        purge_item,
+        empty_trash,
+        import_ics,
+        detach_occurrence,
+        skip_occurrence,
+        complete_task,
+        snooze,
+        search_items,
+        list_templates,
+        add_template,
+        update_template,
+        delete_template,
+        move_template,
+        set_template_pinned,
+        list_field_defs,
+        add_field_def,
+        update_field_def,
+        delete_field_def,
+        count_items_with_field,
+        list_deleted_field_defs,
+        purge_deleted_field_defs,
+        add_attachment_b64,
+        attachment_abs_path,
+        get_setting,
+        set_setting,
+        check_conflict,
+        stats_summary,
+        view_list,
+        view_get,
+        view_create,
+        view_save,
+        view_delete,
+        view_reset,
+        view_duplicate,
+        query_view,
+        query_stats_page,
+        stats_restore_defaults,
+        reminder_history,
+        reminder_unread,
+        mark_reminders_seen,
+        convert_task_to_event,
+        event_to_log,
+        export_ics,
+        backup_zip,
+        load_holidays_json,
+        save_holidays_json,
+        reset_holidays_json,
+        app_info,
+        path_is_dir,
+        set_ui_lang,
+        // ---- 桌面专属：文件管理器 / 自启 / 快速窗口 / 托盘悬浮窗 ----
+        #[cfg(desktop)]
+        sync_server_info,
+        #[cfg(desktop)]
+        sync_server_toggle,
+        #[cfg(desktop)]
+        sync_server_token_regen,
+        #[cfg(mobile)]
+        crate::sync_client::sync_run,
+        #[cfg(desktop)]
+        open_file_path,
+        #[cfg(desktop)]
+        reveal_file_path,
+        #[cfg(desktop)]
+        open_log_dir,
+        #[cfg(desktop)]
+        get_autostart,
+        #[cfg(desktop)]
+        set_autostart,
+        #[cfg(desktop)]
+        open_quick_add,
+        #[cfg(desktop)]
+        overlay_today,
+        #[cfg(desktop)]
+        get_overlay_config,
+        #[cfg(desktop)]
+        set_overlay_config,
+        #[cfg(desktop)]
+        overlay_apply_window_state,
+        #[cfg(desktop)]
+        overlay_set_visible,
+        #[cfg(desktop)]
+        overlay_save_drag_pos,
+        #[cfg(desktop)]
+        overlay_save_resize_size,
+        #[cfg(desktop)]
+        overlay_show_main,
+    ]
+}
+
+// ----------------------------------------------------------------------
+// 桌面同步服务管理（设置 → 移动端同步；移动端同款合并逻辑见 core::sync）
+// ----------------------------------------------------------------------
+
+/// 桌面设置页的同步状态面板（enabled=意图,running=实际监听中）。
+#[cfg(desktop)]
+#[tauri::command]
+pub fn sync_server_info(state: State<'_, AppState>, app: tauri::AppHandle) -> serde_json::Value {
+    let get = |k: &str| {
+        state
+            .store
+            .get_setting(k)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    };
+    serde_json::json!({
+        "enabled": get("sync.enabled") == "true",
+        "running": crate::sync_server::server_running(&app),
+        "ip": crate::sync_server::primary_lan_ip(),
+        "port": myday_core::sync::SYNC_PORT,
+        "token": get("sync.token"),
+        // 注意:与服务端会话写入的 settings 键一致(core sync LAST_SYNC_KEY)
+        "last_sync": get("sync.last_sync_at"),
+    })
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn sync_server_toggle(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    enable: bool,
+) -> Result<serde_json::Value, String> {
+    let token = {
+        let existing = state
+            .store
+            .get_setting("sync.token")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if existing.is_empty() {
+            let nt = crate::sync_server::new_token();
+            state
+                .store
+                .set_setting("sync.token", &nt)
+                .map_err(err_string)?;
+            nt
+        } else {
+            existing
+        }
+    };
+    if enable {
+        crate::sync_server::server_start(&app, state.store.clone(), token).await?;
+    } else {
+        crate::sync_server::server_stop(&app);
+    }
+    state
+        .store
+        .set_setting("sync.enabled", &enable.to_string())
+        .map_err(err_string)?;
+    Ok(sync_server_info(state, app))
+}
+
+/// 重新生成配对码(旧码立即失效;客户端需重填)。
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn sync_server_token_regen(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let nt = crate::sync_server::new_token();
+    state
+        .store
+        .set_setting("sync.token", &nt)
+        .map_err(err_string)?;
+    // 运行中则热重启,立刻用上新码
+    if crate::sync_server::server_running(&app) {
+        crate::sync_server::server_start(&app, state.store.clone(), nt.clone()).await?;
+    }
+    Ok(sync_server_info(state, app))
 }

@@ -118,6 +118,8 @@ export interface NewItem {
   /** 模板时间占位的解析锚点日（YYYY-MM-DD 本地日；缺省今天，一般不用传） */
   anchor_day?: string | null;
   reminders?: NewReminder[];
+  /** 显式「无提醒」：reminders 为空时跳过按设置自动补默认提醒（移动端选「无」用） */
+  skip_default_reminder?: boolean;
   tags?: string[];
   idempotency_key?: string | null;
   /** 字段值（键 = 字段 id） */
@@ -622,7 +624,32 @@ export const api = {
   overlayShowMain: () => invoke<void>("overlay_show_main"),
   appInfo: () =>
     invoke<{ version: string; data_root: string; socket_path: string; backend?: string }>("app_info"),
+
+  // ---- 局域网同步(桌面=服务端管理;手机=客户端) ----
+  syncServerInfo: () => invoke<SyncServerInfo>("sync_server_info"),
+  syncServerToggle: (enable: boolean) => invoke<SyncServerInfo>("sync_server_toggle", { enable }),
+  syncServerTokenRegen: () => invoke<SyncServerInfo>("sync_server_token_regen"),
+  syncRun: (server: string | null, token: string) =>
+    invoke<SyncRunReport>("sync_run", { server: server ?? null, token }),
 };
+
+export interface SyncServerInfo {
+  enabled: boolean;
+  running: boolean;
+  ip: string | null;
+  port: number;
+  token: string;
+  last_sync: string;
+}
+
+export interface SyncRunReport {
+  base: string;
+  pulled: number;
+  conflicts_in: number;
+  pushed: number;
+  conflicts_server: number;
+  last_sync: string | null;
+}
 
 // ----------------------------------------------------------------------
 // 展示工具

@@ -1,10 +1,11 @@
 <script lang="ts">
   /** 需求 §12：设置（数据目录 / IPC / 默认提醒 / 全局快捷键 / 今日悬浮窗）。
    *  模板与字段管理在「模板」页。 */
-  import { api, type OverlayConfig } from "../api";
+  import { api, type OverlayConfig, type SyncServerInfo } from "../api";
   import { toast } from "../toast.svelte";
   import { holidaysMeta, importHolidaysJson, resetHolidays } from "../holidays.svelte";
   import { t, i18n, setLocale, type Locale } from "../i18n";
+  import { renderSVG } from "uqr";
 
   let info = $state<{ version: string; data_root: string; socket_path: string; backend?: string } | null>(null);
   let reminderMinutes = $state("10");
@@ -15,6 +16,14 @@
 
   // 通用：开机自启（Linux XDG autostart / Windows Run 键）
   let autostart = $state(false);
+
+  // 移动端同步服务
+  let sync = $state<SyncServerInfo | null>(null);
+  let syncing = $state(false);
+  /** 服务监听中：二维码 = myday-sync://ip:port/token，手机端「扫码填写」一次配对 */
+  const syncQr = $derived(
+    sync?.running && sync.ip ? renderSVG(`myday-sync://${sync.ip}:${sync.port}/${sync.token}`) : null,
+  );
 
   // 今日悬浮窗（OVERLAY-SPEC §6/§9.6）
   let overlayCfg = $state<OverlayConfig | null>(null);
@@ -35,6 +44,7 @@
     catchupMinutes = (await api.getSetting("reminder_catchup_minutes")) ?? "120";
     overlayCfg = await api.getOverlayConfig().catch(() => null);
     autostart = await api.getAutostart().catch(() => false);
+    sync = await api.syncServerInfo().catch(() => null);
     refreshHolidayMeta();
   }
 
@@ -53,6 +63,7 @@
     } catch (e) {
       toast.show(t("settings.autostartFailed", { e: String(e) }));
       autostart = await api.getAutostart().catch(() => false);
+    sync = await api.syncServerInfo().catch(() => null);
     }
   }
 
@@ -249,6 +260,65 @@
     <p class="hint">{t("settings.icsImportHint")}</p>
   </section>
 {/if}
+
+<section data-testid="sync-section">
+  <h2>{t("settings.sync")}</h2>
+  <p class="hint">{t("settings.syncHint")}</p>
+  <div class="actions">
+    <button
+      class="primary"
+      disabled={!sync || syncing}
+      onclick={async () => {
+        if (!sync) return;
+        syncing = true;
+        try {
+          sync = await api.syncServerToggle(!sync.enabled);
+        } catch (e) {
+          toast.show(String(e));
+        } finally {
+          syncing = false;
+        }
+      }}
+    >
+      {sync?.enabled ? t("settings.syncStop") : t("settings.syncStart")}
+    </button>
+    <button
+      disabled={!sync || syncing}
+      onclick={async () => {
+        if (!sync) return;
+        syncing = true;
+        try {
+          sync = await api.syncServerTokenRegen();
+        } catch (e) {
+          toast.show(String(e));
+        } finally {
+          syncing = false;
+        }
+      }}
+    >
+      {t("settings.syncRegen")}
+    </button>
+  </div>
+  {#if sync}
+    <dl>
+      <dt>{t("settings.syncStatus")}</dt>
+      <dd>{sync.running ? t("settings.syncOn") : t("settings.syncOff")}</dd>
+      <dt>{t("settings.syncAddr")}</dt>
+      <dd><code>{sync.ip ?? "?"}:{sync.port}</code></dd>
+      <dt>{t("settings.syncToken")}</dt>
+      <dd><code>{sync.token || "—"}</code></dd>
+      <dt>{t("settings.syncLast")}</dt>
+      <dd>{sync.last_sync || "—"}</dd>
+    </dl>
+    <p class="hint">{t("settings.syncHint2")}</p>
+    {#if syncQr}
+      <div class="qrrow">
+        <div class="qr" data-testid="sync-qr">{@html syncQr}</div>
+        <p class="hint">{t("settings.syncQrHint")}</p>
+      </div>
+    {/if}
+  {/if}
+</section>
 
 <section>
   <h2>{t("settings.holidays")}</h2>
@@ -503,5 +573,27 @@
   .ics-report {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .qrrow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 12px;
+  }
+  /* 白底衬 QR（深色主题下保证对比度与静区） */
+  .qr {
+    flex: none;
+    background: #fff;
+    padding: 8px;
+    border-radius: 8px;
+  }
+  .qr :global(svg) {
+    display: block;
+    width: 148px;
+    height: 148px;
+  }
+  .qrrow .hint {
+    max-width: 34em;
   }
 </style>

@@ -10,6 +10,7 @@ import { part_help_en } from "./parts/help";
 import { part_chrome_en } from "./parts/chrome";
 import { part_calendar_en } from "./parts/calendar";
 import { part_panel_en } from "./parts/panel";
+import { part_mobile_en } from "./parts/mobile";
 
 export const en: Record<MessageKey, string> = {
   ...part_common_en,
@@ -22,4 +23,5 @@ export const en: Record<MessageKey, string> = {
   ...part_chrome_en,
   ...part_calendar_en,
   ...part_panel_en,
+  ...part_mobile_en,
 };

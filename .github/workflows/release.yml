@@ -1,7 +1,9 @@
-# 发布工作流：推 v* tag 触发，双平台构建并自动创建 GitHub Release。
-# 产物不签名（公开早期零成本方案）：Windows 下载会有 SmartScreen 提示，
+# 发布工作流：推 v* tag 触发，三端构建并自动创建 GitHub Release。
+# 桌面产物不签名（公开早期零成本方案）：Windows 下载会有 SmartScreen 提示，
 # Release 附 SHA256SUMS.txt 供校验；接入 Azure Trusted Signing 时在
 # tauri.conf.json 加 bundle.windows.trustedSigning 并在此补环境变量即可。
+# Android APK 用密钥库签名（Secrets：ANDROID_KEYSTORE_B64 = base64 密钥库、
+# ANDROID_KEYSTORE_PASS = 密钥库密码；未配置时发布未签名测试包并告警）。
 name: Release
 
 on:
@@ -47,7 +49,7 @@ jobs:
       - name: pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 12
 
       - name: Node 22
         uses: actions/setup-node@v4
@@ -77,10 +79,85 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 NDK
+        run: sdkmanager --install "ndk;27.2.12479018" > /dev/null
+
+      - name: Rust 工具链（Android arm64）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-android
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: 前端依赖
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      # gen/ 不入库：CI 首次构建先按 tauri.conf 生成 Android 工程
+      - name: 初始化 Android 工程
+        working-directory: apps/desktop
+        run: test -d src-tauri/gen/android || pnpm tauri android init
+
+      - name: 构建 APK（arm64 release）
+        working-directory: apps/desktop
+        run: pnpm tauri android build --apk --target aarch64-linux-android
+
+      - name: 签名
+        env:
+          MYDAY_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          MYDAY_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+        run: |
+          unsigned=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -name '*release-unsigned.apk' | head -1)
+          ver=$(node -p "require('./package.json').version")
+          if [ -z "$MYDAY_KEYSTORE_B64" ]; then
+            echo "::warning::未配置 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASS，发布未签名测试包"
+            cp "$unsigned" "MyDay_${ver}_android.apk"
+          else
+            echo "$MYDAY_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+            MYDAY_KEYSTORE="$RUNNER_TEMP/keystore.jks" \
+              MYDAY_KEYSTORE_PASS="$MYDAY_KEYSTORE_PASS" \
+              ../../scripts/sign-android-apk.sh "$unsigned" "MyDay_${ver}_android.apk"
+          fi
+
+      - name: 发布 APK 到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MyDay_*_android.apk
+
   checksums:
-    # 两个平台都发布完成后，下载产物生成 SHA256SUMS.txt 挂回 Release。
+    # 所有平台发布完成后，下载产物生成 SHA256SUMS.txt 挂回 Release。
     # 本 job 不 checkout，gh 必须显式 -R 指定仓库
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - name: 生成并上传 SHA256SUMS
@@ -91,7 +168,7 @@ jobs:
         run: |
           mkdir dist
           gh release download --repo "$REPO" "$TAG" --dir dist --clobber \
-            --pattern '*.deb' --pattern '*.exe' --pattern '*.msi'
+            --pattern '*.deb' --pattern '*.exe' --pattern '*.msi' --pattern '*.apk'
           cd dist
           sha256sum * > SHA256SUMS.txt
           cd ..

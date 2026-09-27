@@ -25,6 +25,7 @@ pub mod paths;
 pub mod recurrence;
 pub mod reminder;
 pub mod store;
+pub mod sync;
 pub mod tpltime;
 pub mod view;
 

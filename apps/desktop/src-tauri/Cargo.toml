@@ -21,9 +21,26 @@ serde_json.workspace = true
 chrono.workspace = true
 base64 = "0.22"
 tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+
+# 桌面专属能力（托盘 / 单实例 / 自启 / DBus 通知）不进移动端编译；
+# `tray-icon` feature 同样只对桌面目标生效（同包多段声明，feature 取并集）
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 notify-rust = "4"
+# 桌面同步服务（局域网 HTTP 双端点）
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1", default-features = false, features = ["net", "sync"] }
+uuid.workspace = true
+
+# 移动端系统通知（桌面提醒走 notify-rust 动作按钮，见 reminder_loop）
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-notification = "2"
+# 手机端扫码配对：扫桌面端二维码自动填地址 + 配对码
+tauri-plugin-barcode-scanner = "2"
+# 手机端同步客户端（HTTP + Bearer，走原生栈不经 WebView，免明文限制）
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 [features]
 default = []
