@@ -91,11 +91,13 @@ jobs:
           java-version: 21
 
       # 不用 setup-android@v3：其与 cmdline-tools 16 不兼容（尝试安装已废弃的
-      # 'tools' 包）；runner 预装 SDK 直接用，这里只接受许可并补 NDK
+      # 'tools' 包）；runner 预装 SDK 直接用，这里只接受许可并补 NDK。
+      # sdkmanager 不在 PATH 且无 latest 软链——探测版本目录取最新
       - name: 接受 SDK 许可并安装 NDK
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "ndk;27.2.12479018" > /dev/null
+          sdkm=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$sdkm" --licenses > /dev/null 2>&1 || true
+          "$sdkm" --install "ndk;27.2.12479018" > /dev/null
 
       - name: Rust 工具链（Android arm64）
         uses: dtolnay/rust-toolchain@stable

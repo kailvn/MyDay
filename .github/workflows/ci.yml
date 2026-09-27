@@ -104,8 +104,9 @@ jobs:
       # 通过 CC_<target> 指到 NDK 的 API wrapper（无需完整 Android 构建）
       - name: 安装 NDK
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "ndk;27.2.12479018" > /dev/null
+          sdkm=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$sdkm" --licenses > /dev/null 2>&1 || true
+          "$sdkm" --install "ndk;27.2.12479018" > /dev/null
 
       - name: 交叉编译检查
         run: |
