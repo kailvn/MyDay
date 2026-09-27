@@ -142,7 +142,7 @@ jobs:
         run: |
           unsigned=$(find src-tauri/gen/android/app/build/outputs/apk \
             -name '*release-unsigned.apk' | head -1)
-          ver=$(node -p "require('./package.json').version")
+          ver=$(node -p "require('./apps/desktop/package.json').version")
           if [ -z "$MYDAY_KEYSTORE_B64" ]; then
             echo "::warning::未配置 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASS，发布未签名测试包"
             cp "$unsigned" "MyDay_${ver}_android.apk"
