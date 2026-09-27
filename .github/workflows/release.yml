@@ -140,7 +140,7 @@ jobs:
           MYDAY_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           MYDAY_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
         run: |
-          unsigned=$(find src-tauri/gen/android/app/build/outputs/apk \
+          unsigned=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk \
             -name '*release-unsigned.apk' | head -1)
           ver=$(node -p "require('./apps/desktop/package.json').version")
           if [ -z "$MYDAY_KEYSTORE_B64" ]; then
@@ -150,7 +150,7 @@ jobs:
             echo "$MYDAY_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
             MYDAY_KEYSTORE="$RUNNER_TEMP/keystore.jks" \
               MYDAY_KEYSTORE_PASS="$MYDAY_KEYSTORE_PASS" \
-              ../../scripts/sign-android-apk.sh "$unsigned" "MyDay_${ver}_android.apk"
+              scripts/sign-android-apk.sh "$unsigned" "MyDay_${ver}_android.apk"
           fi
 
       - name: 发布 APK 到 Release
