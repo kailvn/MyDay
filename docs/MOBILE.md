@@ -189,6 +189,10 @@ pnpm tauri android build         # 出 APK/AAB
 
 ## 已知边界 / 后续路线
 
+> 真机调试的网络 / adb / shell 环境坑（vite 绑定失效 IP、git push 间歇失败、
+> pkill 自匹配、input text 只支持 ASCII 等）统一记录在
+> [docs/NETWORK-TROUBLESHOOTING.md](NETWORK-TROUBLESHOOTING.md)。
+
 - **identifier 仍是 `dev.myday.desktop`**：它就是 Android applicationId，上架前必须定稿
   （改了影响数据目录与升级路径）；当前先不动。
 - ~~**提醒未接**~~：已接入——移动端通知走 `tauri-plugin-notification`（main.ts 启动申请
