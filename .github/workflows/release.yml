@@ -154,9 +154,14 @@ jobs:
           fi
 
       - name: 发布 APK 到 Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: MyDay_*_android.apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "MyDay $TAG" --generate-notes
+          gh release upload "$TAG" MyDay_*_android.apk --clobber --repo "$GITHUB_REPOSITORY"
 
   checksums:
     # 所有平台发布完成后，下载产物生成 SHA256SUMS.txt 挂回 Release。
