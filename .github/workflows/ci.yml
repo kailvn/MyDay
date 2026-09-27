@@ -100,5 +100,17 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
+      # aws-lc-sys（reqwest 加密后端）交叉编译需要 NDK clang：
+      # 通过 CC_<target> 指到 NDK 的 API wrapper（无需完整 Android 构建）
+      - name: 安装 NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "ndk;27.2.12479018" > /dev/null
+
       - name: 交叉编译检查
-        run: cargo check -p myday-desktop --target aarch64-linux-android
+        run: |
+          ndk_bin="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$ndk_bin/aarch64-linux-android21-clang"
+          export CXX_aarch64_linux_android="$ndk_bin/aarch64-linux-android21-clang++"
+          export AR_aarch64_linux_android="$ndk_bin/llvm-ar"
+          cargo check -p myday-desktop --target aarch64-linux-android
