@@ -130,6 +130,15 @@ jobs:
         working-directory: apps/desktop
         run: test -d src-tauri/gen/android || pnpm tauri android init
 
+      # 闹钟全屏亮屏：MainActivity 须声明 showWhenLocked/turnScreenOn（AOSP 标准要求，
+      # gen/ 不入库所以每次 init 后都要重打；幂等，见 docs/MOBILE.md §9.10）
+      - name: 补丁：MainActivity 亮屏声明
+        working-directory: apps/desktop/src-tauri/gen/android
+        run: |
+          f=app/src/main/AndroidManifest.xml
+          grep -q showWhenLocked "$f" || sed -i 's|android:name=".MainActivity"|android:name=".MainActivity"\n            android:showWhenLocked="true"\n            android:turnScreenOn="true"|' "$f"
+          grep -q showWhenLocked "$f"
+
       - name: 构建 APK（arm64 release）
         working-directory: apps/desktop
         # tauri CLI 的 --target 用 Android 短名（aarch64 = aarch64-linux-android）

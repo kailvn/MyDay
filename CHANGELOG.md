@@ -4,7 +4,7 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 功能详情见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
-## [Unreleased]
+## [1.4.0] - 2026-09-28
 
 ### 新增
 - 提醒档位（schema v8）：提醒通道 `channel` 落地语义——`notify` = 系统通知 / `alarm` = 闹钟，「不提醒」= 不建提醒行；桌面条目面板每条提醒行可直接切换档位，移动端快速添加新增「方式」选择（通知 / 闹钟），条目详情按档位显示 🔔 / ⏰
