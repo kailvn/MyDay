@@ -97,6 +97,14 @@ export const part_misc = {
   "holiday.in_progress": "{name}假期 第 {index}/{total} 天",
   "holiday.last_workday": "今天是{name}前最后一个工作日",
   "holiday.countdown": "距 {name} 假期还有 {days} 天",
+  // ---- 闹钟弹窗（桌面 alarm 档）----
+  "alarm.title": "闹钟",
+  "alarm.complete": "完成",
+  "alarm.snooze": "稍后 10 分钟",
+  "alarm.open": "打开",
+  "alarm.dismiss": "忽略",
+  "alarm.empty": "全部处理完毕，可关闭此窗口",
+
 } as const;
 
 export const part_misc_en = {
@@ -189,4 +197,12 @@ export const part_misc_en = {
   "holiday.in_progress": "{name} holiday: day {index} of {total}",
   "holiday.last_workday": "Today is the last workday before {name}",
   "holiday.countdown": "{days} days until {name}",
+
+  // ---- 闹钟弹窗（桌面 alarm 档）----
+  "alarm.title": "Alarm",
+  "alarm.complete": "Done",
+  "alarm.snooze": "Snooze 10 min",
+  "alarm.open": "Open",
+  "alarm.dismiss": "Dismiss",
+  "alarm.empty": "All handled — you can close this window",
 };

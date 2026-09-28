@@ -52,12 +52,26 @@ pub fn column_default_keys() -> &'static [&'static str] {
     COLUMN_DEFAULT_KEYS
 }
 
-/// 当前库结构版本。v7：items.recurrence_exdates 单次例外列（附加式迁移）。
-const SCHEMA_VERSION: i64 = 7;
+/// 发生时刻扫描窗口（提醒扫描唯一实现的过滤参数）。
+enum ScanWindow {
+    /// 到期扫描：at <= now 且未标记（桌面提醒环）。
+    Due,
+    /// 系统调度扫描（移动端）：未来 look_ahead 内未标记 ∪ 过去 grace 内未标记。
+    Scheduled { look_ahead: chrono::Duration, grace: chrono::Duration },
+}
+
+/// 当前库结构版本。v8：reminders 表重建 —— channel 收敛为 notify/alarm（提醒档位
+/// 落地：通知 / 闹钟），补 reminder_log(remind_at) 索引。经用户批准的一次性重建
+/// （SQLite 官方 12 步recipe，迁移前先 VACUUM INTO 备份）。
+const SCHEMA_VERSION: i64 = 8;
 
 /// 迁移基线：v4 = 「只追加迁移，永不重建」政策的起点（1.0 数据承诺）。
-/// 基线及以上的库升级只允许走 MIGRATIONS 链；DROP 重建只属于更旧的遗留库。
+/// 基线及以上的库升级默认只走 MIGRATIONS 链；重建仅限用户明确批准的场景
+/// （v8 是首例，迁移前自动备份），其余 DROP 重建只属于更旧的遗留库。
 const MIGRATION_BASELINE: i64 = 4;
+
+/// 重建类迁移触发的版本：进入该版本的升级前先做一次性快照备份。
+const MIGRATION_REBUILD_AT: i64 = 8;
 
 /// 附加式迁移链：每项 `(from_version, sql)` 把库从 from_version 升一级。
 /// 发布后每次递增 SCHEMA_VERSION 必须在此追加一项；缺项时 init 报错拒绝打开
@@ -71,6 +85,28 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE INDEX IF NOT EXISTS idx_items_trash ON items(deleted_at) WHERE deleted_at IS NOT NULL;"),
     // v6 → v7：重复规则单次例外（JSON 数组，RFC3339 时刻；NULL = 无例外）
     (6, "ALTER TABLE items ADD COLUMN recurrence_exdates TEXT;"),
+    // v7 → v8：reminders 表重建（用户批准的一次性例外）——
+    // 1) CHECK 收敛 channel ∈ {notify, alarm}：提醒档位落地（notify = 系统通知，
+    //    alarm = 闹钟），遗留 sound / popup 一律归一为 alarm（宁响不漏）；
+    // 2) 补 reminder_log(remind_at) 索引（提醒中心历史按时刻倒序扫描）。
+    // SQLite 官方 12 步 recipe：foreign_keys 关闭（迁移器统一关）、建影子表、
+    // 拷贝归一、删旧表、改名回位；BEGIN/COMMIT 保证中途崩溃可整体重放。
+    (7, "BEGIN IMMEDIATE;
+         CREATE TABLE reminders_v8 (
+           id        INTEGER PRIMARY KEY AUTOINCREMENT,
+           item_id   TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+           spec      TEXT NOT NULL,
+           channel   TEXT NOT NULL DEFAULT 'notify' CHECK (channel IN ('notify','alarm'))
+         );
+         INSERT INTO reminders_v8 (id, item_id, spec, channel)
+           SELECT id, item_id, spec,
+                  CASE WHEN channel = 'notify' THEN 'notify' ELSE 'alarm' END
+           FROM reminders;
+         DROP TABLE reminders;
+         ALTER TABLE reminders_v8 RENAME TO reminders;
+         CREATE INDEX IF NOT EXISTS idx_reminders_item ON reminders(item_id);
+         CREATE INDEX IF NOT EXISTS idx_reminder_log_at ON reminder_log(remind_at);
+         COMMIT;"),
 ];
 
 /// 内置种子版本（fd_priority + 3 个内置模板）。未来内置内容变更时递增触发升级。
@@ -147,12 +183,13 @@ CREATE TABLE item_tags (
 );
 
 -- 提醒存意图：spec = @token（相对，随条目时间跟随）或 RFC3339（绝对一次性）；
--- 发生时刻由提醒环运行时展开（reminder.rs），reminder_log 按 (reminder_id, 解析时刻) 去重
+-- 发生时刻由提醒环运行时展开（reminder.rs），reminder_log 按 (reminder_id, 解析时刻) 去重；
+-- channel = 提醒档位：notify 系统通知 / alarm 闹钟（v8 收敛，遗留值已迁移归一）
 CREATE TABLE reminders (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id   TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   spec      TEXT NOT NULL,
-  channel   TEXT NOT NULL DEFAULT 'notify' CHECK (channel IN ('notify','sound','popup'))
+  channel   TEXT NOT NULL DEFAULT 'notify' CHECK (channel IN ('notify','alarm'))
 );
 
 CREATE TABLE reminder_log (
@@ -221,6 +258,8 @@ CREATE INDEX idx_items_trash ON items(deleted_at) WHERE deleted_at IS NOT NULL;
 CREATE INDEX idx_item_tags_tag  ON item_tags(tag_id);
 CREATE INDEX idx_attach_item    ON attachments(item_id);
 CREATE INDEX idx_reminders_item ON reminders(item_id);
+-- 提醒中心历史：reminder_log 按时刻倒序取最近 N 条（PK 前缀是 reminder_id，盖不住）
+CREATE INDEX idx_reminder_log_at ON reminder_log(remind_at);
 
 CREATE TABLE view_defs (
   id          TEXT PRIMARY KEY,
@@ -400,6 +439,14 @@ impl Store {
         if items_exists && version >= MIGRATION_BASELINE {
             // v4+ 结构：沿迁移链逐级升级，缺迁移步骤 = 报错拒绝打开（保护数据），
             // 不重建、不动既有数据。
+            // 重建类迁移（v8+）要求连接级 foreign_keys 关闭（表重建期间旧表被改名/
+            // 删除，FK 级联会把 reminder_log 连带清掉）；PRAGMA 不能在事务内生效，
+            // 须在 apply 之前设。步骤 SQL 自带 BEGIN/COMMIT，崩溃可整体重放。
+            let rebuild_pending = version < MIGRATION_REBUILD_AT;
+            if rebuild_pending {
+                conn.pragma_update(None, "foreign_keys", "OFF")?;
+                Self::backup_pre_rebuild(&conn, &self.root)?;
+            }
             while version < SCHEMA_VERSION {
                 let step = MIGRATIONS
                     .iter()
@@ -413,6 +460,9 @@ impl Store {
                 conn.execute_batch(step.1)?;
                 version += 1;
                 conn.pragma_update(None, "user_version", version)?;
+            }
+            if rebuild_pending {
+                conn.pragma_update(None, "foreign_keys", "ON")?;
             }
             // 「完成待办自动写记录」功能已删除：清掉历史遗留的影子记录（幂等，
             // 来源待办记在 note，是影子条目的可靠标识；标签随行级联删除）
@@ -468,6 +518,20 @@ impl Store {
             eprintln!("myday: 旧库备份失败（继续重建）: {e}");
         } else {
             eprintln!("myday: 旧库已备份到 {}", target.display());
+        }
+        Ok(())
+    }
+
+    /// 重建类迁移前的快照（v8 起）：VACUUM INTO 到 backups/，失败只记日志不阻断
+    /// （备份是保险，不是闸门；迁移 SQL 自身事务可重放）。
+    fn backup_pre_rebuild(conn: &Connection, root: &Path) -> Result<()> {
+        let dir = root.join("backups");
+        let _ = std::fs::create_dir_all(&dir);
+        let target = dir.join(format!("myday-pre-v8-{}.db", Utc::now().timestamp()));
+        let quoted = target.to_string_lossy().replace('\'', "''");
+        match conn.execute_batch(&format!("VACUUM INTO '{quoted}'")) {
+            Ok(()) => eprintln!("myday: 重建迁移前已备份到 {}", target.display()),
+            Err(e) => eprintln!("myday: 重建迁移前备份失败（继续迁移）: {e}"),
         }
         Ok(())
     }
@@ -849,7 +913,7 @@ impl Store {
         for r in &reminders {
             tx.execute(
                 "INSERT INTO reminders (item_id, spec, channel) VALUES (?1, ?2, ?3)",
-                params![id, r.spec, r.channel],
+                params![id, r.spec, crate::model::normalize_channel(&r.channel)],
             )?;
         }
         tx.commit()?;
@@ -1592,7 +1656,7 @@ impl Store {
                 for r in reminders {
                     tx.execute(
                         "INSERT INTO reminders (item_id, spec, channel) VALUES (?1, ?2, ?3)",
-                        params![id, r.spec, r.channel],
+                        params![id, r.spec, crate::model::normalize_channel(&r.channel)],
                     )?;
                 }
             }
@@ -2020,14 +2084,17 @@ impl Store {
     }
 
     /// 稍后提醒：spec 不可变（改条目时间 / 每日规则必须保持），
-    /// snooze 以一条绝对 spec 的覆盖行实现「到 until 再响一次」；
-    /// 已发时刻已在 reminder_log 中，不会重复触发。
+    /// snooze 以一条绝对 spec 的覆盖行实现「到 until 再响一次」，档位继承该条目
+    /// 最近一条提醒（闹钟稍后仍以闹钟响）；已发时刻已在 reminder_log 中，不会重复触发。
     pub fn snooze(&self, id: &str, until: DateTime<Utc>) -> Result<Item> {
         {
             let conn = self.lock()?;
             let n = conn.execute(
                 "INSERT INTO reminders (item_id, spec, channel)
-                 SELECT id, ?2, 'notify' FROM items WHERE id = ?1",
+                 SELECT id, ?2,
+                        COALESCE((SELECT channel FROM reminders WHERE item_id = id
+                                  ORDER BY id DESC LIMIT 1), 'notify')
+                 FROM items WHERE id = ?1",
                 params![id, dt(until)],
             )?;
             if n == 0 {
@@ -2085,6 +2152,28 @@ impl Store {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Vec<crate::reminder::DueOccurrence>> {
+        self.scan_occurrences(now, ScanWindow::Due)
+    }
+
+    /// 移动端系统调度扫描：返回「应交给 AlarmManager 的发生时刻」= 尚未发生的
+    /// 未来时刻（含 look_ahead 窗口）∪ 刚过去、仍在 grace 内的时刻（进程死过
+    /// 一轮后重开，系统会立刻触发补闹）。不含已标记时刻、跳过回收站与已完成待办
+    /// （done 到点不响）。
+    pub fn scheduled_occurrences(
+        &self,
+        now: DateTime<Utc>,
+        look_ahead: chrono::Duration,
+        grace: chrono::Duration,
+    ) -> Result<Vec<crate::reminder::DueOccurrence>> {
+        self.scan_occurrences(now, ScanWindow::Scheduled { look_ahead, grace })
+    }
+
+    /// 展开全部提醒 spec 的发生时刻，按窗口过滤（提醒扫描的唯一实现）。
+    fn scan_occurrences(
+        &self,
+        now: DateTime<Utc>,
+        window: ScanWindow,
+    ) -> Result<Vec<crate::reminder::DueOccurrence>> {
         let conn = self.lock()?;
         let mut stmt =
             conn.prepare("SELECT id, item_id, spec, channel FROM reminders ORDER BY id")?;
@@ -2110,6 +2199,12 @@ impl Store {
             ) else {
                 continue;
             };
+            if matches!(window, ScanWindow::Scheduled { .. })
+                && item.item_type == ItemType::Task
+                && item.status == Some(ItemStatus::Done)
+            {
+                continue;
+            }
             Self::hydrate(&conn, &mut item)?;
             let logged: std::collections::HashSet<String> = {
                 let mut stmt =
@@ -2120,7 +2215,18 @@ impl Store {
             .into_iter()
             .collect();
             for at in crate::reminder::occurrences(&rem.spec, &item) {
-                if at <= now && !logged.contains(&dt(at)) {
+                let hit = match window {
+                    ScanWindow::Due => at <= now && !logged.contains(&dt(at)),
+                    ScanWindow::Scheduled { look_ahead, grace } => {
+                        at > now
+                            && at <= now + look_ahead
+                            && !logged.contains(&dt(at))
+                            || at <= now
+                            && at > now - grace
+                            && !logged.contains(&dt(at))
+                    }
+                };
+                if hit {
                     out.push(crate::reminder::DueOccurrence {
                         reminder: rem.clone(),
                         at,

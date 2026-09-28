@@ -1,0 +1,15 @@
+[package]
+name = "tauri-plugin-myday-alarm"
+version = "1.3.0"
+edition = "2021"
+license = "MIT"
+authors = ["kailvn"]
+description = "MyDay system alarm hand-off: schedule Android AlarmManager alarms (notify / alarm kinds) that fire even when the app process is dead."
+repository = "https://github.com/kailvn/MyDay"
+links = "tauri-plugin-myday-alarm"
+
+[dependencies]
+tauri = { version = "2.10", default-features = false }
+
+[build-dependencies]
+tauri-plugin = { version = "2.5", features = ["build"] }

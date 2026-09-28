@@ -637,6 +637,53 @@ pub fn mark_reminders_seen(state: State<'_, AppState>) -> std::result::Result<St
     Ok(now)
 }
 
+/// 桌面：闹钟弹窗当前条目集合（弹窗 webview ready 后拉全量，防建窗与事件竞态）。
+#[cfg(desktop)]
+#[tauri::command]
+pub fn alarm_pending(
+    app: tauri::AppHandle,
+) -> std::result::Result<Vec<crate::alarm_window::AlarmEntry>, String> {
+    use tauri::Manager;
+    let entries = {
+        let state = app.state::<crate::alarm_window::AlarmPending>();
+        let guard = state.0.lock().expect("alarm pending poisoned");
+        let v = guard.clone();
+        v
+    };
+    Ok(entries)
+}
+
+/// 桌面：闹钟弹窗动作回流（complete / snooze / open / dismiss）。
+#[cfg(desktop)]
+#[tauri::command]
+pub fn alarm_dismiss(app: tauri::AppHandle, key: String, action: String) -> std::result::Result<(), String> {
+    crate::alarm_window::dispatch(&app, &key, &action);
+    Ok(())
+}
+
+/// 移动端：当前应移交系统 AlarmManager 的调度集合 + 需取消的 keys。
+/// 前端拉取后调用插件 `sync_alarms`，成功再回报 `alarms_synced`。
+#[cfg(mobile)]
+#[tauri::command]
+pub fn alarms_sync_payload(app: tauri::AppHandle) -> std::result::Result<serde_json::Value, String> {
+    use tauri::Manager;
+    let payload = app
+        .state::<crate::reminder_loop::MobileAlarmSync>()
+        .payload_snapshot();
+    serde_json::to_value(payload).map_err(|e| e.to_string())
+}
+
+/// 移动端：前端回报本次成功写入 AlarmManager 的 keys 全集
+/// （提醒循环据此判定「系统已接管」，跳过兜底通知）。
+#[cfg(mobile)]
+#[tauri::command]
+pub fn alarms_synced(app: tauri::AppHandle, keys: Vec<String>) -> std::result::Result<(), String> {
+    use tauri::Manager;
+    app.state::<crate::reminder_loop::MobileAlarmSync>()
+        .confirm(keys);
+    Ok(())
+}
+
 /// 待办转日程（SPRINT2-SPEC §7）：新建日程承接内容，原待办删除。
 #[tauri::command]
 pub fn convert_task_to_event(
@@ -1446,6 +1493,14 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         reminder_history,
         reminder_unread,
         mark_reminders_seen,
+        #[cfg(desktop)]
+        alarm_pending,
+        #[cfg(desktop)]
+        alarm_dismiss,
+        #[cfg(mobile)]
+        alarms_sync_payload,
+        #[cfg(mobile)]
+        alarms_synced,
         convert_task_to_event,
         event_to_log,
         export_ics,

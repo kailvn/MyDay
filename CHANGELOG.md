@@ -4,6 +4,18 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 功能详情见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
+## [Unreleased]
+
+### 新增
+- 提醒档位（schema v8）：提醒通道 `channel` 落地语义——`notify` = 系统通知 / `alarm` = 闹钟，「不提醒」= 不建提醒行；桌面条目面板每条提醒行可直接切换档位，移动端快速添加新增「方式」选择（通知 / 闹钟），条目详情按档位显示 🔔 / ⏰
+- 桌面闹钟档：置顶弹窗（label = `alarm`，前端按窗口 label 路由新组件 AlarmPopup）+ WebAudio 循环提示音（关窗即停）+ critical 常驻系统通知兜底；动作完成 / 稍后 10 分钟 / 打开 / 忽略（`alarm_pending` 拉全量 + `alarm-ringing` 事件推增量，防建窗与事件竞态）
+- 安卓系统闹钟移交（本地插件 `plugins/tauri-plugin-myday-alarm`）：Rust 提醒循环只算「应调度集合」（未来 24h ∪ 过去补发窗口内），经前端写入 `AlarmManager`（`setAlarmClock`，Doze / 进程被杀都能触发；notify 档 `setExactAndAllowWhileIdle`，无精确授权降级 `setWindow`）——到点由系统 `BroadcastReceiver` 直接发通知 / 全屏闹铃（闹钟铃声 + USAGE_ALARM + FLAG_INSISTENT），App 死活无关；开机重排（SharedPreferences 持久化 + BOOT_COMPLETED 接收器）；改时间 / 删除 / 完成后 30 秒节拍内取消已排定闹钟；前端同步失败时 Rust 侧兜底直发通知，宁重复不漏报
+
+### 变更
+- v8 迁移重建 `reminders` 表（用户批准的一次性例外）：CHECK 收敛 `channel ∈ {notify, alarm}`，遗留 `sound` / `popup` 一律归一 `alarm`（宁响不漏）；迁移前自动 `VACUUM INTO` 快照到 `backups/myday-pre-v8-<ts>.db`；重建按 SQLite 官方 12 步（foreign_keys 关闭 + 事务 + 可重放），`reminder_log` 与数据行原封不动（含回归测试）
+- 表优化：补 `reminder_log(remind_at)` 索引（提醒中心历史倒序扫描，新库同建）；`snooze` 覆盖行档位继承条目最近一条提醒（闹钟稍后仍以闹钟响，原先硬编码 notify）
+- CLI：`item add` / `item update` 新增 `--alarm` 旗标（需与 `--remind` 同用），提醒以闹钟档落库
+
 ## [1.3.0] - 2026-09-27
 
 ### 新增

@@ -157,6 +157,17 @@ pub struct Attachment {
     pub created_at: DateTime<Utc>,
 }
 
+/// 提醒档位（v8 起 channel 落地语义）：
+/// - [`ReminderKind::Notify`] = 系统通知（各端走平台通知：GNOME / Android 通知栏）；
+/// - [`ReminderKind::Alarm`]  = 闹钟（桌面：置顶弹窗 + 循环提示音；安卓：AlarmManager
+///   全屏闹铃，进程被杀/冻结也能响）。
+/// 「不提醒」不是档位，是不建提醒行。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReminderKind {
+    Notify,
+    Alarm,
+}
+
 /// 提醒（1:N）。存「意图」而非时刻：`spec` = @token（相对，随条目时间跟随）
 /// 或 RFC3339（绝对一次性）。发生时刻由提醒环运行时展开并经 reminder_log 去重
 /// （INTERACTION §6）。
@@ -166,16 +177,42 @@ pub struct Reminder {
     pub item_id: String,
     /// @token（@start-1h / @due-1d / @dailyT09:00）或 RFC3339 绝对时刻
     pub spec: String,
-    /// notify / sound / popup
+    /// notify = 系统通知；alarm = 闹钟（v8 CHECK 收敛到这两个值；
+    /// v8 前的遗留值 sound / popup 由迁移归一为 alarm）
     pub channel: String,
+}
+
+impl Reminder {
+    pub fn kind(&self) -> ReminderKind {
+        reminder_kind(&self.channel)
+    }
+}
+
+/// channel 字符串 → 档位（只有 notify 算通知，其余一律按闹钟兜底，宁响不漏）。
+pub fn reminder_kind(channel: &str) -> ReminderKind {
+    if channel == "notify" {
+        ReminderKind::Notify
+    } else {
+        ReminderKind::Alarm
+    }
 }
 
 /// 新建提醒输入。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NewReminder {
     pub spec: String,
+    /// notify / alarm（其余值写入时归一为 alarm）
     #[serde(default = "default_channel")]
     pub channel: String,
+}
+
+/// 写库前归一 channel：非法 / 遗留值（sound / popup）一律落 alarm。
+pub fn normalize_channel(channel: &str) -> String {
+    if channel == "notify" {
+        "notify".into()
+    } else {
+        "alarm".into()
+    }
 }
 
 fn default_channel() -> String {

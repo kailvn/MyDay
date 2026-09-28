@@ -4,6 +4,7 @@ members = [
     "crates/myday-core",
     "crates/myday-cli",
     "apps/desktop/src-tauri",
+    "plugins/tauri-plugin-myday-alarm",
 ]
 
 [workspace.package]

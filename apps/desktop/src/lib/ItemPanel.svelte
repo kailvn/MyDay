@@ -807,7 +807,15 @@
     { token: "@due-1d", label: "panel.rem.dueBefore1d", types: ["task"] },
     { token: "@dailyT09:00", label: "panel.rem.daily9", types: ["event", "task"] },
   ];
-  let reminders = $state<string[]>(src ? src.reminders.map((r) => r.spec) : []);
+  /** 提醒行 = 时机 spec + 档位（notify 系统通知 / alarm 闹钟）；「不提醒」= 无行 */
+  let reminders = $state<{ spec: string; channel: "notify" | "alarm" }[]>(
+    src
+      ? src.reminders.map((r) => ({
+          spec: r.spec,
+          channel: r.channel === "notify" ? "notify" : "alarm",
+        }))
+      : [],
+  );
   let remPick = $state("");
 
   let reminderPool: { token: string; label: MessageKey }[] = $derived([
@@ -832,10 +840,13 @@
     remPick = "";
     if (!pick) return;
     // 自定义 = 空 spec 占位，由 datetime-local 填入具体时刻
-    reminders = [...reminders, pick === "custom" ? "" : pick];
+    reminders = [...reminders, { spec: pick === "custom" ? "" : pick, channel: "notify" }];
   }
   function setReminderSpec(i: number, spec: string) {
-    reminders = reminders.map((s, x) => (x === i ? spec : s));
+    reminders = reminders.map((r, x) => (x === i ? { ...r, spec } : r));
+  }
+  function setReminderKind(i: number, channel: "notify" | "alarm") {
+    reminders = reminders.map((r, x) => (x === i ? { ...r, channel } : r));
   }
   function removeReminder(i: number) {
     reminders = reminders.filter((_, x) => x !== i);
@@ -998,8 +1009,8 @@
       tags: [...tags],
       extra: buildExtra(),
       reminders: reminders
-        .filter((s) => s)
-        .map((spec) => ({ spec })),
+        .filter((r) => r.spec)
+        .map((r) => ({ spec: r.spec, channel: r.channel })),
       ...(recurrenceSpec ? { recurrence: recurrenceSpec } : {}),
       ...(activeTpl || presetTplId
         ? { template_id: (activeTpl ?? { id: presetTplId }).id }
@@ -1069,11 +1080,18 @@
     }
     if (allDay !== item.all_day) patch.all_day = allDay;
     const remChanged =
-      JSON.stringify(reminders) !== JSON.stringify(item.reminders.map((r) => r.spec));
+      JSON.stringify(reminders) !==
+      JSON.stringify(
+        item.reminders.map((r) => ({
+          spec: r.spec,
+          channel: (r.channel === "notify" ? "notify" : "alarm") as "notify" | "alarm",
+        })),
+      );
     if (remChanged) {
+      // 空数组 = 显式「不提醒」（update_item 对 Some([]) 全删不自动补默认）
       patch.reminders = reminders
-        .filter((s) => s)
-        .map((spec) => ({ spec }));
+        .filter((r) => r.spec)
+        .map((r) => ({ spec: r.spec, channel: r.channel }));
     }
     if (effType === "log") {
       if (occurredLocal) patch.occurred_at = fromLocalInput(occurredLocal);
@@ -1755,19 +1773,28 @@
 
   <div class="field">
     <span class="label">{t("panel.label.reminders")}</span>
-    {#each reminders as spec, i (i)}
+    {#each reminders as rem, i (i)}
       <span class="fwrap">
-        {#if isAbsoluteSpec(spec) || spec === ""}
+        {#if isAbsoluteSpec(rem.spec) || rem.spec === ""}
           <input
             type="datetime-local"
             class="rem"
-            value={spec ? toLocalInput(spec) : ""}
+            value={rem.spec ? toLocalInput(rem.spec) : ""}
             onchange={(e) =>
               setReminderSpec(i, e.currentTarget.value ? fromLocalInput(e.currentTarget.value) : "")}
           />
         {:else}
-          <span class="chip rem-chip" title={spec}>{reminderLabel(spec)}</span>
+          <span class="chip rem-chip" title={rem.spec}>{reminderLabel(rem.spec)}</span>
         {/if}
+        <select
+          class="chip rem-kind"
+          title={rem.channel === "alarm" ? t("panel.rem.kindAlarm") : t("panel.rem.kindNotify")}
+          value={rem.channel}
+          onchange={(e) => setReminderKind(i, e.currentTarget.value as "notify" | "alarm")}
+        >
+          <option value="notify">🔔 {t("panel.rem.kindNotify")}</option>
+          <option value="alarm">⏰ {t("panel.rem.kindAlarm")}</option>
+        </select>
         <button class="chip" onclick={() => removeReminder(i)}>×</button>
       </span>
     {/each}

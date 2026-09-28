@@ -116,6 +116,10 @@ cd apps/desktop && pnpm tauri android dev   # 首次数分钟，之后秒级；�
    `$ANDROID_HOME/ndk/` 自动发现即可。
 8. tauri CLI 的组件安装确认在非 TTY 下会静默跳过，要预装好或真 TTY 里跑。
 9. `gen/android/app/build.gradle.kts` 要求 **compileSdk 36 / minSdk 24**。
+10. 系统闹钟移交需要两处 gen/android 手工补丁（`tauri android init` 重跑后需重做）：
+    app manifest 的 MainActivity 加 `android:showWhenLocked="true"` + `android:turnScreenOn="true"`
+    （熄屏闹钟亮屏，见 NETWORK-TROUBLESHOOTING §8.6）；重装 APK 会重置
+    自启动/闹钟和提醒授权，按 §8.7 批量放行或用应用内横幅重开。
 
 ## 构建环境（本机 2026-09-27 已就绪）
 

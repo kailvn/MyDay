@@ -160,6 +160,9 @@ enum ItemCmd {
         /// 提醒：@token（@start-1h / @due-1d / @dailyT09:00）或时间；缺省按设置提前 N 分钟
         #[arg(long)]
         remind: Option<String>,
+        /// 提醒用闹钟档（缺省 = 系统通知档；需与 --remind 同用）
+        #[arg(long, requires = "remind")]
+        alarm: bool,
         /// 禁用提醒
         #[arg(long, conflicts_with = "remind")]
         no_remind: bool,
@@ -247,6 +250,9 @@ enum ItemCmd {
         extra_json: Option<String>,
         #[arg(long)]
         remind: Option<String>,
+        /// 提醒用闹钟档（缺省 = 系统通知档；需与 --remind 同用）
+        #[arg(long, requires = "remind")]
+        alarm: bool,
         /// 删除全部提醒
         #[arg(long, conflicts_with = "remind")]
         no_remind: bool,
@@ -540,6 +546,7 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             recurse,
             template,
             remind,
+            alarm,
             no_remind,
             tags,
             fields,
@@ -580,7 +587,7 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             new.reminders = match remind.as_deref() {
                 Some(r) => vec![NewReminder {
                     spec: parse_reminder_spec(r)?,
-                    channel: "notify".into(),
+                    channel: if *alarm { "alarm".into() } else { "notify".into() },
                 }],
                 None if *no_remind => Vec::new(),
                 None => Vec::new(), // 未表态 → core 按设置补默认提醒
@@ -660,6 +667,7 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             fields,
             extra_json,
             remind,
+            alarm,
             no_remind,
         } => {
             let store = open_store()?;
@@ -713,7 +721,7 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                         |spec| {
                             vec![NewReminder {
                                 spec,
-                                channel: "notify".into(),
+                                channel: if *alarm { "alarm".into() } else { "notify".into() },
                             }]
                         },
                     ),

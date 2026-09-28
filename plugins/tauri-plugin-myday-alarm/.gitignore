@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+android/build
+android/.gradle
+android/.tauri
+android/local.properties
+android/.idea
+*.iml

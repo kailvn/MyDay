@@ -1,0 +1,31 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- 到点触发：显式 intent（仅应用内），不导出 -->
+        <receiver
+            android:name="dev.myday.alarm.MydayAlarmReceiver"
+            android:exported="false" />
+        <!-- 开机重排：受保护的系统广播，只有系统可发 -->
+        <receiver
+            android:name="dev.myday.alarm.MydayAlarmBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+    <!-- 精确闹钟：SCHEDULE_EXACT_ALARM（12+,需用户在设置里授权）；
+         USE_EXACT_ALARM（13+,闹钟类应用自动授予——通知档的精确触发靠它）；
+         alarm 档的 setAlarmClock 在 14+ 同样受此检查,拿到任一即可 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- 闹钟档全屏意图（锁屏/后台直接拉起；14+ 非默认闹钟应用需用户在特殊权限里允许） -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+</manifest>

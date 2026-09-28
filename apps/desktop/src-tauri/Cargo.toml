@@ -39,6 +39,8 @@ uuid.workspace = true
 tauri-plugin-notification = "2"
 # 手机端扫码配对：扫桌面端二维码自动填地址 + 配对码
 tauri-plugin-barcode-scanner = "2"
+# 系统闹钟移交（AlarmManager）：移动端提醒的调度器（notify / alarm 档都走系统）
+tauri-plugin-myday-alarm = { path = "../../../plugins/tauri-plugin-myday-alarm" }
 # 手机端同步客户端（HTTP + Bearer，走原生栈不经 WebView，免明文限制）
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 

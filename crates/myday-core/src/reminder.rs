@@ -113,7 +113,11 @@ fn daily_occurrences(item: &Item, clock: (u32, u32)) -> Vec<DateTime<Utc>> {
 /// 补发窗口（设置键 `reminder_catchup_minutes`，默认 120，范围 0–1440）：
 /// 窗口内错过的提醒照常补发；窗口外的一律静默记日志并聚合成一条摘要，
 /// 防止休眠 / 重启后对历史时刻通知轰炸（SPRINT-SPEC §1.1）。
-fn catchup_window(store: &Store) -> Duration {
+/// 补发窗口（设置键 `reminder_catchup_minutes`，默认 120，范围 0–1440）：
+/// 窗口内错过的提醒照常补发；窗口外的一律静默记日志并聚合成一条摘要，
+/// 防止休眠 / 重启后对历史时刻通知轰炸（SPRINT-SPEC §1.1）。
+/// 公开给 GUI 移动端循环：系统调度扫描的 grace 窗口复用同一语义。
+pub fn catchup_window(store: &Store) -> Duration {
     store
         .get_setting("reminder_catchup_minutes")
         .ok()

@@ -107,6 +107,8 @@ export const part_panel = {
   'panel.rem.dueBefore1h': '截止前 1 小时',
   'panel.rem.dueBefore1d': '截止前 1 天',
   'panel.rem.daily9': '期间每天 09:00',
+  'panel.rem.kindNotify': '通知',
+  'panel.rem.kindAlarm': '闹钟',
 
   // ---- 备注 / 元信息 ----
   'panel.note.tplPlaceholder': '默认备注（可选）',
@@ -255,6 +257,8 @@ export const part_panel_en = {
   'panel.rem.dueBefore1h': '1 hour before due',
   'panel.rem.dueBefore1d': '1 day before due',
   'panel.rem.daily9': 'Daily 09:00 in between',
+  'panel.rem.kindNotify': 'Notify',
+  'panel.rem.kindAlarm': 'Alarm',
 
   'panel.note.tplPlaceholder': 'Default note (optional)',
   'panel.note.placeholder': 'Note (optional)',

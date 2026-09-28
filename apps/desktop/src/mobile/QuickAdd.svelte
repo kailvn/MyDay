@@ -89,6 +89,8 @@
   // ---- 提醒选择（日程锚开始 / 待办锚截止；同类软件惯例的档位） -----------
   type RemChoice = "default" | "none" | "pt" | "m5" | "m15" | "m30" | "h1" | "d1";
   let reminder = $state<RemChoice>("default");
+  /** 提醒方式：notify = 系统通知；alarm = 系统闹钟（进程被杀也响）。仅具体时机可选 */
+  let remMode = $state<"notify" | "alarm">("notify");
   const REM_OFFSET: Partial<Record<RemChoice, string>> = {
     pt: "",
     m5: "-5m",
@@ -113,7 +115,12 @@
     if (reminder === "none") return { reminders: [], skip_default_reminder: true };
     const anchor = type === "task" ? "due" : "start";
     return {
-      reminders: [{ spec: `@${anchor}${REM_OFFSET[reminder] ?? ""}`, channel: "notify" }],
+      reminders: [
+        {
+          spec: `@${anchor}${REM_OFFSET[reminder] ?? ""}`,
+          channel: remMode,
+        },
+      ],
     };
   }
 
@@ -345,6 +352,15 @@
           {/each}
         </select>
       </div>
+      {#if reminder !== "default" && reminder !== "none"}
+        <div class="m-formrow">
+          <span class="lbl">{t("mobile.rem_mode")}</span>
+          <select bind:value={remMode}>
+            <option value="notify">🔔 {t("panel.rem.kindNotify")}</option>
+            <option value="alarm">⏰ {t("panel.rem.kindAlarm")}</option>
+          </select>
+        </div>
+      {/if}
     {/if}
 
     <button class="m-primary" style="margin-top: 12px;" disabled={!canSave || saving} onclick={save}>

@@ -37,13 +37,40 @@ export interface Reminder {
   id: number;
   item_id: string;
   spec: string;
-  /** notify / sound / popup */
+  /** notify = 系统通知；alarm = 闹钟（v8 收敛，遗留值按 alarm 处理） */
   channel: string;
 }
 
 export interface NewReminder {
   spec: string;
+  /** notify / alarm；缺省 notify */
   channel?: string;
+}
+
+/** 桌面闹钟弹窗条目（Rust alarm_window::AlarmEntry，key = "{rid}-{at_millis}"） */
+export interface AlarmEntry {
+  key: string;
+  item_id: string;
+  title: string;
+  body: string;
+}
+
+/** 移动端移交系统 AlarmManager 的一条提醒（camelCase，与 Kotlin 插件字段对齐） */
+export interface AlarmSpec {
+  key: string;
+  rid: number;
+  /** 发生时刻 epoch 毫秒 */
+  at: number;
+  kind: "notify" | "alarm";
+  itemId: string;
+  title: string;
+  body: string;
+}
+
+/** 移动端系统调度同步载荷 */
+export interface AlarmSyncPayload {
+  alarms: AlarmSpec[];
+  cancelKeys: string[];
 }
 
 /** 字段类型（Notion 属性类型子集） */
@@ -573,6 +600,23 @@ export const api = {
     invoke<ReminderHistoryEntry[]>("reminder_history", { limit: limit ?? null }),
   reminderUnread: () => invoke<number>("reminder_unread"),
   markRemindersSeen: () => invoke<string>("mark_reminders_seen"),
+  // ---- 系统提醒（通知 / 闹钟档）------------------------------------------
+  /** 桌面：闹钟弹窗当前条目（弹窗 ready 后拉全量，防建窗与事件竞态） */
+  alarmPending: () => invoke<AlarmEntry[]>("alarm_pending"),
+  /** 桌面：闹钟弹窗动作回流 */
+  alarmDismiss: (key: string, action: "complete" | "snooze" | "open" | "dismiss") =>
+    invoke("alarm_dismiss", { key, action }),
+  /** 移动端：拉取应移交系统 AlarmManager 的调度集合（含需取消的 keys） */
+  alarmsSyncPayload: () => invoke<AlarmSyncPayload>("alarms_sync_payload"),
+  /** 移动端：回报本次成功写入 AlarmManager 的 keys 全集（跳过兜底通知的依据） */
+  alarmsSynced: (keys: string[]) => invoke("alarms_synced", { keys }),
+  /** 移动端：闹钟相关授权状态（exact = 精确闹钟；fullScreen = 全屏意图） */
+  alarmPermissions: () =>
+    invoke<{ exact: boolean; fullScreen: boolean }>("plugin:myday-alarm|alarm_permissions"),
+  /** 移动端：跳系统「闹钟和提醒」授权页 */
+  openExactAlarmSettings: () => invoke("plugin:myday-alarm|open_exact_alarm_settings"),
+  /** 移动端：跳系统应用详情页（全屏意图 / 自启动 / 通知开关） */
+  openAppDetailsSettings: () => invoke("plugin:myday-alarm|open_app_details_settings"),
   /** 类型转换（SPRINT2-SPEC §7）：待办转日程（替换）/ 日程生成记录（保留原日程） */
   convertTaskToEvent: (id: string) => invoke<Item>("convert_task_to_event", { id }),
   eventToLog: (id: string) => invoke<Item>("event_to_log", { id }),

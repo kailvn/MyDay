@@ -1,0 +1,15 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+MyDay 系统闹钟移交：允许前端把提醒集合同步进系统 AlarmManager
+（含取消）、查询闹钟相关授权状态并跳转系统授权页。
+默认权限开放全部四条命令。
+"""
+
+permissions = [
+  "allow-sync-alarms",
+  "allow-alarm-permissions",
+  "allow-open-exact-alarm-settings",
+  "allow-open-app-details-settings",
+]

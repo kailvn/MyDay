@@ -1,10 +1,11 @@
 <script lang="ts">
   /**
    * 窗口路由：同一份前端按窗口 label 渲染（需求 §8 主窗口、§1.2 快速弹窗、
-   * OVERLAY-SPEC §3 今日悬浮窗）。
+   * OVERLAY-SPEC §3 今日悬浮窗、§9 闹钟弹窗）。
    * - main → 主界面（侧边栏 + 视图 + 统一条目面板弹层）
    * - quick-add → 快速添加窗口（同一个 ItemPanel 组件，windowMode）
    * - overlay → 今日悬浮窗（只读今日未完成 + 勾选完成）
+   * - alarm → 闹钟弹窗（提醒 alarm 档：置顶弹窗 + 循环提示音，完成/稍后/打开/忽略）
    * 每个窗口都初始化字段 store（data-changed 自动刷新）。
    */
   import { onMount } from "svelte";
@@ -13,6 +14,7 @@
   import Shell from "./lib/Shell.svelte";
   import QuickAddWindow from "./lib/QuickAddWindow.svelte";
   import OverlayWindow from "./lib/OverlayWindow.svelte";
+  import AlarmPopup from "./lib/AlarmPopup.svelte";
 
   let label = "main";
   onMount(() => {
@@ -25,6 +27,8 @@
   <QuickAddWindow />
 {:else if label === "overlay"}
   <OverlayWindow />
+{:else if label === "alarm"}
+  <AlarmPopup />
 {:else}
   <Shell />
 {/if}

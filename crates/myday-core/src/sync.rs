@@ -431,7 +431,7 @@ fn sync_upsert(conn: &Connection, it: &Item) -> Result<()> {
     for r in &it.reminders {
         conn.execute(
             "INSERT INTO reminders (item_id, spec, channel) VALUES (?1, ?2, ?3)",
-            params![it.id, r.spec, r.channel],
+            params![it.id, r.spec, crate::model::normalize_channel(&r.channel)],
         )?;
     }
 

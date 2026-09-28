@@ -112,3 +112,67 @@ adb shell "ping -c 2 <电脑IP>"                                  # ICMP 通不�
 - `tauri android build --target` 用 Android 短名（`aarch64`），不认完整 Rust triple；
 - `aws-lc-sys`（reqwest 默认加密后端）交叉编译需要 NDK clang——纯 `cargo check --target` 也要装 NDK 并设 `CC_aarch64_linux_android`（见 ci.yml 的 android-check job）；
 - GitHub Actions 的 `env:` 上下文引用不到 runner 自带环境变量（如 `$ANDROID_HOME`），要在 `run:` 的 shell 里取。
+
+## 7. 本机 Gradle：`does not provide the required capabilities: [JAVA_COMPILER]`
+
+系统只装了 `openjdk-21-jre`（无 `javac`），gradle 起 buildSrc 就死（曾经能构建 =
+后来 JDK 被系统更新替换成了 JRE）。无 sudo 时用便携 JDK：
+
+```bash
+curl -sL -o /tmp/jdk21.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
+mkdir -p ~/jdks && tar -xzf /tmp/jdk21.tar.gz -C ~/jdks
+cd apps/desktop && JAVA_HOME=~/jdks/jdk-21.0.12.1+1 pnpm tauri android build --target aarch64 --debug
+```
+
+（2026-09 按 207MB 下载 + 解压即用；gradle 工具链探测认 JAVA_HOME。）
+
+## 8. OEM ROM 真机：闹钟调度成功但到点无声无息的常见拦截点
+
+在小米 14（HyperOS，Android 14）实测系统闹钟移交时逐个踩出来的问题。这些拦截
+机制并非小米独有——华为（启动管理/应用启动控制）、OPPO（自组件管理）、vivo
+（后台高耗电）、三星（休眠应用）等各家 ROM 都有同类开关，只是名称和入口不同；
+排查时先走下面 1-2 两条 AOSP 通用信号，再查厂商层。按发现顺序：
+
+1. **显式组件 Intent**：manifest 接收器没有 intent-filter 时，`Intent(action).setPackage(pkg)`
+   的包级广播**解析不到它**——调度成功、AlarmManager 准点触发（`MSG_REPORT_ACTIVE` 可见）、
+   但广播无人接收，无声蒸发。必须 `Intent(context, Receiver::class.java)` 显式组件。
+   排查信号：`dumpsys alarm` 有 alarm、无 `Start proc`、无 crash、无通知。
+2. **精确闹钟授权**：14+ 上 `setAlarmClock` 同样要 `SCHEDULE_EXACT_ALARM` /
+   `USE_EXACT_ALARM`（后者 13+ 对闹钟类应用自动授予，manifest 声明即可）。
+   缺权限时 `SecurityException`，单条降级 `setWindow`，别让一条失败拖垮整批同步。
+3. **厂商自启动管控**（各家私有机制，无标准 API 可探测）：小米 `appops get <pkg>` 里
+   `MIUIOP(10004): ignore` = 自启动禁止，闹钟广播**不会拉起进程**（小米专属 op 号，
+   其他厂商不通用）；无 root 小米可 `adb shell appops set <pkg> 10004 allow`，其他厂商
+   走各自设置页（华为：启动管理 → 全部允许；OPPO/vivo：自启动 + 后台运行；三星：
+   电池 → 后台使用限制白名单）。应用侧不做厂商探测/特调，通吃的办法是补发机制：
+   进程被拦的那次，下次打开 App 时补发窗口（默认 120 分钟）内照常补上。
+4. **全屏意图**：14+ 默认拒绝（`USE_FULL_SCREEN_INTENT: ignore`）→ 闹钟只有通知横幅、
+   不亮屏全屏。`adb shell appops set <pkg> USE_FULL_SCREEN_INTENT allow`，或应用详情页
+   开「闹钟和提醒」（应用内顶部横幅也可一键跳转）。
+5. **force-stop 会取消应用全部闹钟**（stopped state，全 Android 通用行为）：
+   验证"进程死了闹钟还响"要用 `am kill`（模拟后台杀）或从最近任务划掉，
+   `am force-stop` 测出来的"闹钟丢了"是预期行为不是 bug。
+
+应用内已内置权限自检横幅（`alarmPermissions` 命令 + 顶部提示一键跳授权页）。
+
+6. **全屏亮屏的最后一环**：`USE_FULL_SCREEN_INTENT` + 厂商 op 全放行后，全屏意图
+   已能挂上通知（`dumpsys notification` 里 `fullscreenIntent=PendingIntent{...}`），
+   但目标 Activity 还必须声明 `android:showWhenLocked="true"` + `android:turnScreenOn="true"`
+   （gen/android 的 app manifest，所有闹钟应用的 AOSP 标准要求）——否则通知挂着
+   全屏意图，熄屏时照样不亮屏。
+7. **重装 APK 会重置 appops**（`USE_FULL_SCREEN_INTENT`、MIUIOP(10004) 等全部
+   回到 ignore）：每次重装后需重新放行，或在应用内横幅/系统设置里重开。
+   调试期批量放行：
+   ```bash
+   for op in USE_FULL_SCREEN_INTENT 10004 10008 10017 10020 10021 10022; do
+     adb shell appops set dev.myday.desktop $op allow
+     adb shell cmd appops set --uid dev.myday.desktop $op allow   # uid 层也要
+   done
+   ```
+   注意 appops 有 uid / package 两层，`appops set` 只改包层；生效判定看
+   `cmd appops get --uid`。
+8. **铃声不要依赖通知渠道**：渠道铃声会被部分 ROM 跟随通知静音/振动模式压制
+   （`mLastAudiblyAlertedMs=-1` 可证实从未出声）。闹钟档在接收器里用
+   MediaPlayer（USAGE_ALARM）自响 15 秒 + 震动，ALARM 流不受响铃模式影响，
+   `goAsync()` 保住接收器生命周期。对应渠道 myday_alarm_v2 静音（渠道设置
+   创建后不可改，换语义只能换 id 并删除旧渠道）。

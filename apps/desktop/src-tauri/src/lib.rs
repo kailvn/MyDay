@@ -9,6 +9,8 @@
 //! 平台分界用 `cfg(desktop)` / `cfg(mobile)`（tauri-build 注入）划分，
 //! 依赖表用 `target.'cfg(not(any(android, ios)))'` 对应隔离（见 Cargo.toml）。
 
+#[cfg(desktop)]
+pub mod alarm_window;
 pub mod commands;
 pub mod i18n;
 #[cfg(desktop)]
@@ -85,13 +87,25 @@ pub fn run() {
                 store: store.clone(),
             })
             .manage(sync_server::SyncRunning(std::sync::Mutex::new(None)))
+            .manage(alarm_window::AlarmPending::default())
             .setup(|_app| {
                 desktop_setup(_app)?;
                 Ok(())
             })
             .on_window_event(|window, event| {
-                // 主窗口关闭 → 隐藏保活；快速窗口关闭 → 隐藏
+                // 主窗口关闭 → 隐藏保活；快速窗口关闭 → 隐藏。
+                // 闹钟弹窗例外：必须真关（销毁）才能停掉前端循环提示音；
+                // 用户直接关窗 = 全部忽略，清空 pending 保持状态一致。
                 if let WindowEvent::CloseRequested { api, .. } = event {
+                    if window.label() == "alarm" {
+                        if let Some(pending) = window
+                            .app_handle()
+                            .try_state::<alarm_window::AlarmPending>()
+                        {
+                            pending.0.lock().expect("alarm pending poisoned").clear();
+                        }
+                        return;
+                    }
                     let _ = window.hide();
                     api.prevent_close();
                 }
@@ -103,6 +117,9 @@ pub fn run() {
     // 扫码配对：扫桌面端「移动端同步」小节里的二维码自动填地址 + 配对码
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    // 系统闹钟移交（AlarmManager）：移动端提醒的真正调度器（notify + alarm 档）
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_myday_alarm::init());
     #[cfg(mobile)]
     let builder = builder.setup(|_app| {
         mobile_setup(_app)?;
@@ -153,6 +170,8 @@ fn mobile_setup(app: &tauri::App) -> tauri::Result<()> {
     app.manage(AppState {
         store: store.clone(),
     });
+    // 移动端调度同步状态：提醒循环写（载荷/取消集），命令层读（前端拉取/回报）
+    app.manage(reminder_loop::MobileAlarmSync::new());
     // 提醒循环：移动端走 tauri-plugin-notification（通知权限由前端运行时申请）
     reminder_loop::spawn(app.handle().clone(), store);
     Ok(())

@@ -6,6 +6,7 @@
    */
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
+  import { invoke } from "@tauri-apps/api/core";
   import { t } from "../lib/i18n";
   import { api, type Item } from "../lib/api";
   import { expandItems } from "../lib/recurrence";
@@ -102,13 +103,60 @@
 
   onMount(() => {
     const unlisteners = [
-      listen("data-changed", () => void reload()),
+      // 数据变动同时重排系统闹钟（新建/改期/删除/完成后立即同步，不等 30 秒节拍）
+      listen("data-changed", () => {
+        void reload();
+        void syncSystemAlarms(false);
+      }),
       listen("reminder-fired", () => void reload()),
+      // 提醒循环发现调度集合变化 → 重新拉取并写入系统 AlarmManager
+      listen("alarms-sync", () => void syncSystemAlarms(false)),
     ];
+    // 冷启动全量对账：replace=true，插件会取消存储中不在集合里的陈旧闹钟
+    void syncSystemAlarms(true);
+    void checkAlarmPermissions();
+    // 从系统授权页返回时复检（授权状态可能已变）
+    const onVisible = () => {
+      if (document.visibilityState === "visible") resolvePermHint();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       for (const u of unlisteners) u.then((f) => f());
     };
   });
+
+  // ---- 系统闹钟移交（提醒的真正调度器；进程冻结 / 被杀也能到点触发）----------
+  // 载荷由 Rust 提醒循环维护（alarms_sync_payload），本层只搬运：
+  // 插件 sync_alarms 写入 AlarmManager → 成功后回报 keys（跳过兜底通知的依据）。
+  async function syncSystemAlarms(replace: boolean) {
+    try {
+      const payload = await api.alarmsSyncPayload();
+      await invoke("plugin:myday-alarm|sync_alarms", {
+        replace,
+        alarms: payload.alarms,
+        cancelKeys: payload.cancelKeys,
+      });
+      await api.alarmsSynced(payload.alarms.map((a) => a.key));
+    } catch (e) {
+      console.error("myday mobile: 系统闹钟同步失败", JSON.stringify(e));
+    }
+  }
+
+  // ---- 闹钟授权自检（缺精确闹钟 / 全屏意图 → 顶部横幅一键跳授权）--------------
+  let permHint = $state<{ exact: boolean; fullScreen: boolean } | null>(null);
+  let permHintDismissed = $state(false);
+  async function checkAlarmPermissions() {
+    try {
+      const p = await api.alarmPermissions();
+      permHint = p.exact && p.fullScreen ? null : p;
+    } catch {
+      // 插件不可用（e2e / 浏览器）→ 不打扰
+    }
+  }
+  function resolvePermHint() {
+    void checkAlarmPermissions();
+  }
 
   // ---- Android 返回键：有弹层先关最上层,而非退出应用 ----
   // 每开一层压一个 history 栈位;系统返回触发 popstate → 关最上层。
@@ -169,6 +217,19 @@
     <button class="m-iconbtn" aria-label={t("trash.title")} onclick={() => (view = "trash")}>🗑</button>
   </header>
 
+  {#if permHint && !permHintDismissed}
+    <!-- 闹钟体验缺授权：exact 缺 → 到点可能延迟 ±10 分钟；fullScreen 缺 → 无全屏亮屏响铃 -->
+    <div class="m-permhint">
+      <button
+        class="perm-main"
+        onclick={() => (permHint.exact ? api.openExactAlarmSettings() : api.openAppDetailsSettings())}
+      >
+        ⏰ {t("mobile.perm_hint")} · {t("mobile.perm_go")}
+      </button>
+      <button class="perm-x" aria-label={t("alarm.dismiss")} onclick={() => (permHintDismissed = true)}>×</button>
+    </div>
+  {/if}
+
   <CalendarMonth {year} {month} byDay={byDay} selected={daySel} onselect={(k) => (daySel = k)} />
 
   <button class="m-fab" aria-label={t("mobile.quickadd_title")} onclick={() => (quickFor = { open: true, day: daySel })}>
@@ -223,5 +284,32 @@
     min-height: 0;
     overflow-y: auto;
     padding: 12px 14px calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .m-permhint {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    margin: 6px 12px 0;
+  }
+  .m-permhint .perm-main {
+    flex: 1;
+    border: 1px solid var(--warn-border, #b98a2e);
+    background: var(--warn-bg, #2e2610);
+    color: var(--warn-fg, #ffd97a);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .m-permhint .perm-x {
+    border: none;
+    background: transparent;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 16px;
+    padding: 0 8px;
+    cursor: pointer;
   }
 </style>

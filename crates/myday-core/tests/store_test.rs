@@ -1921,7 +1921,7 @@ fn baseline_db_migrates_in_place_without_rebuild() {
         conn.query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap()
     };
-    assert_eq!(version, 7, "迁移链把库升到当前版本");
+    assert_eq!(version, 8, "迁移链把库升到当前版本");
     let builtin_views: i64 = {
         let conn = store2.raw_conn().unwrap();
         conn.query_row(
@@ -1944,6 +1944,17 @@ fn baseline_db_migrates_in_place_without_rebuild() {
         };
         assert_eq!(ok, "ok", "迁移补上列 {col}");
     }
+    // v8 重建 reminders 后可查、channel 全部归一（CHECK 只认 notify/alarm）
+    let bad: i64 = {
+        let conn = store2.raw_conn().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM reminders WHERE channel NOT IN ('notify','alarm')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(bad, 0, "v8 重建后 channel 全部归一");
 }
 
 mod window_and_tokens {
@@ -2827,4 +2838,177 @@ fn utc_date_at(y: i32, m: u32, d: u32, h: u32) -> chrono::DateTime<Utc> {
         .single()
         .unwrap()
         .with_timezone(&chrono::Utc)
+}
+
+#[test]
+fn scheduled_occurrences_covers_future_and_recent_past_skips_done() {
+    let t = TempDir::new();
+    let store = Store::open(&t.db_path(), t.0.path()).unwrap();
+    let now = Utc::now();
+
+    // 未来 1h：应调度
+    let future = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Event),
+            title: Some("未来日程".into()),
+            start_at: Some(now + Duration::hours(1)),
+            end_at: Some(now + Duration::hours(2)),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(!future.reminders.is_empty(), "默认提醒自动补齐");
+
+    // 已完成待办（带未来截止提醒）：调度扫描必须跳过
+    let done = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Task),
+            title: Some("已完成".into()),
+            due_at: Some(now + Duration::hours(3)),
+            ..Default::default()
+        })
+        .unwrap();
+    store.complete_task(&done.id).unwrap();
+
+    let occs = store
+        .scheduled_occurrences(now, Duration::hours(24), Duration::hours(2))
+        .unwrap();
+    assert!(
+        occs.iter().all(|o| o.item.id != done.id),
+        "已完成待办不得进入调度集合"
+    );
+    assert!(
+        occs
+            .iter()
+            .any(|o| o.item.id == future.id && o.at > now && o.at <= now + Duration::hours(24)),
+        "未来发生时刻进入调度集合"
+    );
+
+    // 过去 grace 内、未标记：进调度集合（补闹）；标记后消失
+    let past = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Event),
+            title: Some("刚过去".into()),
+            start_at: Some(now - Duration::minutes(30)),
+            end_at: Some(now + Duration::minutes(30)),
+            reminders: vec![NewReminder {
+                spec: (now - Duration::minutes(10))
+                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                channel: "alarm".into(),
+            }],
+            skip_default_reminder: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let occs2 = store
+        .scheduled_occurrences(now, Duration::hours(24), Duration::hours(2))
+        .unwrap();
+    let past_hit = occs2
+        .iter()
+        .any(|o| o.item.id == past.id && o.at <= now && o.at > now - Duration::hours(2));
+    assert!(past_hit, "grace 内的过去时刻进入调度集合（补闹）");
+
+    // 标记后从调度集合消失
+    let hit = occs2
+        .iter()
+        .find(|o| o.item.id == past.id && o.at <= now)
+        .unwrap();
+    store.mark_reminded(hit.reminder.id, hit.at).unwrap();
+    let occs3 = store
+        .scheduled_occurrences(now, Duration::hours(24), Duration::hours(2))
+        .unwrap();
+    assert!(
+        occs3.iter().all(|o| !(o.item.id == past.id && o.at <= now)),
+        "已标记时刻不再进入调度集合"
+    );
+}
+
+#[test]
+fn v8_rebuild_normalizes_legacy_channel_and_keeps_log() {
+    // 把库的 reminders 表降回 v7 形态（CHECK 含遗留值 sound/popup）并降版本号，
+    // 重开触发 v8 重建：遗留 channel 归一为 alarm，reminder_log（指向被重建的表）
+    // 原封不动 —— 这是重建迁移最容易翻车的外键级联点。
+    let t = TempDir::new();
+    let db = t.db_path();
+    let store = Store::open(&db, t.0.path()).unwrap();
+    let id = store
+        .add_item(NewItem {
+            item_type: Some(ItemType::Task),
+            title: Some("v8 检查".into()),
+            start_at: Some(Utc::now() + Duration::hours(2)),
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    {
+        let conn = store.raw_conn().unwrap();
+        conn.pragma_update(None, "foreign_keys", "OFF").unwrap();
+        conn.execute_batch(
+            "BEGIN IMMEDIATE;
+             CREATE TABLE reminders_v7 (
+               id        INTEGER PRIMARY KEY AUTOINCREMENT,
+               item_id   TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+               spec      TEXT NOT NULL,
+               channel   TEXT NOT NULL DEFAULT 'notify' CHECK (channel IN ('notify','sound','popup'))
+             );
+             INSERT INTO reminders_v7 (id, item_id, spec, channel)
+               SELECT id, item_id, spec, channel FROM reminders;
+             DROP TABLE reminders;
+             ALTER TABLE reminders_v7 RENAME TO reminders;
+             CREATE INDEX IF NOT EXISTS idx_reminders_item ON reminders(item_id);
+             COMMIT;",
+        )
+        .unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        // 首条（默认提醒）改写为遗留值，另补一条 popup 绝对时刻
+        conn.execute(
+            "UPDATE reminders SET channel = 'sound' WHERE id = (SELECT MIN(id) FROM reminders)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reminders (item_id, spec, channel) VALUES (?1, '2026-01-02T00:00:00Z', 'popup')",
+            params![id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reminder_log (reminder_id, remind_at, sent_at)
+             SELECT MIN(id), '2026-01-01T09:00:00Z', '2026-01-01T09:00:00Z' FROM reminders",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 7).unwrap();
+    }
+    drop(store);
+    let store2 = Store::open(&db, t.0.path()).unwrap();
+    let rows: Vec<(String, String)> = {
+        let conn = store2.raw_conn().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT spec, channel FROM reminders ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    assert_eq!(rows.len(), 2, "v8 重建保留全部提醒行");
+    assert!(
+        rows.iter().all(|(_, ch)| ch == "alarm"),
+        "遗留 sound/popup 一律归一为 alarm，实际 {rows:?}"
+    );
+    let logs: i64 = {
+        let conn = store2.raw_conn().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM reminder_log", [], |r| r.get(0))
+            .unwrap()
+    };
+    assert_eq!(logs, 1, "v8 重建不得动 reminder_log（外键级联防线）");
+    let item_reminders: i64 = {
+        let conn = store2.raw_conn().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM reminders WHERE item_id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(item_reminders, 2, "重建后条目的提醒行完整");
 }

@@ -106,7 +106,8 @@
       {#if item.reminders.length}
         <p>{t("mobile.detail_reminder")}：</p>
         {#each item.reminders as r (r.id)}
-          <p class="remrow">⏰ {remLabel(r.spec)}</p>
+          <!-- notify = 系统通知档；alarm = 闹钟档（遗留 sound/popup 值按闹钟处理） -->
+          <p class="remrow">{r.channel === "notify" ? "🔔" : "⏰"} {remLabel(r.spec)}</p>
         {/each}
       {/if}
     </section>

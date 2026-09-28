@@ -4,7 +4,8 @@
   "windows": [
     "main",
     "quick-add",
-    "overlay"
+    "overlay",
+    "alarm"
   ],
   "permissions": [
     "core:default",
