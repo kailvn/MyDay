@@ -223,7 +223,7 @@
 
   .confirm .danger {
     background: var(--danger);
-    color: #fff;
+    color: var(--accent-fg);
   }
 
   .restore {

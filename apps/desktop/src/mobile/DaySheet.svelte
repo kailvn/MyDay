@@ -35,7 +35,7 @@
   }
 
   function dot(it: Item): string {
-    return it.type === "event" ? "var(--m-event)" : it.type === "task" ? "var(--m-task)" : "var(--m-log)";
+    return it.type === "event" ? "var(--type-event)" : it.type === "task" ? "var(--type-task)" : "var(--type-log)";
   }
 
   const sorted = $derived([...items].sort((a, b) => anchor(a) - anchor(b)));

@@ -81,7 +81,7 @@
   }
 
   function typeColor(it: Item): string {
-    return it.type === "event" ? "var(--m-event)" : it.type === "task" ? "var(--m-task)" : "var(--m-log)";
+    return it.type === "event" ? "var(--type-event)" : it.type === "task" ? "var(--type-task)" : "var(--type-log)";
   }
 
   /** 格内色块文案：格宽只有 1/7 屏，时间前缀会把标题挤没——直接显示标题，
@@ -207,10 +207,10 @@
     font-style: normal;
     font-size: 9px;
     font-weight: 400;
-    color: #d05656;
+    color: var(--type-work);
   }
   .holbadge.off {
-    color: #2e9e5b;
+    color: var(--type-log);
   }
   .holname {
     align-self: flex-start;
@@ -219,8 +219,8 @@
     line-height: 1.5;
     padding: 0 5px;
     border-radius: 4px;
-    color: var(--m-hol);
-    background: color-mix(in srgb, var(--m-hol) 16%, transparent);
+    color: var(--type-hol);
+    background: color-mix(in srgb, var(--type-hol) 16%, transparent);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

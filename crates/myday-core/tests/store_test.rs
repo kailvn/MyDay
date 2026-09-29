@@ -2815,6 +2815,21 @@ fn detach_and_skip_occurrence() {
         .unwrap();
     assert_eq!(skipped.recurrence_exdates.len(), 2);
 
+    // unskip（「只改这一期」拖拽的撤销路径）：移除 9/23 例外 → 该期回到系列展开
+    let restored = store
+        .remove_occurrence_exdate(&ev.id, next_wed)
+        .unwrap();
+    assert_eq!(restored.recurrence_exdates, vec![utc_date_at(2026, 9, 30, 9)]);
+    let back = myday_core::recurrence::occurrences_between(
+        &restored,
+        utc_date_at(2026, 9, 23, 0),
+        utc_date_at(2026, 9, 23, 23),
+    );
+    assert_eq!(back.len(), 1, "撤销例外后该期恢复展开");
+    // 幂等：锚点不在例外列表时原样返回，不报错
+    let again = store.remove_occurrence_exdate(&ev.id, next_wed).unwrap();
+    assert_eq!(again.recurrence_exdates.len(), 1);
+
     // 不对应任何发生的时刻被拒绝；非重复条目被拒绝
     assert!(store
         .skip_occurrence(&ev.id, utc_date_at(2026, 9, 24, 9))

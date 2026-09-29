@@ -65,6 +65,22 @@ enum ScanWindow {
 /// （SQLite 官方 12 步recipe，迁移前先 VACUUM INTO 备份）。
 const SCHEMA_VERSION: i64 = 8;
 
+/// 当前 schema 版本。备份恢复用它拒绝「新版本备份装回旧版本程序」的降级
+/// （降级打开没有迁移链可走，等于变相重建）。
+pub fn schema_version() -> i64 {
+    SCHEMA_VERSION
+}
+
+/// 迁移基线（见常量注释）。备份恢复用它拒绝基线以下的遗留结构库——
+/// 那种库走 init 的「备份后重建」路径，恢复场景等价于丢数据。
+pub fn migration_baseline() -> i64 {
+    MIGRATION_BASELINE
+}
+
+/// 「已完成」视图的展示上限（时间倒序截断，防 GUI 无虚拟化渲染失控）。
+/// 历史值 200 在两三年量级就会悄悄截断，故放大到 1000。
+const DONE_VIEW_LIMIT: i64 = 1000;
+
 /// 迁移基线：v4 = 「只追加迁移，永不重建」政策的起点（1.0 数据承诺）。
 /// 基线及以上的库升级默认只走 MIGRATIONS 链；重建仅限用户明确批准的场景
 /// （v8 是首例，迁移前自动备份），其余 DROP 重建只属于更旧的遗留库。
@@ -1306,7 +1322,7 @@ impl Store {
                     "SELECT * FROM items WHERE type='task' AND status IN {open} AND deleted_at IS NULL \
                      AND ((due_at IS NOT NULL AND datetime(due_at) > datetime(?1)) \
                        OR (due_at IS NULL AND start_at IS NOT NULL AND datetime(start_at) > datetime(?1))) \
-                     ORDER BY COALESCE(due_at, start_at) ASC LIMIT 100"
+                     ORDER BY COALESCE(due_at, start_at) ASC"
                 ),
                 true,
             ),
@@ -1320,7 +1336,7 @@ impl Store {
             TaskView::Done => (
                 &format!(
                     "SELECT * FROM items WHERE type='task' AND status IN {closed} AND deleted_at IS NULL \
-                     ORDER BY COALESCE(completed_at, updated_at) DESC LIMIT 200"
+                     ORDER BY COALESCE(completed_at, updated_at) DESC LIMIT {DONE_VIEW_LIMIT}"
                 ),
                 false,
             ),
@@ -1859,6 +1875,27 @@ impl Store {
         ex.push(anchor.trunc_subsecs(0));
         ex.sort();
         ex.dedup();
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE items SET recurrence_exdates = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, exdates_json(&ex), dt(Utc::now())],
+        )?;
+        drop(conn);
+        self.get_item(id)
+    }
+
+    /// 单次例外的撤销：把锚点移出 `recurrence_exdates`，该期回到系列正常展开。
+    /// 「只改这一期」拖拽的撤销用：拆出的单次条目入回收站后，原期必须还原。
+    /// 锚点本就不在例外列表时原样返回（幂等）。
+    pub fn remove_occurrence_exdate(&self, id: &str, anchor: DateTime<Utc>) -> Result<Item> {
+        let base = self.get_item(id)?;
+        let anchor = anchor.trunc_subsecs(0);
+        let mut ex = base.recurrence_exdates.clone();
+        let before = ex.len();
+        ex.retain(|t| *t != anchor);
+        if ex.len() == before {
+            return Ok(base);
+        }
         let conn = self.lock()?;
         conn.execute(
             "UPDATE items SET recurrence_exdates = ?2, updated_at = ?3 WHERE id = ?1",

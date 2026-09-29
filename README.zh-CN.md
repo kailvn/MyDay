@@ -96,6 +96,8 @@ myday search "启动会" --json
 myday stats --days 30 --json
 myday export ics --output ~/calendar.ics
 myday backup                  # 数据库 + 附件打包 zip，保留 7 份
+myday backup restore <zip>    # 校验后恢复（完整性 + schema 检查，自动留安全快照）
+myday reminders tick          # 补跑一轮提醒检查：GUI 关闭时交给 cron / 计划任务
 echo '{"title":"给妈妈打电话","due_at":"2026-09-16T00:00:00Z"}' | myday item add --stdin --json
 myday item add ... --dry-run --idempotency-key agent-1
 ```
@@ -122,8 +124,6 @@ myday item add ... --dry-run --idempotency-key agent-1
 
 ## 路线图
 
-- 未排期待办池：把无日期待办拖上日历
-- 重复条目的单次例外修改；ICS 订阅
 - macOS 构建
 
 更新日志见 [CHANGELOG.md](CHANGELOG.md) · 许可证 [MIT](LICENSE)

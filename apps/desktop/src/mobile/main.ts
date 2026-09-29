@@ -9,6 +9,7 @@ import { mount } from "svelte";
 import { initLocale } from "../lib/i18n";
 import { initHolidays } from "../lib/holidays.svelte";
 import { initFieldStore } from "../lib/fields.svelte";
+import { initTheme } from "../lib/theme.svelte";
 import { api } from "../lib/api";
 import { t } from "../lib/i18n";
 import App from "./App.svelte";
@@ -16,6 +17,7 @@ import "./mobile.css";
 import "../app.css";
 
 initLocale({ load: api.getSetting, save: api.setSetting }).catch(() => {});
+initTheme({ load: api.getSetting, save: api.setSetting }).catch(() => {});
 initHolidays().catch((e) => console.error("myday mobile: 节假日数据装载失败", e));
 void initFieldStore();
 

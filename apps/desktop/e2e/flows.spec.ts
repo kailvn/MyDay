@@ -248,8 +248,14 @@ test("T8.6 未排期池：拖入月格排期 23:59，顺延与清除闭环", asy
   const poolRow = panel.locator("li", { hasText: "整理书架" });
   await expect(poolRow).toBeVisible();
 
-  // 池行拖到 (今天+10) 的月格 → 截止排到那天 23:59，行离开池
-  const key = await dayKey(10);
+  // 池行拖到落点日 → 截止排到那天 23:59，行离开池。
+  // 落点恒取当前渲染月网格内可见的一天：固定「今天+10」会跨月（如 9-28 →
+  // 10-08，网格只补位渲染到月末整周，下月中段格子不存在）——钳到本月倒数
+  // 第二天，顺延 +1 天也留在网格内
+  const now = new Date();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const targetOffset = Math.min(10, lastDay - 1 - now.getDate());
+  const key = await dayKey(targetOffset);
   const cell = page.locator(`[data-cellday="${key}"]`);
   const from = centerOf((await poolRow.boundingBox())!);
   const to = centerOf((await cell.boundingBox())!);
@@ -265,7 +271,7 @@ test("T8.6 未排期池：拖入月格排期 23:59，顺延与清除闭环", asy
   await dueRow.getByRole("button", { name: "＋1天" }).click();
   await expect(page.getByRole("status")).toContainText(/截止已改到/);
 
-  const nextKey = await dayKey(11);
+  const nextKey = await dayKey(targetOffset + 1);
   await page.locator(`[data-cellday="${nextKey}"]`).click();
   const movedRow = panel.locator("li", { hasText: "整理书架" });
   await movedRow.hover();
@@ -342,7 +348,7 @@ test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
     await expect(page.getByRole("status")).not.toBeVisible();
   });
 
-  test("重复日程跨列拖拽：规则改写为每周三", async ({ page }) => {
+  test("重复日程跨列拖拽：先问作用域，「整个系列」= 规则改写为每周三", async ({ page }) => {
     await gotoWeek(page);
     const ev = eventBlock(page, "团队周会"); // 周四 14:00 @weekly:4
     await ev.scrollIntoViewIfNeeded();
@@ -352,7 +358,43 @@ test.describe("T9 周视图拖拽（真实几何，无合成坐标）", () => {
     const from = centerOf(box);
     const dx = wed.x + wed.width / 2 - from.x;
     await dragBy(page, from, dx, 0);
+    const choice = page.getByRole("dialog");
+    await expect(choice).toBeVisible();
+    await choice.getByRole("button", { name: "整个系列" }).click();
     await expect(page.getByRole("status")).toContainText(/每周三/);
+  });
+
+  test("重复日程拖拽选「只改这一期」：拆为独立条目落周三，该期原位消失，可撤销", async ({ page }) => {
+    await gotoWeek(page);
+    const ev = eventBlock(page, "团队周会"); // 周四 14:00 @weekly:4
+    await ev.scrollIntoViewIfNeeded();
+    const box = (await ev.boundingBox())!;
+    const wed = (await page.locator(".day-col").nth(2).boundingBox())!;
+
+    const from = centerOf(box);
+    const dx = wed.x + wed.width / 2 - from.x;
+    await dragBy(page, from, dx, 0);
+    const choice = page.getByRole("dialog");
+    await expect(choice).toContainText("重复条目");
+    await choice.getByRole("button", { name: "只改这一期" }).click();
+
+    await expect(page.getByRole("status")).toContainText(/已改期/);
+    // 拆出的单次条目落在周三 14:00；原周四这一期因例外不再展开
+    await expect(
+      page.locator(".day-col").nth(2).locator(".event", { hasText: "团队周会" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".day-col").nth(3).locator(".event", { hasText: "团队周会" }),
+    ).toHaveCount(0);
+
+    // 撤销 = 删除拆出条目 + 移除例外锚点：周四恢复展开，周三消失
+    await page.getByRole("button", { name: "撤销" }).click();
+    await expect(
+      page.locator(".day-col").nth(3).locator(".event", { hasText: "团队周会" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".day-col").nth(2).locator(".event", { hasText: "团队周会" }),
+    ).toHaveCount(0);
   });
 
   test("空白处拖选创建：面板预填起止时间", async ({ page }) => {

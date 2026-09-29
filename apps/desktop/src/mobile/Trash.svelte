@@ -118,7 +118,7 @@
 {:else}
   {#each items as it (it.id)}
     <div class="m-row">
-      <span class="m-dot" style="background: {it.type === 'event' ? 'var(--m-event)' : it.type === 'task' ? 'var(--m-task)' : 'var(--m-log)'}"></span>
+      <span class="m-dot" style="background: {it.type === 'event' ? 'var(--type-event)' : it.type === 'task' ? 'var(--type-task)' : 'var(--type-log)'}"></span>
       <span class="m-row-main">
         <span class="m-row-title">{displayTitle(it)}</span>
         <span class="m-row-sub">{t("trash.deleted_at")} {deletedDay(it)}</span>
@@ -157,7 +157,7 @@
   }
   .emptybtn.arm {
     background: var(--danger);
-    color: #fff;
+    color: var(--accent-fg);
     font-weight: 700;
   }
   .act {
@@ -177,7 +177,7 @@
   }
   .act.arm {
     background: var(--danger);
-    color: #fff;
+    color: var(--accent-fg);
     font-weight: 700;
   }
 </style>

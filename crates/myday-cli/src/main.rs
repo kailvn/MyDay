@@ -8,6 +8,7 @@
 //! - 写操作优先转发给运行中的 GUI（IPC，由 GUI 执行并刷新视图），GUI 未运行时直写
 //! - `extra` 的键 = 字段 id（`myday field list` 可查）；文件链接保留键为 `文件`
 
+mod notify;
 mod output;
 mod util;
 
@@ -79,11 +80,18 @@ enum Commands {
         #[arg(long)]
         days: Option<i64>,
     },
-    /// 提醒中心：最近已处理提醒（SPRINT2-SPEC §5）
+    /// 提醒中心：历史（缺省）/ `tick` 补跑一轮提醒检查（GUI 关闭时的调度兜底）
     Reminders {
         /// 取最近 N 条（缺省 20）
         #[arg(long)]
         limit: Option<i64>,
+        #[command(subcommand)]
+        cmd: Option<RemindersCmd>,
+    },
+    /// 模板管理（记录页 / 面板按钮的预填充面板；创建路径在前端，CLI 管数据）
+    Template {
+        #[command(subcommand)]
+        cmd: TemplateCmd,
     },
     /// 导出（SPRINT2-SPEC §6）
     Export {
@@ -95,8 +103,29 @@ enum Commands {
         #[command(subcommand)]
         cmd: ImportCmd,
     },
-    /// 一键备份 zip（db + attachments，保留最近 7 份；SPRINT2-SPEC §6）
-    Backup,
+    /// 一键备份（`myday backup` = 创建 zip，保留最近 7 份；
+    /// `myday backup restore <zip>` = 从备份恢复，需先退出 GUI）
+    Backup {
+        #[command(subcommand)]
+        cmd: Option<BackupCmd>,
+    },
+}
+
+#[derive(Subcommand)]
+enum RemindersCmd {
+    /// 补跑一轮提醒检查并补发到期提醒。GUI 运行中则跳过（应用内循环负责）；
+    /// 供 systemd timer / Windows 计划任务周期调用（docs/REMINDER-DAEMON.md）
+    Tick,
+}
+
+#[derive(Subcommand)]
+enum BackupCmd {
+    /// 从备份 zip 恢复 db + attachments：先校验（完整性 / schema 版本，拒绝降级），
+    /// 当前数据自动留快照（backups/pre-restore-*.db + 附件目录整体挪开）
+    Restore {
+        /// myday-backup-*.zip 路径
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -120,6 +149,86 @@ enum ImportCmd {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+/// 模板共享参数：defaults = 列白名单 ∪ 字段 id 的默认值 JSON 对象；
+/// fields = 随模板启用的字段定义 JSON 数组（启用时一次性物化进 field_defs）。
+#[derive(clap::Args)]
+struct TemplateArgs {
+    /// event / task / log
+    #[arg(long = "type")]
+    r#type: String,
+    #[arg(short, long)]
+    name: String,
+    #[arg(long)]
+    tag: Option<String>,
+    /// emoji 图标（按钮 / chip 展示用）
+    #[arg(long)]
+    icon: Option<String>,
+    #[arg(long)]
+    note: Option<String>,
+    /// 默认值 JSON 对象：key = items 列白名单成员或字段 id，如 '{"fd_priority":"高"}'
+    #[arg(long, default_value = "{}")]
+    defaults: String,
+    /// 随模板启用的字段定义 JSON 数组（整体替换）
+    #[arg(long, default_value = "[]")]
+    fields: String,
+}
+
+#[derive(Subcommand)]
+enum TemplateCmd {
+    /// 列出模板（排序即面板顺序）
+    List {
+        /// 只看某类型：event / task / log
+        #[arg(long = "type")]
+        r#type: Option<String>,
+    },
+    /// 查看模板详情（defaults / fields 以 JSON 展示）
+    Get { id: String },
+    /// 新建模板
+    Add {
+        #[command(flatten)]
+        args: TemplateArgs,
+    },
+    /// 更新模板（只传要改的项；defaults / fields 为整体替换）
+    Update {
+        id: String,
+        #[command(flatten)]
+        args: TemplateUpdateArgs,
+    },
+    /// 删除模板
+    Delete { id: String },
+    /// 钉选 / 取消钉选（记录页一键按钮、面板入口）
+    Pin {
+        id: String,
+        /// 取消钉选
+        #[arg(long, conflicts_with = "on")]
+        off: bool,
+        /// 钉选（缺省）
+        #[arg(long)]
+        on: bool,
+    },
+}
+
+/// 更新用可选参数（与 TemplateArgs 同字段但全部可选）。
+#[derive(clap::Args)]
+struct TemplateUpdateArgs {
+    #[arg(long = "type")]
+    r#type: Option<String>,
+    #[arg(short, long)]
+    name: Option<String>,
+    #[arg(long)]
+    tag: Option<String>,
+    #[arg(long)]
+    icon: Option<String>,
+    #[arg(long)]
+    note: Option<String>,
+    /// 默认值 JSON 对象（整体替换）
+    #[arg(long)]
+    defaults: Option<String>,
+    /// 随模板启用的字段定义 JSON 数组（整体替换）
+    #[arg(long)]
+    fields: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -279,6 +388,13 @@ enum ItemCmd {
         #[arg(long)]
         at: String,
     },
+    /// 单次例外的撤销：移除例外锚点，该期回到系列正常展开（skip / 拆分的 undo）
+    Unskip {
+        id: String,
+        /// 该期锚点：event=开始时刻、task=截止时刻
+        #[arg(long)]
+        at: String,
+    },
     /// 待办标记完成（自动写一条完成记录，可在设置关闭）
     Complete { id: String },
     /// 待办取消完成（回到 todo，completed_at 置空）
@@ -410,10 +526,11 @@ fn dispatch(cmd: &Commands, mode: JsonMode) -> Result<()> {
             Ok(())
         }
         Commands::Stats { days } => stats_cmd(*days, mode),
-        Commands::Reminders { limit } => reminders_cmd(*limit, mode),
+        Commands::Reminders { limit, cmd } => reminders_cmd(*limit, cmd.as_ref(), mode),
+        Commands::Template { cmd } => template_cmd(cmd, mode),
         Commands::Export { cmd } => export_cmd(cmd, mode),
         Commands::Import { cmd } => import_cmd(cmd, mode),
-        Commands::Backup => backup_cmd(mode),
+        Commands::Backup { cmd } => backup_cmd(cmd.as_ref(), mode),
     }
 }
 
@@ -795,6 +912,17 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 },
             )
         }
+        ItemCmd::Unskip { id, at } => {
+            let at = parse_dt_arg(at)?;
+            run_mutation(
+                mode,
+                IpcRequest::RemoveOccurrenceExdate { id: id.clone(), at },
+                |store| {
+                    let item = store.remove_occurrence_exdate(id, at)?;
+                    Ok(serde_json::to_value(&item)?)
+                },
+            )
+        }
         ItemCmd::Complete { id } => {
             run_mutation(mode, IpcRequest::CompleteTask { id: id.clone() }, |store| {
                 let item = store.complete_task(id)?;
@@ -1159,7 +1287,10 @@ fn ping(mode: JsonMode) -> Result<()> {
 }
 
 /// 提醒中心历史（SPRINT2-SPEC §5）。
-fn reminders_cmd(limit: Option<i64>, mode: JsonMode) -> Result<()> {
+fn reminders_cmd(limit: Option<i64>, cmd: Option<&RemindersCmd>, mode: JsonMode) -> Result<()> {
+    if let Some(RemindersCmd::Tick) = cmd {
+        return reminders_tick(mode);
+    }
     let hist = open_store()?.reminder_history(limit.unwrap_or(20).clamp(1, 200))?;
     if mode.0 {
         println!("{}", serde_json::json!({ "ok": true, "data": hist }));
@@ -1186,6 +1317,176 @@ fn reminders_cmd(limit: Option<i64>, mode: JsonMode) -> Result<()> {
                 .unwrap_or(""),
         );
     }
+    Ok(())
+}
+
+/// 补跑一轮提醒检查（`myday reminders tick`）。GUI 运行中则跳过——
+/// 应用内 30 秒循环负责发送，两边同时跑会因「先通知后记日志」的窗口重复。
+/// 设计用途见 docs/REMINDER-DAEMON.md。
+fn reminders_tick(mode: JsonMode) -> Result<()> {
+    if ipc::is_gui_running() {
+        return print_json_envelope(
+            mode,
+            &serde_json::json!({ "sent": 0, "skipped": "gui-running" }),
+            |_| println!("GUI 运行中，提醒由应用内循环负责，跳过"),
+        );
+    }
+    let store = open_store()?;
+    let sent = myday_core::reminder::tick_once(&store, &notify::CliNotifier)?;
+    print_json_envelope(mode, &serde_json::json!({ "sent": sent }), |_| {
+        if sent > 0 {
+            println!("已补发 {sent} 条提醒");
+        } else {
+            println!("无到期提醒");
+        }
+    })
+}
+
+// ----------------------------------------------------------------------
+// Template 命令实现
+// ----------------------------------------------------------------------
+
+fn template_cmd(cmd: &TemplateCmd, mode: JsonMode) -> Result<()> {
+    match cmd {
+        TemplateCmd::List { r#type } => {
+            let store = open_store()?;
+            let mut templates = store.list_templates()?;
+            if let Some(t) = r#type {
+                let it = ItemType::parse(t)
+                    .ok_or_else(|| MyDayError::Invalid(format!("未知类型: {t}（可用 event / task / log）")))?;
+                templates.retain(|tpl| tpl.item_type == it);
+            }
+            if mode.0 {
+                println!("{}", serde_json::json!({ "ok": true, "data": templates }));
+                return Ok(());
+            }
+            if templates.is_empty() {
+                println!("暂无模板");
+                return Ok(());
+            }
+            for tpl in &templates {
+                println!(
+                    "{}  {}{}  [{}]{}{}",
+                    tpl.id,
+                    tpl.icon.as_deref().unwrap_or(""),
+                    if tpl.icon.is_some() { " " } else { "" },
+                    tpl.name,
+                    tpl.item_type,
+                    if tpl.pinned { "  📌" } else { "" },
+                );
+            }
+            Ok(())
+        }
+        TemplateCmd::Get { id } => {
+            let tpl = open_store()?.get_template(id)?;
+            print_template(mode, &tpl)
+        }
+        TemplateCmd::Add { args } => {
+            let item_type = parse_template_type(&args.r#type)?;
+            let defaults = parse_template_json(&args.defaults, "defaults", "{}")?;
+            let fields = parse_template_json(&args.fields, "fields", "[]")?;
+            template_write(mode, |store| {
+                store.add_template(
+                    &args.name,
+                    args.tag.as_deref(),
+                    args.icon.as_deref(),
+                    item_type,
+                    &defaults,
+                    &fields,
+                    args.note.as_deref(),
+                )
+            })
+        }
+        TemplateCmd::Update { id, args } => {
+            template_write(mode, |store| {
+                // 只传要改的项：其余沿用现值（defaults / fields 为整体替换）
+                let cur = store.get_template(id)?;
+                let item_type = match &args.r#type {
+                    Some(t) => parse_template_type(t)?,
+                    None => cur.item_type,
+                };
+                let defaults = match &args.defaults {
+                    Some(s) => parse_template_json(s, "defaults", "{}")?,
+                    None => cur.defaults.clone(),
+                };
+                let fields = match &args.fields {
+                    Some(s) => parse_template_json(s, "fields", "[]")?,
+                    None => cur.fields.clone(),
+                };
+                store.update_template(
+                    id,
+                    args.name.as_deref().unwrap_or(&cur.name),
+                    args.tag.as_deref().or(cur.tag.as_deref()),
+                    args.icon.as_deref().or(cur.icon.as_deref()),
+                    item_type,
+                    &defaults,
+                    &fields,
+                    args.note.as_deref().or(cur.note.as_deref()),
+                )
+            })
+        }
+        TemplateCmd::Delete { id } => {
+            template_write(mode, |store| store.delete_template(id))
+        }
+        TemplateCmd::Pin { id, off, .. } => {
+            let pinned = !*off;
+            template_write(mode, |store| {
+                store.set_template_pinned(id, pinned)?;
+                store.get_template(id)
+            })
+        }
+    }
+}
+
+/// 模板写路径：直写库；GUI 在跑则发一次 Refresh 让界面即时刷新
+/// （IPC 无模板变体，刷新语义不变）。
+fn template_write(
+    mode: JsonMode,
+    f: impl FnOnce(&Store) -> Result<Template>,
+) -> Result<()> {
+    let tpl = f(&open_store()?)?;
+    if ipc::is_gui_running() {
+        let _ = ipc::send(&IpcRequest::Refresh);
+    }
+    print_template(mode, &tpl)
+}
+
+fn parse_template_type(s: &str) -> Result<ItemType> {
+    ItemType::parse(s)
+        .ok_or_else(|| MyDayError::Invalid(format!("未知类型: {s}（可用 event / task / log）")))
+}
+
+fn parse_template_json(s: &str, name: &str, default: &str) -> Result<serde_json::Value> {
+    if s.trim().is_empty() {
+        return serde_json::from_str(default)
+            .map_err(|e| MyDayError::Internal(format!("{name} 缺省值解析失败: {e}")));
+    }
+    serde_json::from_str(s)
+        .map_err(|e| MyDayError::Invalid(format!("{name} 不是合法 JSON: {e}")))
+}
+
+fn print_template(mode: JsonMode, tpl: &Template) -> Result<()> {
+    if mode.0 {
+        println!("{}", serde_json::json!({ "ok": true, "data": tpl }));
+        return Ok(());
+    }
+    println!(
+        "{} {}{}  [{}]{}{}",
+        tpl.id,
+        tpl.icon.as_deref().unwrap_or(""),
+        if tpl.icon.is_some() { " " } else { "" },
+        tpl.name,
+        tpl.item_type,
+        if tpl.pinned { "  📌" } else { "" },
+    );
+    if let Some(tag) = &tpl.tag {
+        println!("标签 #{tag}");
+    }
+    if let Some(note) = &tpl.note {
+        println!("备注 {note}");
+    }
+    println!("defaults {}", serde_json::to_string_pretty(&tpl.defaults)?);
+    println!("fields  {}", serde_json::to_string_pretty(&tpl.fields)?);
     Ok(())
 }
 
@@ -1218,15 +1519,48 @@ fn export_cmd(cmd: &ExportCmd, mode: JsonMode) -> Result<()> {
     }
 }
 
-/// 一键备份 zip（SPRINT2-SPEC §6）。
-fn backup_cmd(mode: JsonMode) -> Result<()> {
-    let store = open_store()?;
-    let path = myday_core::backup::backup_zip(&store)?;
-    print_json_envelope(
-        mode,
-        &serde_json::json!({ "path": path.to_string_lossy() }),
-        |_| println!("已备份 {}", path.display()),
-    )
+/// 一键备份（SPRINT2-SPEC §6）：`myday backup` 创建 zip；`myday backup restore` 恢复。
+fn backup_cmd(cmd: Option<&BackupCmd>, mode: JsonMode) -> Result<()> {
+    match cmd {
+        Some(BackupCmd::Restore { path }) => restore_backup(path, mode),
+        None => {
+            let store = open_store()?;
+            let path = myday_core::backup::backup_zip(&store)?;
+            print_json_envelope(
+                mode,
+                &serde_json::json!({ "path": path.to_string_lossy() }),
+                |_| println!("已备份 {}", path.display()),
+            )
+        }
+    }
+}
+
+/// 从备份 zip 恢复。GUI 必须已退出（WAL 被占用时换文件即损坏）。
+fn restore_backup(path: &str, mode: JsonMode) -> Result<()> {
+    if ipc::is_gui_running() {
+        return Err(MyDayError::Conflict(
+            "MyDay 正在运行，数据库被占用；请先完全退出 MyDay（含托盘）再恢复".into(),
+        ));
+    }
+    let root = myday_core::paths::data_dir()?;
+    let report = myday_core::backup::restore_zip(std::path::Path::new(path), &root)?;
+    print_json_envelope(mode, &serde_json::to_value(&report)?, |_| {
+        println!(
+            "已恢复：日程 {} · 待办 {} · 记录 {}（附件 {} 个；备份 schema v{} → v{}）",
+            report.items.event,
+            report.items.task,
+            report.items.log,
+            report.attachments_restored,
+            report.backup_schema_version,
+            report.restored_schema_version,
+        );
+        if let Some(s) = &report.safety_snapshot {
+            println!("恢复前的库已快照到 {}", s.display());
+        }
+        if let Some(p) = &report.previous_attachments {
+            println!("原附件目录已挪至 {}（确认无误后可自行删除）", p.display());
+        }
+    })
 }
 
 /// ICS 导入（本地文件一次性导入）。

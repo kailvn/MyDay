@@ -34,6 +34,7 @@
 - **标签 / 附件 / 文件链接**：标签多对多；附件粘贴/拖入落本地目录（库存相对路径，多张、缩略图、双击放大、删条目级联清文件）；文件链接只记路径不复制文件（文件 / 文件夹整窗拖入或粘路径），行内 📎/📂 打开（文件夹进文件管理器）/ 📁 定位。
 - **重复规则**：`@daily` / `@weekly:n` / `@monthly:d`，可带结束条件 `;until=YYYY-MM-DD`（含当天）或 `;count=N`（剩余期数，完成推进自动递减、取消完成回拨恢复；耗尽后完成=系列正常终结）（v1.2 新增）；「修改全部」语义；重复待办完成=推进下一期、取消完成=回拨一期；日历/今天页按窗口展开渲染虚拟实例。
 - **重复单次例外（v1.2 新增）**：`items.recurrence_exdates`（schema v7）记录被剔除的发生锚点；重复实例详情面板提供「拆为单次条目 / 仅删除这一期」；CLI `item detach / skip --at`；ICS EXDATE 往返；窗口查询补取锚点在窗口外的重复系列（修复跨周 / 跨月重复实例不显示的既有缺口）。
+- **单期作用域拖拽（v1.4.1 新增）**：拖拽重复条目落库前弹作用域二选一——「只改这一期」= 拆为独立条目并应用落点（系列其余期不动，toast 撤销 = 删拆出条目 + 移除例外锚点还原该期），「整个系列」= 既有规则智能改写；月视图面板行与周/日网格块（移动/调边）全覆盖；CLI `item unskip --at` 撤销例外。
 
 ### 2.2 录入与捕获
 
@@ -76,7 +77,7 @@
 
 - **提醒存意图（spec）**：相对规则 `@start-10m` / `@due-1h` / `@dailyT09:00` 或绝对 RFC3339，1:N 条；改期后提醒自动跟随；应用层与 DB 双向校验。
 - **提醒档位（v8）**：`channel` = `notify` 系统通知 / `alarm` 闹钟（「不提醒」= 不建提醒行）；桌面条目面板提醒行直接切档，移动端快速添加「方式」选择，条目详情按档位显示 🔔 / ⏰；snooze 覆盖行继承档位（闹钟稍后仍以闹钟响）。
-- **可靠性**：30 秒提醒循环；`reminder_log` 复合键去重；**补发窗口**（默认 120 分钟可调）+ **错过聚合摘要**（一条通知汇总最多 3 条，防通知风暴）。
+- **可靠性**：30 秒提醒循环；`reminder_log` 复合键去重；**补发窗口**（默认 120 分钟可调）+ **错过聚合摘要**（一条通知汇总最多 3 条，防通知风暴）；GUI 关闭时的无 GUI 补跑入口 `myday reminders tick`（GUI 运行中自动跳过，供 systemd timer / Windows 计划任务周期调用，见 docs/REMINDER-DAEMON.md）。
 - **桌面通知动作**：GNOME 系统通知按钮直达 完成 / 稍后提醒（+10 分钟）/ 打开定位（GNOME 受限时降级为定位）。
 - **桌面闹钟档**：置顶弹窗（label `alarm`，前端按窗口 label 路由 AlarmPopup）+ WebAudio 循环提示音（关窗即停）+ critical 常驻系统通知兜底；动作 完成 / 稍后 / 打开 / 忽略。
 - **安卓系统闹钟移交**（本地插件 `plugins/tauri-plugin-myday-alarm`）：提醒的调度交给系统 `AlarmManager`——notify 档 `setExactAndAllowWhileIdle`（无精确授权降级 `setWindow`），alarm 档 `setAlarmClock`（免精确授权、Doze 可触发）全屏闹铃 + 闹钟铃声 + FLAG_INSISTENT；App 进程冻结 / 被杀照常到点触发，重启后开机重排（SharedPreferences 持久化 + BOOT_COMPLETED）；改时间 / 删除 / 完成 30 秒节拍内取消已排定闹钟；前端同步失败时 Rust 侧兜底直发通知，宁重复不漏报。
@@ -103,7 +104,7 @@
 
 ### 2.10 CLI / IPC / 可编程性（核心差异化）
 
-- **命令树**：`item`（add/list/get/update/complete/convert/delete/snooze/query）/ `field` / `view` / `template` 相关 / `quick-add` / `search` / `stats` / `reminders` / `export ics` / `backup` / `ping` / `reveal`。
+- **命令树**：`item`（add/list/get/update/complete/convert/delete/snooze/query）/ `field` / `view` / `template`（add/get/list/update/delete/pin）/ `quick-add` / `search` / `stats` / `reminders`（历史 / `tick`）/ `export ics` / `import ics` / `backup`（创建 / `restore`）/ `ping` / `reveal`。
 - **稳定机器契约**：`--json` 信封 `{ok,data}` / `{ok:false,error{code,message}}`；退出码 0/1/2/3/4；字段名向后兼容承诺。
 - **agent 友好**：`--dry-run` 预览、`--idempotency-key` 幂等（重试返回已有条目）、`--stdin` JSON 输入、`--field id=值`、类型自动识别、时间严格解析不猜格式。
 - **本地 IPC**：Unix socket（Windows 按平台分派）+ JSON Lines；CLI 写操作优先经运行中的 GUI 执行并广播刷新，GUI 未运行直写库；`quick-add` 可唤起弹窗预填。
@@ -113,7 +114,7 @@
 - **ICS 导出**：VEVENT/VTODO + RRULE + VALARM + `myday://` 回链（设置页与 CLI 双入口）。
 - **ICS 导入（v1.2 新增）**：本地 .ics 一次性导入，VEVENT → 日程、VTODO → 待办（无截止待办 = 进未排期池）；RRULE 映射回内置重复文法（结束条件 / INTERVAL ≠ 1 / YEARLY 等降级为告警），VALARM 相对/绝对提醒随条目导入；重复导入双重防护（myday 回链跳过 + `ics-<UID>` 幂等键）；入口：`myday import ics`（支持 `--dry-run`）+ 设置页路径导入。
 - **回收站（v1.2 新增）**：删除 = 软删（`deleted_at`，schema v6 迁移），行与附件文件原封不动、提醒静默；回收站页支持逐条恢复 / 彻底删除（两步确认）/ 清空；删除超 30 天在 GUI 启动时自动彻底清理；CLI：`item delete --hard` / `item restore` / `item list --trash`；全部列表/视图/统计/搜索/窗口查询排除回收站条目。
-- **一键备份**：zip（SQLite VACUUM INTO 快照 + 附件目录），保留最近 7 份。
+- **一键备份与恢复**：`myday backup` 生成 zip（SQLite VACUUM INTO 快照 + 附件目录），保留最近 7 份；`myday backup restore <zip>` 校验后恢复（integrity_check + items 表 + schema 版本三重校验，拒绝降级 / 遗留结构 / 损坏包；恢复前当前库自动快照 + 附件目录整体挪开保留；恢复后沿迁移链升级并报告计数）。GUI 运行中拒绝恢复（WAL 被占用）。
 - **删除保护**：GUI 两步确认 + 删除即入回收站（行与附件原封不动，恢复入口在回收站页）；提醒/标签/附件文件的级联清理在彻底删除（回收站内逐条或清空）时执行。
 - **Schema 演进**：无迁移链，旧库 `VACUUM INTO` 备份后重建；schema 版本号判定。
 
@@ -122,23 +123,25 @@
 - 系统托盘（快速添加、悬浮窗开关、显示主窗口）；关闭=隐藏保活；单实例。
 - GNOME 原生通知（DBus）；全局快捷键走 GNOME 自定义快捷键 + CLI（Wayland 可靠路径）。
 - 首次启动「选择启用模板」引导；设置页含 数据与 IPC / 节假日 / 提醒（默认提前 N 分钟、补发窗口）/ 悬浮窗 / 全局快捷键提示 / 字段与模板管理。
+- 界面主题（2026-09-29，THEME-SPEC）：五套配色（纸黄 / 青瓷 / 蓝灰 / 石墨 / 粉色）× 三态形态（跟随系统 / 浅色 / 深色），桌面与移动共用；取色收敛 `themes.css` 令牌层，全部窗口实时跟随，localStorage 镜像 + 头部内联脚本防启动闪色。
 
 ### 2.13 工程质量
 
-- Rust 集成测试（core store/view + CLI 真二进制）；前端 golden 自检（holidays / recurrence / timewords / tpltime 四组）；Playwright 真 Chromium E2E（26 用例，语义定位约定，失败留 trace）；`?e2e=1` 内存 mock 支持交互式实机调试。
+- Rust 集成测试（core store/view + CLI 真二进制）；前端 golden 自检（holidays / recurrence / timewords / tpltime 四组）；Playwright 真 Chromium E2E（29 用例，语义定位约定，失败留 trace）；`?e2e=1` 内存 mock 支持交互式实机调试。
 
 ## 3. 未实现 / 明确不做（对比时的已知边界）
 
 **路线图内未做**：
-- 重复单次例外修改、until/次数结束（当前只有「修改全部」+ 拖拽规则改写）
-- 本地 ICS 订阅导入、CalDAV/远程日历
-- systemd 独立提醒守护（提醒依赖 GUI 常驻）
-- 提醒 1:N 的创建路径 UI（schema 已支持，当前默认单条）、提醒通道（声音/弹窗）选择
-- 字段条件筛选进日历（今天页/日历暂不接视图模型）、看板/画廊等布局、按字段分组
+- 重复单期例外的**非时间字段**独立化（「只改这一期」已覆盖时间/时长；标题 / 备注 / 提醒的单期改写仍走 拆为单次 再编辑）；RRULE 长尾（INTERVAL ≠ 1、多 BYDAY、YEARLY）导入降级为告警
+- CalDAV/远程日历（双向协议）
+- 移动端待办/记录页扩展（日历为主页是既定形态选择）
+- 提醒 1:N 的创建路径 UI（schema 已支持，当前默认单条）
 - 跨时区显示（按本地时区聚合）
 - macOS 构建
 
 **明确不做（需求文档钉死）**：云同步、多人协作/权限、富文本编辑器、邮件/联系人、完整自然语言解析、图片入 ICS、远程 API 服务。
+**明确不做（2026-09-28 拍板）**：视图模型进日历——FILTER-SPEC 既定决策（今天页/日历的时间窗语义自洽，过滤 UI 不进入这两处；P5 评估项维持搁置），看板/画廊布局、按字段分组随之同为远期评估项。
+**明确不做（2026-09-28 拍板，轻量化取向）**：`myday sync serve` 无头服务——桌面 App 关闭即托盘保活 + 开机自启，同步服务实际常驻，抽离服务端 crate 是为不存在的问题付架构成本；ICS 订阅——个人使用无订阅源场景（国内生态公开 ICS 源稀缺，节假日走内置 + 国务院通知自定义 JSON 导入），曾以只读暂存层轻量实现，发版前评估实用价值后整体移除（未发布，无迁移包袱）。
 
 ## 4. 对比框架建议
 
@@ -181,3 +184,4 @@
 架构与决策：`docs/ARCHITECTURE.md` · `docs/SCHEMA-REDESIGN.md`
 交互与功能：`docs/INTERACTION.md`（v1.5）· `docs/SPRINT-SPEC.md` · `docs/SPRINT2-SPEC.md` · `docs/OVERLAY-SPEC.md`（v1.1）
 视图与数据：`docs/FILTER-SPEC.md` · `docs/E2E.md` · `docs/BUILD-WINDOWS.md` · `TODO.md`
+外观与主题：`docs/THEME-SPEC.md`

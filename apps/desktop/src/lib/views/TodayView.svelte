@@ -272,8 +272,8 @@
     margin-left: 12px;
     font-size: 13px;
     font-weight: 600;
-    color: #2e9e5b;
-    background: color-mix(in srgb, #2e9e5b 14%, transparent);
+    color: var(--type-log);
+    background: color-mix(in srgb, var(--type-log) 14%, transparent);
     border-radius: 999px;
     padding: 3px 12px;
     vertical-align: middle;
@@ -399,7 +399,7 @@
   }
 
   .badge.od {
-    color: #fff;
+    color: var(--accent-fg);
     background: var(--danger);
   }
 

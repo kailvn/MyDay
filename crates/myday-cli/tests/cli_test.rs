@@ -383,3 +383,155 @@ fn occurrence_detach_and_skip() {
     let out = run(myday(&t).args(["item", "skip", &id, "--at", "2026-10-08T09:00", "--json"]));
     assert!(out.status.success());
 }
+
+// ----------------------------------------------------------------------
+// 模板管理（v1.4.1 起 CLI 全量可管，不再只有前端入口）
+// ----------------------------------------------------------------------
+
+#[test]
+fn template_crud_lifecycle() {
+    let t = TempDir::new().unwrap();
+
+    // 新建：空 defaults 合法；非法 defaults（未知字段 id）拒绝
+    let out = run(myday(&t).args([
+        "template",
+        "add",
+        "--name",
+        "服药",
+        "--type",
+        "log",
+        "--icon",
+        "💊",
+        "--tag",
+        "健康",
+        "--json",
+    ]));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["data"]["id"].as_str().unwrap().to_string();
+    assert!(id.starts_with("tpl_"));
+    assert_eq!(v["data"]["pinned"], true, "新建模板缺省钉选");
+
+    let out = run(
+        myday(&t).args([
+            "template",
+            "add",
+            "--name",
+            "坏模板",
+            "--type",
+            "log",
+            "--defaults",
+            r#"{"fd_not_exist":"x"}"#,
+            "--json",
+        ]),
+    );
+    assert_eq!(out.status.code(), Some(2), "未知字段 id 应被校验拒绝");
+
+    // 查看：defaults / fields JSON 可见
+    let out = run(myday(&t).args(["template", "get", &id, "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["name"], "服药");
+    assert_eq!(v["data"]["item_type"], "log");
+
+    // 更新：只传要改的项（改名 + 换类型），其余沿用
+    let out = run(myday(&t).args([
+        "template",
+        "update",
+        &id,
+        "--name",
+        "吃药",
+        "--json",
+    ]));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["name"], "吃药");
+    assert_eq!(v["data"]["tag"], "健康", "未传的 tag 沿用现值");
+
+    // 列表 + 类型过滤 + 取消钉选（库内还有内置种子模板，按 id 断言）
+    let out = run(myday(&t).args(["template", "list", "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tpl| tpl["id"] == id.as_str()),
+        "列表应含新建模板"
+    );
+    let out = run(myday(&t).args(["template", "list", "--type", "task", "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tpl| tpl["id"] != id.as_str()),
+        "task 过滤不应含 log 模板"
+    );
+    let out = run(myday(&t).args(["template", "pin", &id, "--off", "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["pinned"], false);
+
+    // 删除
+    let out = run(myday(&t).args(["template", "delete", &id, "--json"]));
+    assert!(out.status.success());
+    assert_eq!(
+        run(myday(&t).args(["template", "get", &id, "--json"]))
+            .status
+            .code(),
+        Some(3),
+        "删除后 get 应 404"
+    );
+}
+
+// ----------------------------------------------------------------------
+// 备份恢复（myday backup / backup restore）
+// ----------------------------------------------------------------------
+
+#[test]
+fn backup_restore_roundtrip_via_cli() {
+    let t = TempDir::new().unwrap();
+
+    let id1 = add_item_id(&t, &["--title", "恢复前的待办"]);
+    let out = run(myday(&t).args(["backup", "--json"]));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let zip_path = v["data"]["path"].as_str().unwrap().to_string();
+
+    // 备份后新增一条 + 删掉原来那条；恢复后应回到备份时点
+    add_item_id(&t, &["--title", "备份后的待办"]);
+    run(myday(&t).args(["item", "delete", &id1]));
+
+    let out = run(myday(&t).args(["backup", "restore", &zip_path, "--json"]));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["items"]["task"], 1);
+    assert!(
+        v["data"]["safety_snapshot"].is_string(),
+        "恢复应报告当前库的安全快照路径"
+    );
+
+    let out = run(myday(&t).args(["item", "list", "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let titles: Vec<&str> = v["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, vec!["恢复前的待办"], "恢复应回到备份时点");
+}
+
+// ----------------------------------------------------------------------
+// 提醒 tick（GUI 关闭时的调度兜底）
+// ----------------------------------------------------------------------
+
+#[test]
+fn reminders_tick_without_gui_reports_sent_count() {
+    let t = TempDir::new().unwrap();
+    // 无 socket → GUI 未运行路径；库内无到期提醒 → sent = 0，不尝试系统通知
+    let out = run(myday(&t).args(["reminders", "tick", "--json"]));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["sent"], 0);
+}

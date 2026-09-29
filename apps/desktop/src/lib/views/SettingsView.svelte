@@ -5,6 +5,14 @@
   import { toast } from "../toast.svelte";
   import { holidaysMeta, importHolidaysJson, resetHolidays } from "../holidays.svelte";
   import { t, i18n, setLocale, type Locale } from "../i18n";
+  import {
+    PALETTES,
+    PALETTE_SWATCH,
+    theme,
+    setPalette,
+    setMode,
+    type ThemeMode,
+  } from "../theme.svelte";
   import { renderSVG } from "uqr";
 
   let info = $state<{ version: string; data_root: string; socket_path: string; backend?: string } | null>(null);
@@ -203,6 +211,33 @@
       <option value="en">English</option>
     </select>
   </label>
+  <label>
+    {t("settings.themeMode")}
+    <select
+      data-testid="theme-mode"
+      value={theme.mode}
+      onchange={(e) => void setMode(e.currentTarget.value as ThemeMode)}
+    >
+      <option value="system">{t("settings.mode.system")}</option>
+      <option value="light">{t("settings.mode.light")}</option>
+      <option value="dark">{t("settings.mode.dark")}</option>
+    </select>
+  </label>
+  <div class="theme-row">
+    <span>{t("settings.themePalette")}</span>
+    <div class="swatches">
+      {#each PALETTES as p (p)}
+        <button
+          class="swatch"
+          class:active={theme.palette === p}
+          data-testid={`palette-${p}`}
+          title={t(`settings.palette.${p}`)}
+          style={`background: linear-gradient(90deg, ${PALETTE_SWATCH[p].bg} 50%, ${PALETTE_SWATCH[p].darkBg} 50%);`}
+          onclick={() => void setPalette(p)}
+        ></button>
+      {/each}
+    </div>
+  </div>
   <label class="col-check">
     <input
       type="checkbox"
@@ -595,5 +630,29 @@
   }
   .qrrow .hint {
     max-width: 34em;
+  }
+
+  /* 主题：配色圆点 = 亮/暗形态对半拼（预览色来自 PALETTE_SWATCH，真实取色在 themes.css） */
+  .theme-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .swatches {
+    display: inline-flex;
+    gap: 8px;
+  }
+
+  .swatch {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+  }
+
+  .swatch.active {
+    border-color: var(--accent);
   }
 </style>

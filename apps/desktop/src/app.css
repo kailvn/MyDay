@@ -1,31 +1,5 @@
-/* MyDay 全局主题：自维护「纸黄」配色（不再跟随 GNOME 灰蓝），
-   深色模式跟随系统换深牛皮纸。全应用只维护这一套变量。 */
-:root {
-  --bg: #f6efdd;
-  --sidebar-bg: #ece3ca;
-  --card: #fffbee;
-  --text: #453f30;
-  --text-dim: #8b7f63;
-  --accent: #3584e4;
-  --accent-fg: #ffffff;
-  --border: #ddd0b2;
-  --danger: #e01b24;
-  --radius: 10px;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #2a251b;
-    --sidebar-bg: #221e15;
-    --card: #332d20;
-    --text: #ede5d0;
-    --text-dim: #a99d7f;
-    --accent: #3584e4;
-    --border: #4b4331;
-    color-scheme: dark;
-  }
-}
+/* 全局样式：reset + 元素缺省。取色一律走 themes.css 令牌层（@import 置顶）。 */
+@import "./themes.css";
 
 * {
   box-sizing: border-box;

@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyDay</title>
+    <script>
+      // 防首帧闪色：绘制前按主题镜像恢复 <html> 属性（镜像由 lib/theme.svelte.ts
+      // 维护，SQLite 设置仍是权威）。键名与取值域须与 theme.svelte.ts 的
+      // MIRROR_KEY / PALETTES / ThemeMode 一致（内联脚本无法 import，靠注释约定）。
+      try {
+        var t = JSON.parse(localStorage.getItem("myday.theme") || "null");
+        var ps = ["paper", "celadon", "slate", "graphite", "rose"];
+        var de = document.documentElement;
+        de.dataset.theme = t && ps.indexOf(t.palette) >= 0 ? t.palette : "paper";
+        var m = t && ["light", "dark", "system"].indexOf(t.mode) >= 0 ? t.mode : "system";
+        de.dataset.mode =
+          m === "system"
+            ? matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : m;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -13,18 +13,21 @@
   import CalendarMonth from "./CalendarMonth.svelte";
   import DaySheet from "./DaySheet.svelte";
   import ItemDetail from "./ItemDetail.svelte";
+  import EditSheet from "./EditSheet.svelte";
   import QuickAdd from "./QuickAdd.svelte";
   import Trash from "./Trash.svelte";
+  import Tasks from "./Tasks.svelte";
   import SyncSheet from "./SyncSheet.svelte";
 
   const pad2 = (n: number) => String(n).padStart(2, "0");
 
-  let view = $state<"calendar" | "trash">("calendar");
+  let view = $state<"calendar" | "trash" | "tasks">("calendar");
   let year = $state(new Date().getFullYear());
   let month = $state(new Date().getMonth()); // 0 起
   let byDay = $state<Map<string, Item[]>>(new Map());
   let daySel = $state<string | null>(null);
   let detail = $state<Item | null>(null);
+  let editing = $state<Item | null>(null);
   let quickFor = $state<{ open: boolean; day: string | null }>({ open: false, day: null });
   let syncOpen = $state(false);
 
@@ -164,9 +167,10 @@
   let pushed = 0;
   let pendingPop = 0;
   const layers = $derived(
-    (view === "trash" ? 1 : 0) +
+    (view === "calendar" ? 0 : 1) +
       (daySel !== null ? 1 : 0) +
       (detail ? 1 : 0) +
+      (editing ? 1 : 0) +
       (quickFor.open ? 1 : 0) +
       (syncOpen ? 1 : 0),
   );
@@ -183,11 +187,12 @@
   });
 
   function closeTopLayer() {
-    if (detail) detail = null;
+    if (editing) editing = null;
+    else if (detail) detail = null;
     else if (quickFor.open) quickFor = { open: false, day: null };
     else if (syncOpen) syncOpen = false;
     else if (daySel !== null) daySel = null;
-    else if (view === "trash") view = "calendar";
+    else if (view !== "calendar") view = "calendar";
   }
 
   onMount(() => {
@@ -213,6 +218,7 @@
     <h1 class="m-title">{monthLabel}</h1>
     <button class="m-iconbtn" aria-label={t("calendar.next_month")} onclick={() => shiftMonth(1)}>›</button>
     <button class="m-today" onclick={goToday}>{t("common.today")}</button>
+    <button class="m-iconbtn" aria-label={t("mobile.tasks_title")} onclick={() => (view = "tasks")}>☑</button>
     <button class="m-iconbtn" aria-label={t("mobile.sync_title")} onclick={() => (syncOpen = true)}>⇄</button>
     <button class="m-iconbtn" aria-label={t("trash.title")} onclick={() => (view = "trash")}>🗑</button>
   </header>
@@ -238,10 +244,14 @@
 {:else}
   <header class="m-header">
     <button class="m-iconbtn" onclick={() => (view = "calendar")}>‹</button>
-    <h1 class="m-title">{t("trash.title")}</h1>
+    <h1 class="m-title">{view === "trash" ? t("trash.title") : t("mobile.tasks_title")}</h1>
   </header>
   <div class="trashwrap">
-    <Trash onchange={() => void reload()} />
+    {#if view === "trash"}
+      <Trash onchange={() => void reload()} />
+    {:else}
+      <Tasks onopen={(it) => (detail = it)} onchange={() => void reload()} />
+    {/if}
   </div>
 {/if}
 
@@ -259,8 +269,21 @@
   <ItemDetail
     item={detail}
     onclose={() => (detail = null)}
+    onedit={(it) => (editing = it)}
     onchange={() => {
       void reload();
+      detail = null;
+    }}
+  />
+{/if}
+
+{#if editing}
+  <EditSheet
+    item={editing}
+    onclose={() => (editing = null)}
+    onsaved={() => {
+      void reload();
+      editing = null;
       detail = null;
     }}
   />
@@ -294,9 +317,9 @@
   }
   .m-permhint .perm-main {
     flex: 1;
-    border: 1px solid var(--warn-border, #b98a2e);
-    background: var(--warn-bg, #2e2610);
-    color: var(--warn-fg, #ffd97a);
+    border: 1px solid var(--warn-border);
+    background: var(--warn-bg);
+    color: var(--warn-fg);
     border-radius: 8px;
     padding: 8px 10px;
     font-size: 12px;

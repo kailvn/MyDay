@@ -133,6 +133,15 @@ fn handle(store: &Store, cmd: &str, args: &serde_json::Value) -> Result<serde_js
                 .map_err(e10s)?,
         )
         .unwrap()),
+        "remove_occurrence_exdate" => Ok(serde_json::to_value(
+            store
+                .remove_occurrence_exdate(
+                    &arg_str(args, &["id"]).ok_or("missing id")?,
+                    arg_time(args, "at")?,
+                )
+                .map_err(e10s)?,
+        )
+        .unwrap()),
         "complete_task" => Ok(serde_json::to_value(
             store
                 .complete_task(&arg_str(args, &["id"]).ok_or("missing id")?)
@@ -509,6 +518,7 @@ fn route(store: &Arc<Store>, body: &str) -> String {
             | "empty_trash"
             | "detach_occurrence"
             | "skip_occurrence"
+            | "remove_occurrence_exdate"
             | "add_template"
             | "update_template"
             | "delete_template"

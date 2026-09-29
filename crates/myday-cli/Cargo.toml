@@ -16,6 +16,8 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 clap.workspace = true
+# reminders tick 的系统通知兜底（GUI 关闭时由调度器补跑，见 notify.rs / docs/REMINDER-DAEMON.md）
+notify-rust = "4"
 
 [dev-dependencies]
 tempfile = "3"

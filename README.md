@@ -112,6 +112,8 @@ myday search "kickoff" --json
 myday stats --days 30 --json
 myday export ics --output ~/calendar.ics
 myday backup                  # zip of db + attachments, keeps 7
+myday backup restore <zip>    # verified restore (integrity + schema check, auto safety snapshot)
+myday reminders tick          # one reminder sweep for cron/timers when the GUI is closed
 echo '{"title":"Call mom","due_at":"2026-09-16T00:00:00Z"}' | myday item add --stdin --json
 myday item add ... --dry-run --idempotency-key agent-1
 ```
@@ -141,8 +143,6 @@ More in [docs/](docs/): [architecture](docs/ARCHITECTURE.md) ·
 
 ## Roadmap
 
-- Unscheduled-tasks backlog: drag undated tasks onto the calendar
-- Single-occurrence exceptions for recurring items; ICS subscription
 - macOS build
 
 Release history in [CHANGELOG.md](CHANGELOG.md) · License [MIT](LICENSE)

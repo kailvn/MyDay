@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * 条目只读详情（移动端可看不可编辑）：时间 / 备注 / 字段（fieldBadges 只读
-   * 渲染）/ 标签 / 重复规则。轻操作仅两项：待办就地完成·回退、删除进回收站
-   * （均为数据操作而非字段编辑）。
+   * 条目详情弹层：时间 / 备注 / 字段（fieldBadges 只读渲染）/ 标签 / 重复规则
+   * 的查看面 + 轻操作（待办就地完成·回退、删除进回收站）。「编辑」弹
+   * EditSheet（标题 / 备注 / 时间 / 提醒 / 标签）；字段值与重复规则仍在桌面编辑。
    */
   import { t } from "../lib/i18n";
   import { api, displayTitle, type Item } from "../lib/api";
@@ -10,7 +10,12 @@
   import { recurrenceLabel } from "../lib/recurrence";
   import { toast } from "../lib/toast.svelte";
 
-  let { item, onclose, onchange }: { item: Item; onclose: () => void; onchange: () => void } = $props();
+  let {
+    item,
+    onclose,
+    onchange,
+    onedit,
+  }: { item: Item; onclose: () => void; onchange: () => void; onedit: (item: Item) => void } = $props();
 
   let busy = $state(false);
   // 两段式删除确认：第一击进入待确认态,3 秒内再击才真删。
@@ -78,7 +83,7 @@
 <div class="m-sheet" role="dialog">
   <div class="m-grip"></div>
   <div class="m-sheet-head">
-    <span class="typebadge" style="--c: {item.type === 'event' ? 'var(--m-event)' : item.type === 'task' ? 'var(--m-task)' : 'var(--m-log)'}">
+    <span class="typebadge" style="--c: {item.type === 'event' ? 'var(--type-event)' : item.type === 'task' ? 'var(--type-task)' : 'var(--type-log)'}">
       {item.type === "event" ? t("type.event") : item.type === "task" ? t("type.task") : t("type.log")}
     </span>
     <h2 class="m-sheet-title">{displayTitle(item)}</h2>
@@ -144,9 +149,12 @@
     <p class="meta">
       {t("mobile.detail_meta")}：{dt(item.created_at)} / {dt(item.updated_at)}
     </p>
-    <p class="rohint">{t("mobile.detail_readonly")}</p>
+    <p class="rohint">{t("mobile.detail_hint")}</p>
 
     <div class="actions">
+      <button class="m-primary" disabled={busy} onclick={() => onedit(item)}>
+        {t("common.edit")}
+      </button>
       {#if item.type === "task"}
         <button
           class="m-primary"
@@ -244,7 +252,7 @@
   }
   .danger.arm {
     background: var(--danger);
-    color: #fff;
+    color: var(--accent-fg);
     font-weight: 700;
   }
 </style>

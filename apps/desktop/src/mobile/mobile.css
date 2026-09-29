@@ -1,21 +1,5 @@
-/* 移动端共享样式（src/mobile/ 专用；主题变量复用 app.css 的纸黄配色）。
+/* 移动端共享样式（src/mobile/ 专用）；取色一律走 app.css → themes.css 令牌层。
    形态词汇：顶栏 / 月网格 / 底部弹层 / FAB / 类型色块。 */
-
-/* ---- 类型色（日程蓝 = accent；待办橙；记录绿；随纸黄主题微调对比） ---- */
-:root {
-  --m-event: #3584e4;
-  --m-task: #d97a1f;
-  --m-log: #2e9e5b;
-  --m-hol: #a16207;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --m-event: #6ba4e8;
-    --m-task: #e39a55;
-    --m-log: #57b87f;
-    --m-hol: #d9b25f;
-  }
-}
 
 /* ---- 根布局：顶栏 + 月网格撑满剩余视口（Outlook 式不留白） ---- */
 #app {
@@ -322,7 +306,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--accent-fg);
   transition: left 0.15s;
 }
 .m-switch:checked {

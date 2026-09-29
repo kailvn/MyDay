@@ -1,0 +1,146 @@
+/* ============================================================
+   主题令牌层：全应用唯一取色处（THEME-SPEC.md）。
+
+   分层与覆盖规则（自上而下，后面的赢前面的）：
+   1. :root 基座 —— 形态令牌 + 功能色/类型色缺省 + 纸黄亮色（缺省配色）。
+      各套配色只覆写「纸色家族 + 墨色」六个变量，功能色/类型色全配色共用。
+   2. [data-mode='dark'] —— 跨配色共享的暗色提亮（类型色/警示色 + color-scheme）。
+   3. 各配色块 —— [data-theme=…]（亮）与 [data-theme=…][data-mode=dark]（暗）。
+      新增一套配色 = 照抄一个配色块对（共 12~16 行），组件层零改动。
+
+   属性由 lib/theme.svelte.ts 同步写到 <html>：
+   data-theme = 配色 id，data-mode = 解析后的 light|dark
+   （mode='system' 在 JS 里用 matchMedia 解析，CSS 永远只见 light/dark）。
+   ============================================================ */
+
+/* ---- 1. 基座：形态令牌 + 功能色/类型色 + 纸黄亮色（缺省配色） ---- */
+:root {
+  /* 形态（与配色无关） */
+  --radius: 10px;
+
+  /* 功能色 */
+  --accent: #3584e4;
+  --accent-fg: #ffffff; /* accent/danger/type 等饱和底色上的文字 */
+  --danger: #e01b24;
+
+  /* 类型色：日程蓝 / 待办橙 / 记录·完成·休绿 / 节假日琥珀 / 班·加班红 */
+  --type-event: #3584e4;
+  --type-task: #d97a1f;
+  --type-log: #2e9e5b;
+  --type-hol: #a16207;
+  --type-work: #d05656;
+
+  /* 当前时刻线（周视图 now-line） */
+  --now: #e05252;
+
+  /* 警示横幅三件套：描边 / 底 / 字 */
+  --warn-border: #e6a23c;
+  --warn-bg: #f7edd3;
+  --warn-fg: #7a5a17;
+
+  /* 纸色家族 + 墨色（纸黄 · 亮） */
+  --bg: #f6efdd;
+  --sidebar-bg: #ece3ca;
+  --card: #fffbee;
+  --border: #ddd0b2;
+  --text: #453f30;
+  --text-dim: #8b7f63;
+  color-scheme: light;
+}
+
+/* ---- 2. 共享暗色：类型色/警示色提亮，所有配色通用 ---- */
+[data-mode='dark'] {
+  color-scheme: dark;
+  --type-event: #6ba4e8;
+  --type-task: #e39a55;
+  --type-log: #57b87f;
+  --type-hol: #d9b25f;
+  --type-work: #e07070;
+  --warn-border: #b98a2e;
+  --warn-bg: #2e2610;
+  --warn-fg: #ffd97a;
+}
+
+/* ---- 3. 配色块（纸黄 = 上面的 :root 缺省，只补暗色块） ---- */
+
+/* 纸黄 paper：暖牛皮纸（原缺省配色） */
+[data-theme='paper'][data-mode='dark'] {
+  --bg: #2a251b;
+  --sidebar-bg: #221e15;
+  --card: #332d20;
+  --border: #4b4331;
+  --text: #ede5d0;
+  --text-dim: #a99d7f;
+}
+
+/* 青瓷 celadon：冷调瓷绿 */
+[data-theme='celadon'] {
+  --bg: #e8eee4;
+  --sidebar-bg: #d9e2d3;
+  --card: #f3f7ef;
+  --border: #c2cfbc;
+  --text: #3a4634;
+  --text-dim: #7d8a74;
+}
+[data-theme='celadon'][data-mode='dark'] {
+  --bg: #1f2620;
+  --sidebar-bg: #182019;
+  --card: #27322a;
+  --border: #3b4a3e;
+  --text: #dde7da;
+  --text-dim: #93a48f;
+}
+
+/* 蓝灰 slate：冷调蓝灰 */
+[data-theme='slate'] {
+  --bg: #e8ecf1;
+  --sidebar-bg: #d9dfe8;
+  --card: #f4f7fa;
+  --border: #c3ccd8;
+  --text: #333d4a;
+  --text-dim: #748398;
+}
+[data-theme='slate'][data-mode='dark'] {
+  --bg: #1e242e;
+  --sidebar-bg: #171d26;
+  --card: #262e3a;
+  --border: #3a4454;
+  --text: #dce3ed;
+  --text-dim: #8d9cb4;
+}
+
+/* 石墨 graphite：无彩度中性灰 */
+[data-theme='graphite'] {
+  --bg: #ececec;
+  --sidebar-bg: #e0e0e0;
+  --card: #f7f7f7;
+  --border: #cfcfcf;
+  --text: #333333;
+  --text-dim: #828282;
+}
+[data-theme='graphite'][data-mode='dark'] {
+  --bg: #222222;
+  --sidebar-bg: #1a1a1a;
+  --card: #2b2b2b;
+  --border: #414141;
+  --text: #e8e8e8;
+  --text-dim: #a0a0a0;
+}
+
+/* 粉色 rose：暖调绯纸 */
+[data-theme='rose'] {
+  --bg: #f6e8ea;
+  --sidebar-bg: #eed9dd;
+  --card: #fdf3f4;
+  --border: #e3c9ce;
+  --text: #493237;
+  --text-dim: #948088;
+}
+[data-theme='rose'][data-mode='dark'] {
+  --bg: #2b2024;
+  --sidebar-bg: #231a1d;
+  --card: #352a2e;
+  --border: #4d3b40;
+  --text: #eedcde;
+  --text-dim: #b59da1;
+}

@@ -558,6 +558,8 @@ export const api = {
   pathIsDir: (path: string) => invoke<boolean>("path_is_dir", { path }).catch(() => false),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
+  /** 主窗口揭幕底色（#rrggbb）：GTK 在 webview 首帧前露这层底色，防白闪（THEME-SPEC） */
+  setWindowBg: (color: string) => invoke<void>("set_window_bg", { color }),
   /** 开机自启（Linux XDG autostart / Windows Run 键） */
   getAutostart: () => invoke<boolean>("get_autostart"),
   setAutostart: (enable: boolean) => invoke<void>("set_autostart", { enable }),
@@ -629,6 +631,8 @@ export const api = {
   detachOccurrence: (id: string, at: string) => invoke<Item>("detach_occurrence", { id, at }),
   /** 重复条目单次例外：仅删除某一次发生 */
   skipOccurrence: (id: string, at: string) => invoke<Item>("skip_occurrence", { id, at }),
+  /** 单次例外的撤销：移除例外锚点，该期回到系列正常展开（「只改这一期」undo 用） */
+  removeOccurrenceExdate: (id: string, at: string) => invoke<Item>("remove_occurrence_exdate", { id, at }),
   /** 彻底删除（级联清理提醒/标签/附件文件，不可逆） */
   purgeItem: (id: string) => invoke<Item>("purge_item", { id }),
   /** 清空回收站，返回清理条数 */

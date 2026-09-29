@@ -75,6 +75,11 @@ pub enum IpcRequest {
         id: String,
         at: chrono::DateTime<chrono::Utc>,
     },
+    /// 单次例外的撤销：移除例外锚点，该期回到系列正常展开（skip / 只改这一期的 undo）
+    RemoveOccurrenceExdate {
+        id: String,
+        at: chrono::DateTime<chrono::Utc>,
+    },
     CompleteTask {
         id: String,
     },

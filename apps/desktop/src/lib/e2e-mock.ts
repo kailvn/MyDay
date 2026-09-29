@@ -388,6 +388,14 @@ export function installE2eMock() {
       it.updated_at = utc(new Date());
       return clone(it);
     },
+    remove_occurrence_exdate: (a) => {
+      const it = byId(String(a.id));
+      if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
+      const at = String(a.at);
+      it.recurrence_exdates = (it.recurrence_exdates ?? []).filter((x) => x !== at);
+      it.updated_at = utc(new Date());
+      return clone(it);
+    },
     restore_item: (a) => {
       const it = byId(String(a.id));
       if (!it) throw new Error(`[NOT_FOUND] ${a.id}`);
@@ -744,6 +752,7 @@ export function installE2eMock() {
     "empty_trash",
     "detach_occurrence",
     "skip_occurrence",
+    "remove_occurrence_exdate",
     "complete_task",
     "snooze",
     "convert_task_to_event",

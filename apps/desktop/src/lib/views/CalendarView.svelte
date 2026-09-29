@@ -20,6 +20,7 @@
   import EditButton from "../EditButton.svelte";
   import { openCreate, openEdit, rowDetail } from "../panel.svelte";
   import { toast } from "../toast.svelte";
+  import RescheduleChoice from "../RescheduleChoice.svelte";
   import { holidayOfKey } from "../holidays.svelte";
   import { moveEventOccurrence, moveTaskDue, scheduleTask, clearTaskDue, type RescheduleResult } from "../reschedule";
   import { t, q, i18n } from "../i18n";
@@ -355,6 +356,62 @@
     }
   }
 
+  // ---- 重复条目拖拽的作用域二选一（Google Calendar 式）--------------------
+  // 拖的是系列的一次发生，落库前问「只改这一期 / 整个系列」；Esc = 取消不写库。
+  let pendingScope = $state<null | {
+    title: string;
+    applyOnce: () => Promise<void>;
+    applySeries: () => Promise<void>;
+  }>(null);
+
+  /** 「只改这一期」：拆为独立条目（原系列记单次例外）→ 在新条目上应用落点；
+   *  toast 撤销 = 拆出条目入回收站 + 移除例外锚点（该期回到系列）。 */
+  async function applyOccurrenceOnce(
+    base: Item,
+    anchorIso: string,
+    patched: (detached: Item) => RescheduleResult,
+  ) {
+    try {
+      const det = await api.detachOccurrence(base.id, anchorIso);
+      const r = patched(det);
+      if (!r.patch || Object.keys(r.patch).length === 0) return;
+      await api.updateItem(det.id, r.patch);
+      toast.show(r.note, {
+        ms: 6000,
+        action: {
+          label: t("common.undo"),
+          run: async () => {
+            try {
+              await api.deleteItem(det.id);
+              await api.removeOccurrenceExdate(base.id, anchorIso);
+            } catch (e) {
+              console.error("撤销单次改期失败", e);
+            }
+          },
+        },
+      });
+    } catch (e) {
+      toast.show(t("calendar.reschedule_failed", { error: String(e) }));
+    }
+  }
+
+  /** 重复条目：弹作用域选择；普通条目：直接应用（现行为不变） */
+  function rescheduleWithScope(
+    base: Item,
+    anchorIso: string,
+    build: (it: Item) => RescheduleResult,
+  ) {
+    if (!base.recurrence) {
+      void applyReschedule(base, build(base));
+      return;
+    }
+    pendingScope = {
+      title: t("reschedule.choice_title", { title: displayTitle(base) }),
+      applyOnce: () => applyOccurrenceOnce(base, anchorIso, build),
+      applySeries: () => applyReschedule(base, build(base)),
+    };
+  }
+
   function onRowDragEnd() {
     const d = rowDrag;
     rowDrag = null;
@@ -372,11 +429,18 @@
         s.getHours(),
         s.getMinutes(),
       );
-      void applyReschedule(d.base, moveEventOccurrence(d.base, s, en, newStart));
+      rescheduleWithScope(d.base, s.toISOString(), (it) =>
+        moveEventOccurrence(it, s, en, newStart),
+      );
     } else if (d.kind === "pool") {
       void applyReschedule(d.base, scheduleTask(d.base, target));
     } else {
-      void applyReschedule(d.base, moveTaskDue(d.base, target));
+      const due = d.ev.due_at ? new Date(d.ev.due_at) : null;
+      rescheduleWithScope(
+        d.base,
+        due ? due.toISOString() : d.ev.start_at ?? new Date().toISOString(),
+        (it) => moveTaskDue(it, target),
+      );
     }
   }
 
@@ -701,6 +765,18 @@
   </div>
 {/if}
 
+{#if pendingScope}
+  <RescheduleChoice
+    title={pendingScope.title}
+    onpick={(scope) => {
+      const p = pendingScope;
+      pendingScope = null;
+      void (scope === "once" ? p.applyOnce() : p.applySeries());
+    }}
+    oncancel={() => (pendingScope = null)}
+  />
+{/if}
+
 
 <script module lang="ts">
   /** 月 = 网格 + 当天面板；周 / 日 = 时间网格（WeekGrid，日 = 单列） */
@@ -943,13 +1019,13 @@
   }
 
   .hol.off {
-    color: #2e9e5b;
-    background: color-mix(in srgb, #2e9e5b 16%, transparent);
+    color: var(--type-log);
+    background: color-mix(in srgb, var(--type-log) 16%, transparent);
   }
 
   .hol.work {
-    color: #d05656;
-    background: color-mix(in srgb, #d05656 14%, transparent);
+    color: var(--type-work);
+    background: color-mix(in srgb, var(--type-work) 14%, transparent);
   }
 
   .day-panel li.draggable {

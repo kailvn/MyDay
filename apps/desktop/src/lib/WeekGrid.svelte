@@ -28,6 +28,7 @@
   import { trashItems } from "./trash";
   import { openCreate, openDetail, openEdit } from "./panel.svelte";
   import { toast } from "./toast.svelte";
+  import RescheduleChoice from "./RescheduleChoice.svelte";
   import { holidayOfKey } from "./holidays.svelte";
   import DeleteButton from "./DeleteButton.svelte";
   import EditButton from "./EditButton.svelte";
@@ -485,6 +486,44 @@
     }
   }
 
+  // ---- 重复条目拖拽的作用域二选一（与月视图 CalendarView 同一套语义）------
+  let pendingScope = $state<null | {
+    title: string;
+    applyOnce: () => Promise<void>;
+    applySeries: () => Promise<void>;
+  }>(null);
+
+  /** 「只改这一期」：拆为独立条目（原系列记单次例外）→ 在新条目上应用落点；
+   *  toast 撤销 = 拆出条目入回收站 + 移除例外锚点（该期回到系列）。 */
+  async function applyOccurrenceOnce(
+    base: Item,
+    anchorIso: string,
+    patched: (detached: Item) => RescheduleResult,
+  ) {
+    try {
+      const det = await api.detachOccurrence(base.id, anchorIso);
+      const r = patched(det);
+      if (!r.patch || Object.keys(r.patch).length === 0) return;
+      await api.updateItem(det.id, r.patch);
+      toast.show(r.note, {
+        ms: 6000,
+        action: {
+          label: t("common.undo"),
+          run: async () => {
+            try {
+              await api.deleteItem(det.id);
+              await api.removeOccurrenceExdate(base.id, anchorIso);
+            } catch (e) {
+              console.error("撤销单次改期失败", e);
+            }
+          },
+        },
+      });
+    } catch (e) {
+      toast.show(t("week.reschedule_failed", { error: String(e) }));
+    }
+  }
+
   /** 池行勾选框：就地完成 / 回退（点选框不开详情、不触发拖拽），与月视图池一致 */
   async function togglePoolDone(it: Item) {
     try {
@@ -527,15 +566,21 @@
     const mk = (m: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, m);
     const occStart = new Date(d.ev.start_at!);
     const occEnd = d.ev.end_at ? new Date(d.ev.end_at) : occStart;
-    let result: RescheduleResult;
-    if (d.kind === "move") {
-      result = moveEventOccurrence(d.base, occStart, occEnd, mk(d.startMin));
-    } else if (d.kind === "resize-start") {
-      result = resizeEventOccurrence(d.base, occStart, occEnd, "start", mk(d.startMin));
-    } else {
-      result = resizeEventOccurrence(d.base, occStart, occEnd, "end", mk(d.endMin));
+    const build = (it: Item): RescheduleResult => {
+      if (d.kind === "move") return moveEventOccurrence(it, occStart, occEnd, mk(d.startMin));
+      if (d.kind === "resize-start")
+        return resizeEventOccurrence(it, occStart, occEnd, "start", mk(d.startMin));
+      return resizeEventOccurrence(it, occStart, occEnd, "end", mk(d.endMin));
+    };
+    if (d.base.recurrence) {
+      pendingScope = {
+        title: t("reschedule.choice_title", { title: displayTitle(d.base) }),
+        applyOnce: () => applyOccurrenceOnce(d.base, occStart.toISOString(), build),
+        applySeries: () => applyReschedule(d.base, build(d.base)),
+      };
+      return;
     }
-    void applyReschedule(d.base, result);
+    void applyReschedule(d.base, build(d.base));
   }
 
   const fmtMin = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
@@ -737,6 +782,18 @@
   </p>
 {/if}
 
+{#if pendingScope}
+  <RescheduleChoice
+    title={pendingScope.title}
+    onpick={(scope) => {
+      const p = pendingScope;
+      pendingScope = null;
+      void (scope === "once" ? p.applyOnce() : p.applySeries());
+    }}
+    oncancel={() => (pendingScope = null)}
+  />
+{/if}
+
 <script module lang="ts">
   const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -905,13 +962,13 @@
   }
 
   .hol.off {
-    color: #2e9e5b;
-    background: color-mix(in srgb, #2e9e5b 16%, transparent);
+    color: var(--type-log);
+    background: color-mix(in srgb, var(--type-log) 16%, transparent);
   }
 
   .hol.work {
-    color: #d05656;
-    background: color-mix(in srgb, #d05656 14%, transparent);
+    color: var(--type-work);
+    background: color-mix(in srgb, var(--type-work) 14%, transparent);
   }
 
   .day-sub {
@@ -924,7 +981,7 @@
   }
 
   .due-chips {
-    color: var(--danger, #d33);
+    color: var(--danger);
   }
 
   .scroller {
@@ -1103,7 +1160,7 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: #e05252;
+    background: var(--now);
     z-index: 3;
     pointer-events: none;
   }
@@ -1118,8 +1175,8 @@
     line-height: 1;
     padding: 2px 4px;
     border-radius: 4px;
-    color: #fff;
-    background: #e05252;
+    color: var(--accent-fg);
+    background: var(--now);
     font-variant-numeric: tabular-nums;
   }
 
@@ -1131,7 +1188,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #e05252;
+    background: var(--now);
   }
 
   .drag-tip {

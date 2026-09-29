@@ -281,8 +281,8 @@
     position: absolute;
     top: 0;
     right: 0;
-    background: var(--danger, #d33);
-    color: #fff;
+    background: var(--danger);
+    color: var(--accent-fg);
     font-size: 10px;
     font-weight: 700;
     border-radius: 999px;
@@ -357,7 +357,7 @@
     background: var(--card);
     color: var(--text);
     border: 1px solid var(--border);
-    border-left: 3px solid #e6a23c;
+    border-left: 3px solid var(--warn-border);
     border-radius: 8px;
     padding: 9px 16px;
     font-size: 13px;

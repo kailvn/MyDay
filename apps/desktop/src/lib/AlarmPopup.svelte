@@ -132,9 +132,9 @@
     flex-direction: column;
     gap: 10px;
     padding: 14px;
-    background: var(--panel-bg, #1c1c24);
-    color: var(--fg, #eee);
-    border: 1px solid var(--border, #3a3a4a);
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
     border-radius: 12px;
     overflow: auto;
   }
@@ -149,9 +149,9 @@
     flex-direction: column;
     gap: 10px;
     padding: 12px;
-    border: 1px solid var(--border, #3a3a4a);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    background: var(--card-bg, #26262f);
+    background: var(--card);
   }
   .alarm-title {
     font-size: 16px;
@@ -169,7 +169,7 @@
     flex-wrap: wrap;
   }
   .btn {
-    border: 1px solid var(--border, #3a3a4a);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 6px 12px;
     background: transparent;
@@ -178,12 +178,12 @@
     font-size: 13px;
   }
   .btn:hover {
-    background: var(--hover, #33333f);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
   }
   .btn.primary {
-    background: var(--accent, #4f7cff);
+    background: var(--accent);
     border-color: transparent;
-    color: #fff;
+    color: var(--accent-fg);
   }
   .btn.ghost {
     opacity: 0.7;

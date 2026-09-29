@@ -152,6 +152,22 @@ pub fn skip_occurrence(
     Ok(item)
 }
 
+/// 单次例外的撤销：移除例外锚点，该期回到系列正常展开（「只改这一期」的 undo 用）。
+#[tauri::command]
+pub fn remove_occurrence_exdate(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    at: chrono::DateTime<chrono::Utc>,
+) -> std::result::Result<Item, String> {
+    let item = state
+        .store
+        .remove_occurrence_exdate(&id, at)
+        .map_err(err_string)?;
+    notify_changed(&app);
+    Ok(item)
+}
+
 #[tauri::command]
 pub fn purge_item(
     app: tauri::AppHandle,
@@ -797,6 +813,25 @@ pub fn set_setting(
     value: String,
 ) -> std::result::Result<(), String> {
     state.store.set_setting(&key, &value).map_err(err_string)
+}
+
+/// 主窗口揭幕前把 webview 底色设为主题背景色：GTK 在 webview 首帧呈现前露出的
+/// 就是这层底色（默认白），设成主题 bg 后揭幕不再白闪（THEME-SPEC 防闪色）。
+/// 只供主窗口调用（quick-add 等透明窗口须保持透明底色，前端已按 label 拦截）。
+#[tauri::command]
+pub fn set_window_bg(window: tauri::WebviewWindow, color: String) -> std::result::Result<(), String> {
+    let hex = color.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return Err(format!("非法颜色 {color}（须为 #rrggbb）"));
+    }
+    let v = u32::from_str_radix(hex, 16).map_err(|e| format!("非法颜色 {color}: {e}"))?;
+    let c = tauri::window::Color(
+        ((v >> 16) & 0xff) as u8,
+        ((v >> 8) & 0xff) as u8,
+        (v & 0xff) as u8,
+        255,
+    );
+    window.set_background_color(Some(c)).map_err(|e| e.to_string())
 }
 
 /// 应用信息（设置页展示）。移动端无 IPC socket / 显示后端概念，只报版本与数据目录。
@@ -1458,6 +1493,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         import_ics,
         detach_occurrence,
         skip_occurrence,
+        remove_occurrence_exdate,
         complete_task,
         snooze,
         search_items,
@@ -1478,6 +1514,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         attachment_abs_path,
         get_setting,
         set_setting,
+        set_window_bg,
         check_conflict,
         stats_summary,
         view_list,

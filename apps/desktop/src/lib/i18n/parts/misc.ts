@@ -66,6 +66,10 @@ export const part_misc = {
   "reschedule.series_changed": "，整个系列已改{rule}",
   "reschedule.rule_weekly": "（规则改为每周{day}）",
   "reschedule.rule_monthly": "（规则改为每月{d}日）",
+  "reschedule.choice_title": "「{title}」是重复条目——改动作用于？",
+  "reschedule.once": "只改这一期",
+  "reschedule.series_btn": "整个系列",
+  "reschedule.once_hint": "「只改这一期」会把它拆成独立条目，系列其余期不受影响；撤销即还原",
 
   // ---- recurrence.ts（重复规则显示名；解析与规则串不动）----
   "recurrence.daily": "每天",
@@ -166,6 +170,10 @@ export const part_misc_en = {
   "reschedule.series_changed": ", whole series updated{rule}",
   "reschedule.rule_weekly": " (rule now weekly on {day})",
   "reschedule.rule_monthly": " (rule now monthly on day {d})",
+  "reschedule.choice_title": "\"{title}\" repeats — apply the change to?",
+  "reschedule.once": "Only this occurrence",
+  "reschedule.series_btn": "All occurrences",
+  "reschedule.once_hint": "'Only this occurrence' splits it into a standalone item; other occurrences are untouched. Undo restores everything.",
 
   // ---- recurrence.ts ----
   "recurrence.daily": "Daily",
