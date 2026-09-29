@@ -1,0 +1,19 @@
+[package]
+name = "myday-e2e-bridge"
+description = "MyDay E2E 测试桥：把 Store 读写以「一条 HTTP POST = 一个命令」暴露给浏览器端 E2E（测试基建）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# 二进制名沿用历史 `e2e_bridge`：文档与启动命令（target/debug/e2e_bridge）不变
+[[bin]]
+name = "e2e_bridge"
+path = "src/main.rs"
+
+[dependencies]
+myday-core.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+# 附件 base64 解码（add_attachment_b64）
+base64 = "0.22"

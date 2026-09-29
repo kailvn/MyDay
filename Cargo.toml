@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/myday-core",
     "crates/myday-cli",
+    "crates/myday-e2e-bridge",
     "apps/desktop/src-tauri",
     "plugins/tauri-plugin-myday-alarm",
 ]

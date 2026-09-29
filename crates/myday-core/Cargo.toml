@@ -14,8 +14,6 @@ thiserror.workspace = true
 uuid.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
-# E2E 桥（src/bin/e2e_bridge.rs）：附件 base64 解码
-base64 = "0.22"
 # 一键备份 zip（SPRINT2-SPEC §6）：写出仅 STORED；deflate 只为恢复时兼容
 # 用户重压缩过的包
 zip = { version = "2", default-features = false, features = ["deflate"] }

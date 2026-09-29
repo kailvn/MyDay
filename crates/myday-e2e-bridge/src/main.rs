@@ -1,9 +1,9 @@
-//! E2E / agent 桥（测试基建，随 GUI 发布无害）：把 [`Store`] 的全部读写
+//! E2E / agent 桥（独立测试基建 crate，不是任何发布产物的依赖）：把 [`Store`] 的全部读写
 //! 以「一条 HTTP POST = 一个命令」的方式暴露给浏览器端 E2E（Playwright mock
 //! `__TAURI_INTERNALS__.invoke` → 本桥），使 UI 测试跑在真实 core + 真实
 //! SQLite 上。零新增依赖：手写 HTTP 解析（Content-Length + body）。
 //!
-//! 启动：`myday_core_e2e_bridge <port>`（MYDAY_DATA_DIR 等环境变量照常生效）。
+//! 启动：`target/debug/e2e_bridge <port>`（MYDAY_DATA_DIR 等环境变量照常生效）。
 //! 请求：`POST / {"cmd":"add_item","args":{...}}`；响应：`{"ok":true,"data":...}`
 //! 或 `{"ok":false,"error":{"code","message"}}`——与 CLI 信封一致。
 //!

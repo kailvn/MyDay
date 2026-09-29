@@ -10,8 +10,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 // 界面语言（中/英）：?lang= 强制 > 已保存设置 > 系统语言；e2e 模式锁 zh
 initLocale({ load: api.getSetting, save: api.setSetting }).catch(() => {});
 
-// 浏览器 E2E 模式（?e2e=1）：mount 前装内存 mock，替代 Tauri 运行时
-if (new URLSearchParams(location.search).has("e2e")) {
+// 浏览器 E2E 模式（?e2e=1）：mount 前装内存 mock，替代 Tauri 运行时。
+// __MYDAY_E2E__ 是编译期常量（vite define，见 vite.config.ts）：dev 构建恒
+// true，生产构建恒 false——整段被消除，mock 模块不进产物。
+if (__MYDAY_E2E__ && new URLSearchParams(location.search).has("e2e")) {
   const { installE2eMock } = await import("./lib/e2e-mock");
   installE2eMock();
 }

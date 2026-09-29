@@ -2512,7 +2512,6 @@ dependencies = [
 name = "myday-core"
 version = "1.4.1"
 dependencies = [
- "base64 0.22.1",
  "chrono",
  "dirs 6.0.0",
  "rusqlite",
@@ -2545,6 +2544,16 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "myday-e2e-bridge"
+version = "1.4.1"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "myday-core",
+ "serde_json",
 ]
 
 [[package]]
