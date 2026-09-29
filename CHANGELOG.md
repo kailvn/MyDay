@@ -4,7 +4,7 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 功能详情见 [docs/FEATURE-INVENTORY.md](docs/FEATURE-INVENTORY.md)。
 
-## [未发布]
+## [1.4.1] - 2026-09-29
 
 ### 新增
 - 界面主题（配色 × 形态两轴，见 docs/THEME-SPEC.md）：五套配色（纸黄缺省 / 青瓷 / 蓝灰 / 石墨 / 粉色）× 三态形态（跟随系统 / 浅色 / 深色），设置页色板圆点 + 下拉即时切换，全部窗口（含悬浮窗 / 快速添加 / 闹钟）实时跟随；取色收敛到 `themes.css` 令牌层——新增一套配色 = 一个块对 12~16 行，组件层零改动；暗色不再锁死跟随系统，桌面/移动共用同一词汇表；设置键 `ui_theme` / `ui_theme_mode`（settings KV 表，无迁移）
