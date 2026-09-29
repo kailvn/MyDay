@@ -31,22 +31,33 @@
     return new Date(y, m - 1, d).toISOString();
   }
 
+  // 组件由 App.svelte 的 {#if editing} 按次挂载，item 在生命周期内不可变：
+  // 以下顶层引用均为有意取挂载时刻的初值（表单种子 / save() 的 diff 基线）。
+  // svelte-ignore state_referenced_locally
   let title = $state(item.title ?? "");
+  // svelte-ignore state_referenced_locally
   let note = $state(item.note ?? "");
+  // svelte-ignore state_referenced_locally
   let tags = $state(item.tags.join(", "));
   let saving = $state(false);
 
   // ---- 时间（按类型预填自条目现值） --------------------------------------
+  // svelte-ignore state_referenced_locally
   const start0 = splitIso(item.start_at);
+  // svelte-ignore state_referenced_locally
   const end0 = splitIso(item.end_at);
+  // svelte-ignore state_referenced_locally
   const due0 = splitIso(item.due_at);
+  // svelte-ignore state_referenced_locally
   const occurred0 = splitIso(item.occurred_at);
+  // svelte-ignore state_referenced_locally
   let allDay = $state(item.type === "event" ? item.all_day : item.due_all_day);
   let day = $state(start0.day || due0.day || occurred0.day);
   let startHm = $state(start0.hm || "09:00");
   let endHm = $state(end0.hm || "10:00");
   let dueHm = $state(due0.hm || "18:00");
   /** 待办清空截止 → 退回未排期池（与桌面「无日期」同口径） */
+  // svelte-ignore state_referenced_locally
   let dueNone = $state(item.type === "task" && !item.due_at);
   let occurredHm = $state(occurred0.hm || "12:00");
 
@@ -84,10 +95,12 @@
     return m[1] === (item.type === "task" ? "due" : "start") ? hit[0] : "keep";
   }
   let reminder = $state<RemChoice>(initialChoice());
+  // svelte-ignore state_referenced_locally
   let remMode = $state<"notify" | "alarm">(
     item.reminders[0]?.channel === "alarm" ? "alarm" : "notify",
   );
 
+  // svelte-ignore state_referenced_locally
   const isLog = item.type === "log";
   let canSave = $derived(isLog || title.trim().length > 0);
 

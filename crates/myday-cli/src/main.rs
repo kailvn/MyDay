@@ -704,7 +704,11 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
             new.reminders = match remind.as_deref() {
                 Some(r) => vec![NewReminder {
                     spec: parse_reminder_spec(r)?,
-                    channel: if *alarm { "alarm".into() } else { "notify".into() },
+                    channel: if *alarm {
+                        "alarm".into()
+                    } else {
+                        "notify".into()
+                    },
                 }],
                 None if *no_remind => Vec::new(),
                 None => Vec::new(), // 未表态 → core 按设置补默认提醒
@@ -838,7 +842,11 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                         |spec| {
                             vec![NewReminder {
                                 spec,
-                                channel: if *alarm { "alarm".into() } else { "notify".into() },
+                                channel: if *alarm {
+                                    "alarm".into()
+                                } else {
+                                    "notify".into()
+                                },
                             }]
                         },
                     ),
@@ -1352,8 +1360,9 @@ fn template_cmd(cmd: &TemplateCmd, mode: JsonMode) -> Result<()> {
             let store = open_store()?;
             let mut templates = store.list_templates()?;
             if let Some(t) = r#type {
-                let it = ItemType::parse(t)
-                    .ok_or_else(|| MyDayError::Invalid(format!("未知类型: {t}（可用 event / task / log）")))?;
+                let it = ItemType::parse(t).ok_or_else(|| {
+                    MyDayError::Invalid(format!("未知类型: {t}（可用 event / task / log）"))
+                })?;
                 templates.retain(|tpl| tpl.item_type == it);
             }
             if mode.0 {
@@ -1425,9 +1434,7 @@ fn template_cmd(cmd: &TemplateCmd, mode: JsonMode) -> Result<()> {
                 )
             })
         }
-        TemplateCmd::Delete { id } => {
-            template_write(mode, |store| store.delete_template(id))
-        }
+        TemplateCmd::Delete { id } => template_write(mode, |store| store.delete_template(id)),
         TemplateCmd::Pin { id, off, .. } => {
             let pinned = !*off;
             template_write(mode, |store| {
@@ -1440,10 +1447,7 @@ fn template_cmd(cmd: &TemplateCmd, mode: JsonMode) -> Result<()> {
 
 /// 模板写路径：直写库；GUI 在跑则发一次 Refresh 让界面即时刷新
 /// （IPC 无模板变体，刷新语义不变）。
-fn template_write(
-    mode: JsonMode,
-    f: impl FnOnce(&Store) -> Result<Template>,
-) -> Result<()> {
+fn template_write(mode: JsonMode, f: impl FnOnce(&Store) -> Result<Template>) -> Result<()> {
     let tpl = f(&open_store()?)?;
     if ipc::is_gui_running() {
         let _ = ipc::send(&IpcRequest::Refresh);
@@ -1461,8 +1465,7 @@ fn parse_template_json(s: &str, name: &str, default: &str) -> Result<serde_json:
         return serde_json::from_str(default)
             .map_err(|e| MyDayError::Internal(format!("{name} 缺省值解析失败: {e}")));
     }
-    serde_json::from_str(s)
-        .map_err(|e| MyDayError::Invalid(format!("{name} 不是合法 JSON: {e}")))
+    serde_json::from_str(s).map_err(|e| MyDayError::Invalid(format!("{name} 不是合法 JSON: {e}")))
 }
 
 fn print_template(mode: JsonMode, tpl: &Template) -> Result<()> {

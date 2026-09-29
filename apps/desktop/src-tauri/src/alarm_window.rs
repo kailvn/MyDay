@@ -94,7 +94,9 @@ pub fn dispatch(app: &AppHandle, key: &str, action: &str) {
     let entry = {
         let state = app.state::<AlarmPending>();
         let mut list = state.0.lock().expect("alarm pending poisoned");
-        list.iter().position(|e| e.key == key).map(|i| list.remove(i))
+        list.iter()
+            .position(|e| e.key == key)
+            .map(|i| list.remove(i))
     };
     let Some(entry) = entry else { return };
 

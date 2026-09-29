@@ -2816,10 +2816,11 @@ fn detach_and_skip_occurrence() {
     assert_eq!(skipped.recurrence_exdates.len(), 2);
 
     // unskip（「只改这一期」拖拽的撤销路径）：移除 9/23 例外 → 该期回到系列展开
-    let restored = store
-        .remove_occurrence_exdate(&ev.id, next_wed)
-        .unwrap();
-    assert_eq!(restored.recurrence_exdates, vec![utc_date_at(2026, 9, 30, 9)]);
+    let restored = store.remove_occurrence_exdate(&ev.id, next_wed).unwrap();
+    assert_eq!(
+        restored.recurrence_exdates,
+        vec![utc_date_at(2026, 9, 30, 9)]
+    );
     let back = myday_core::recurrence::occurrences_between(
         &restored,
         utc_date_at(2026, 9, 23, 0),
@@ -2892,8 +2893,7 @@ fn scheduled_occurrences_covers_future_and_recent_past_skips_done() {
         "已完成待办不得进入调度集合"
     );
     assert!(
-        occs
-            .iter()
+        occs.iter()
             .any(|o| o.item.id == future.id && o.at > now && o.at <= now + Duration::hours(24)),
         "未来发生时刻进入调度集合"
     );

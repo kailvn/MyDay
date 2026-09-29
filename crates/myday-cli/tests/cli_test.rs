@@ -394,37 +394,30 @@ fn template_crud_lifecycle() {
 
     // 新建：空 defaults 合法；非法 defaults（未知字段 id）拒绝
     let out = run(myday(&t).args([
-        "template",
-        "add",
-        "--name",
-        "服药",
-        "--type",
-        "log",
-        "--icon",
-        "💊",
-        "--tag",
-        "健康",
+        "template", "add", "--name", "服药", "--type", "log", "--icon", "💊", "--tag", "健康",
         "--json",
     ]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let id = v["data"]["id"].as_str().unwrap().to_string();
     assert!(id.starts_with("tpl_"));
     assert_eq!(v["data"]["pinned"], true, "新建模板缺省钉选");
 
-    let out = run(
-        myday(&t).args([
-            "template",
-            "add",
-            "--name",
-            "坏模板",
-            "--type",
-            "log",
-            "--defaults",
-            r#"{"fd_not_exist":"x"}"#,
-            "--json",
-        ]),
-    );
+    let out = run(myday(&t).args([
+        "template",
+        "add",
+        "--name",
+        "坏模板",
+        "--type",
+        "log",
+        "--defaults",
+        r#"{"fd_not_exist":"x"}"#,
+        "--json",
+    ]));
     assert_eq!(out.status.code(), Some(2), "未知字段 id 应被校验拒绝");
 
     // 查看：defaults / fields JSON 可见
@@ -434,15 +427,12 @@ fn template_crud_lifecycle() {
     assert_eq!(v["data"]["item_type"], "log");
 
     // 更新：只传要改的项（改名 + 换类型），其余沿用
-    let out = run(myday(&t).args([
-        "template",
-        "update",
-        &id,
-        "--name",
-        "吃药",
-        "--json",
-    ]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = run(myday(&t).args(["template", "update", &id, "--name", "吃药", "--json"]));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["name"], "吃药");
     assert_eq!(v["data"]["tag"], "健康", "未传的 tag 沿用现值");
@@ -494,7 +484,11 @@ fn backup_restore_roundtrip_via_cli() {
 
     let id1 = add_item_id(&t, &["--title", "恢复前的待办"]);
     let out = run(myday(&t).args(["backup", "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let zip_path = v["data"]["path"].as_str().unwrap().to_string();
 
@@ -503,7 +497,11 @@ fn backup_restore_roundtrip_via_cli() {
     run(myday(&t).args(["item", "delete", &id1]));
 
     let out = run(myday(&t).args(["backup", "restore", &zip_path, "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["items"]["task"], 1);
     assert!(
@@ -531,7 +529,11 @@ fn reminders_tick_without_gui_reports_sent_count() {
     let t = TempDir::new().unwrap();
     // 无 socket → GUI 未运行路径；库内无到期提醒 → sent = 0，不尝试系统通知
     let out = run(myday(&t).args(["reminders", "tick", "--json"]));
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["sent"], 0);
 }

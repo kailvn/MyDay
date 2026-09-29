@@ -663,8 +663,7 @@ pub fn alarm_pending(
     let entries = {
         let state = app.state::<crate::alarm_window::AlarmPending>();
         let guard = state.0.lock().expect("alarm pending poisoned");
-        let v = guard.clone();
-        v
+        guard.clone()
     };
     Ok(entries)
 }
@@ -672,7 +671,11 @@ pub fn alarm_pending(
 /// 桌面：闹钟弹窗动作回流（complete / snooze / open / dismiss）。
 #[cfg(desktop)]
 #[tauri::command]
-pub fn alarm_dismiss(app: tauri::AppHandle, key: String, action: String) -> std::result::Result<(), String> {
+pub fn alarm_dismiss(
+    app: tauri::AppHandle,
+    key: String,
+    action: String,
+) -> std::result::Result<(), String> {
     crate::alarm_window::dispatch(&app, &key, &action);
     Ok(())
 }
@@ -681,7 +684,9 @@ pub fn alarm_dismiss(app: tauri::AppHandle, key: String, action: String) -> std:
 /// 前端拉取后调用插件 `sync_alarms`，成功再回报 `alarms_synced`。
 #[cfg(mobile)]
 #[tauri::command]
-pub fn alarms_sync_payload(app: tauri::AppHandle) -> std::result::Result<serde_json::Value, String> {
+pub fn alarms_sync_payload(
+    app: tauri::AppHandle,
+) -> std::result::Result<serde_json::Value, String> {
     use tauri::Manager;
     let payload = app
         .state::<crate::reminder_loop::MobileAlarmSync>()
@@ -819,7 +824,10 @@ pub fn set_setting(
 /// 就是这层底色（默认白），设成主题 bg 后揭幕不再白闪（THEME-SPEC 防闪色）。
 /// 只供主窗口调用（quick-add 等透明窗口须保持透明底色，前端已按 label 拦截）。
 #[tauri::command]
-pub fn set_window_bg(window: tauri::WebviewWindow, color: String) -> std::result::Result<(), String> {
+pub fn set_window_bg(
+    window: tauri::WebviewWindow,
+    color: String,
+) -> std::result::Result<(), String> {
     let hex = color.trim().trim_start_matches('#');
     if hex.len() != 6 {
         return Err(format!("非法颜色 {color}（须为 #rrggbb）"));
@@ -831,7 +839,9 @@ pub fn set_window_bg(window: tauri::WebviewWindow, color: String) -> std::result
         (v & 0xff) as u8,
         255,
     );
-    window.set_background_color(Some(c)).map_err(|e| e.to_string())
+    window
+        .set_background_color(Some(c))
+        .map_err(|e| e.to_string())
 }
 
 /// 应用信息（设置页展示）。移动端无 IPC socket / 显示后端概念，只报版本与数据目录。

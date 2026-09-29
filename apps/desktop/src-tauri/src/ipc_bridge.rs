@@ -111,7 +111,9 @@ impl IpcHandler for IpcBridge {
                 match self.store.remove_occurrence_exdate(&id, at) {
                     Ok(item) => {
                         broadcast_changed(&self.app);
-                        IpcResponse::ok(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null))
+                        IpcResponse::ok(
+                            serde_json::to_value(&item).unwrap_or(serde_json::Value::Null),
+                        )
                     }
                     Err(e) => IpcResponse::from_error(&e),
                 }

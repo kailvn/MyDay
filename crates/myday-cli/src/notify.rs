@@ -25,9 +25,11 @@ impl Notifier for CliNotifier {
         // builder 方法返回 &mut Self，链式赋值会借用临时值，须逐条语句调用
         // （与桌面 reminder_loop 同一教训）
         let mut n = notify_rust::Notification::new();
-        n.appname("MyDay")
-            .summary("MyDay 提醒")
-            .body(&format!("{}\n{}", display_title(item), time));
+        n.appname("MyDay").summary("MyDay 提醒").body(&format!(
+            "{}\n{}",
+            display_title(item),
+            time
+        ));
         if reminder.kind() == ReminderKind::Alarm {
             n.urgency(notify_rust::Urgency::Critical)
                 .timeout(notify_rust::Timeout::Never)

@@ -31,7 +31,7 @@ void (async () => {
     }
     if (!granted) {
       const { toast } = await import("../lib/toast.svelte");
-      toast(t("mobile.notif_denied"));
+      toast.show(t("mobile.notif_denied"));
     }
   } catch (e) {
     console.error("myday mobile: 通知权限申请失败", e);

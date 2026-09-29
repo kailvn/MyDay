@@ -199,7 +199,11 @@ impl Store {
                 ],
             )?;
         }
-        replace_guard(&tx, "templates", &templates.iter().map(|t| t.id.clone()).collect::<Vec<_>>())?;
+        replace_guard(
+            &tx,
+            "templates",
+            &templates.iter().map(|t| t.id.clone()).collect::<Vec<_>>(),
+        )?;
 
         for f in field_defs {
             tx.execute(
@@ -216,7 +220,11 @@ impl Store {
                 ],
             )?;
         }
-        replace_guard(&tx, "field_defs", &field_defs.iter().map(|f| f.id.clone()).collect::<Vec<_>>())?;
+        replace_guard(
+            &tx,
+            "field_defs",
+            &field_defs.iter().map(|f| f.id.clone()).collect::<Vec<_>>(),
+        )?;
 
         tx.commit()?;
         Ok(())
@@ -307,7 +315,8 @@ impl Store {
 
 /// 批量完整读取（持锁环境自由函数）：items 行分块整取 + [`Store::hydrate_many`]
 /// 批量附属，共 4 次查询量级。对端索引口误 / 已被 GC 的 id 自然缺席。
-fn load_items_full(conn: &Connection, ids: &[String]) -> Result<Vec<Item>> {    if ids.is_empty() {
+fn load_items_full(conn: &Connection, ids: &[String]) -> Result<Vec<Item>> {
+    if ids.is_empty() {
         return Ok(Vec::new());
     }
     let mut out = Vec::with_capacity(ids.len());
@@ -377,7 +386,11 @@ fn sync_upsert(conn: &Connection, it: &Item) -> Result<()> {
         }
         _ => false,
     };
-    let key = if key_free { it.idempotency_key.clone() } else { None };
+    let key = if key_free {
+        it.idempotency_key.clone()
+    } else {
+        None
+    };
 
     // 附件行保真：REPLACE 级联删除前读出，插回原行（id 不变，文件路径照旧）
     let mut att_stmt = conn.prepare(
@@ -440,9 +453,14 @@ fn sync_upsert(conn: &Connection, it: &Item) -> Result<()> {
         if tag.is_empty() {
             continue;
         }
-        conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", params![tag])?;
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+            params![tag],
+        )?;
         let tag_id: i64 =
-            conn.query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |r| r.get(0))?;
+            conn.query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |r| {
+                r.get(0)
+            })?;
         conn.execute(
             "INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
             params![it.id, tag_id],
@@ -482,8 +500,8 @@ fn insert_conflict_copy(conn: &Connection, local: &Item) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::SubsecRound;
     use crate::model::{ItemType, NewItem};
+    use chrono::SubsecRound;
 
     fn store() -> (Store, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
@@ -566,9 +584,7 @@ mod tests {
         );
         let items = s.list_items(&Default::default()).unwrap();
         assert!(
-            items
-                .iter()
-                .any(|i| i.tags.contains(&"同步冲突".into())),
+            items.iter().any(|i| i.tags.contains(&"同步冲突".into())),
             "副本带同步冲突标签"
         );
     }
@@ -578,7 +594,8 @@ mod tests {
     fn one_sided_edit_no_copy() {
         let (s, _dir) = store();
         let base = add(&s, "桌面建", now());
-        s.sync_apply_incoming(std::slice::from_ref(&base), true).unwrap();
+        s.sync_apply_incoming(std::slice::from_ref(&base), true)
+            .unwrap();
 
         // 本地未再改动（updated_at 仍等于基线时刻），对端送来更新
         let newer = edited(&base, "对端编辑", now() + chrono::Duration::seconds(5));
@@ -593,7 +610,8 @@ mod tests {
     fn tombstone_goes_to_trash() {
         let (s, _dir) = store();
         let base = add(&s, "要被删的", now());
-        s.sync_apply_incoming(std::slice::from_ref(&base), true).unwrap();
+        s.sync_apply_incoming(std::slice::from_ref(&base), true)
+            .unwrap();
 
         let mut tomb = base.clone();
         tomb.updated_at = now() + chrono::Duration::seconds(5);
@@ -601,7 +619,10 @@ mod tests {
         let resp = s.sync_apply_incoming(&[tomb], true).unwrap();
         assert_eq!(resp.applied, 1);
 
-        assert!(s.list_items(&Default::default()).unwrap().is_empty(), "活跃列表不含");
+        assert!(
+            s.list_items(&Default::default()).unwrap().is_empty(),
+            "活跃列表不含"
+        );
         let trash = s.list_trash().unwrap();
         assert_eq!(trash.len(), 1, "墓碑条目在回收站");
         let restored = s.restore_item(&base.id).unwrap();
@@ -613,13 +634,17 @@ mod tests {
     fn local_edit_beats_remote_tombstone() {
         let (s, _dir) = store();
         let base = add(&s, "同源", now());
-        s.sync_apply_incoming(std::slice::from_ref(&base), true).unwrap();
+        s.sync_apply_incoming(std::slice::from_ref(&base), true)
+            .unwrap();
 
         // 本地在基线后编辑（冲突路径）
-        s.update_item(&base.id, crate::model::ItemPatch {
-            title: Some("本地改".into()),
-            ..Default::default()
-        })
+        s.update_item(
+            &base.id,
+            crate::model::ItemPatch {
+                title: Some("本地改".into()),
+                ..Default::default()
+            },
+        )
         .unwrap();
 
         // 对端(基于旧状态)删除,墓碑时刻 = 基线时刻,必然早于本地编辑 → 被拒
@@ -637,9 +662,14 @@ mod tests {
     fn reapply_is_idempotent() {
         let (s, _dir) = store();
         let base = add(&s, "条目", now());
-        s.sync_apply_incoming(std::slice::from_ref(&base), true).unwrap();
+        s.sync_apply_incoming(std::slice::from_ref(&base), true)
+            .unwrap();
 
-        let batch = vec![edited(&base, "改一次", now() + chrono::Duration::seconds(1))];
+        let batch = vec![edited(
+            &base,
+            "改一次",
+            now() + chrono::Duration::seconds(1),
+        )];
         let first = s.sync_apply_incoming(&batch[..1], false).unwrap();
         let second = s.sync_apply_incoming(&batch, false).unwrap();
         assert_eq!(first.applied, 1);
@@ -689,15 +719,15 @@ mod tests {
         // 手机删除 → 二次同步:桌面索引判定客户端新 → 拉墓碑 → 进回收站
         phone.delete_item(&base.id).unwrap();
         let index = phone.sync_list_index().unwrap();
-        let resp = desktop.sync_handle_index(&SyncIndexReq { items: index }).unwrap();
+        let resp = desktop
+            .sync_handle_index(&SyncIndexReq { items: index })
+            .unwrap();
         assert!(resp.want.contains(&base.id), "对端必须索要墓碑");
         let tomb: Vec<Item> = {
             let ids = resp.want.clone();
             phone.sync_get_items(&ids).unwrap()
         };
-        let resp2 = desktop
-            .sync_apply_incoming_since(&tomb, None)
-            .unwrap();
+        let resp2 = desktop.sync_apply_incoming_since(&tomb, None).unwrap();
         assert_eq!(resp2.applied, 1);
         let trash = desktop.list_trash().unwrap();
         assert!(trash.iter().any(|i| i.id == base.id), "桌面端进回收站");
@@ -734,17 +764,25 @@ mod tests {
             sort: 0,
             builtin: true,
         };
-        phone.sync_apply_config(std::slice::from_ref(&tpl), std::slice::from_ref(&fd)).unwrap();
+        phone
+            .sync_apply_config(std::slice::from_ref(&tpl), std::slice::from_ref(&fd))
+            .unwrap();
         let tpls = phone.list_templates().unwrap();
         assert_eq!(tpls.len(), 1);
         assert_eq!(tpls[0].name, "体重");
-        assert!(phone.list_field_defs(None).unwrap().iter().any(|f| f.id == "fd_w"));
+        assert!(phone
+            .list_field_defs(None)
+            .unwrap()
+            .iter()
+            .any(|f| f.id == "fd_w"));
         // 索引响应携带配置（Some = 对端是新版本；None 才是旧版本跳过对齐）
         let resp = phone.sync_handle_index(&SyncIndexReq::default()).unwrap();
         assert_eq!(resp.templates.as_ref().unwrap().len(), 1);
         assert_eq!(resp.field_defs.as_ref().unwrap().len(), 1);
         // 重复应用幂等
-        phone.sync_apply_config(std::slice::from_ref(&tpl), std::slice::from_ref(&fd)).unwrap();
+        phone
+            .sync_apply_config(std::slice::from_ref(&tpl), std::slice::from_ref(&fd))
+            .unwrap();
         assert_eq!(phone.list_templates().unwrap().len(), 1);
         // 桌面清空 → 手机清空
         phone.sync_apply_config(&[], &[]).unwrap();
@@ -754,14 +792,19 @@ mod tests {
 
     /// 索引交换：服务器侧三向判定（没有→want；服务器新→to_client；客户端新→want）
     #[test]
-    fn index_exchange_directions() {        let (s, _dir) = store();
+    fn index_exchange_directions() {
+        let (s, _dir) = store();
         let a = add(&s, "服务器独有", now());
         let b = add(&s, "双方都有_服务器新", now());
 
         let resp = s
             .sync_handle_index(&SyncIndexReq {
                 items: vec![
-                    SyncIndexEntry { id: a.id.clone(), updated_at: a.updated_at, deleted: false },
+                    SyncIndexEntry {
+                        id: a.id.clone(),
+                        updated_at: a.updated_at,
+                        deleted: false,
+                    },
                     SyncIndexEntry {
                         id: b.id.clone(),
                         updated_at: b.updated_at - chrono::Duration::seconds(1),
@@ -781,4 +824,3 @@ mod tests {
         assert!(!to_ids.contains(&a.id.as_str()), "两边一致 → 不发");
     }
 }
-

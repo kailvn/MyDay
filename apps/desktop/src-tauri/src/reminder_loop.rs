@@ -3,7 +3,7 @@
 //! 每 30 秒执行一轮扫描：到期未发送的提醒 → 按档位（reminders.channel）交付：
 //! - notify = 系统通知；alarm = 闹钟（桌面：置顶弹窗 + 循环提示音 + critical
 //!   通知；移动端：AlarmManager 全屏闹铃）。文案在本层按界面语言渲染
-//! （core 只传结构化数据，见 `i18n` 模块）。
+//!   （core 只传结构化数据，见 `i18n` 模块）。
 //!
 //! 平台分岔（`cfg(desktop)` / `cfg(mobile)`）：
 //! - 桌面：进程常驻（关窗隐藏、托盘保活），轮询即调度，notify-rust / DBus 发
@@ -74,22 +74,19 @@ fn render(lang: Lang, item: &Item, at: chrono::DateTime<chrono::Utc>) -> (String
         .to_string();
     match item.item_type {
         ItemType::Task => (
-            s.sum_task
-                .replace("{title}", &display_title(item)),
+            s.sum_task.replace("{title}", &display_title(item)),
             item.due_at
                 .map(|_| s.body_task_due.replace("{time}", &time))
                 .unwrap_or_else(|| s.body_task_plain.into()),
         ),
         ItemType::Event => (
-            s.sum_event
-                .replace("{title}", &display_title(item)),
+            s.sum_event.replace("{title}", &display_title(item)),
             item.start_at
                 .map(|_| s.body_event_start.replace("{time}", &time))
                 .unwrap_or_else(|| s.body_event_plain.into()),
         ),
         ItemType::Log => (
-            s.sum_log
-                .replace("{title}", &display_title(item)),
+            s.sum_log.replace("{title}", &display_title(item)),
             s.body_log.into(),
         ),
     }
@@ -153,7 +150,10 @@ fn spawn_loop(app: tauri::AppHandle, store: std::sync::Arc<Store>) {
 }
 
 #[cfg(desktop)]
-fn tick(app: &tauri::AppHandle, store: &std::sync::Arc<Store>) -> Result<(), myday_core::MyDayError> {
+fn tick(
+    app: &tauri::AppHandle,
+    store: &std::sync::Arc<Store>,
+) -> Result<(), myday_core::MyDayError> {
     let notifier = DesktopNotifier {
         app: app.clone(),
         store: store.clone(),
@@ -162,7 +162,10 @@ fn tick(app: &tauri::AppHandle, store: &std::sync::Arc<Store>) -> Result<(), myd
 }
 
 #[cfg(mobile)]
-fn tick(app: &tauri::AppHandle, store: &std::sync::Arc<Store>) -> Result<(), myday_core::MyDayError> {
+fn tick(
+    app: &tauri::AppHandle,
+    store: &std::sync::Arc<Store>,
+) -> Result<(), myday_core::MyDayError> {
     tick_mobile(app, store)
 }
 

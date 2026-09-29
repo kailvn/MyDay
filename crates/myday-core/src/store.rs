@@ -57,7 +57,10 @@ enum ScanWindow {
     /// 到期扫描：at <= now 且未标记（桌面提醒环）。
     Due,
     /// 系统调度扫描（移动端）：未来 look_ahead 内未标记 ∪ 过去 grace 内未标记。
-    Scheduled { look_ahead: chrono::Duration, grace: chrono::Duration },
+    Scheduled {
+        look_ahead: chrono::Duration,
+        grace: chrono::Duration,
+    },
 }
 
 /// 当前库结构版本。v8：reminders 表重建 —— channel 收敛为 notify/alarm（提醒档位
@@ -2255,12 +2258,8 @@ impl Store {
                 let hit = match window {
                     ScanWindow::Due => at <= now && !logged.contains(&dt(at)),
                     ScanWindow::Scheduled { look_ahead, grace } => {
-                        at > now
-                            && at <= now + look_ahead
-                            && !logged.contains(&dt(at))
-                            || at <= now
-                            && at > now - grace
-                            && !logged.contains(&dt(at))
+                        at > now && at <= now + look_ahead && !logged.contains(&dt(at))
+                            || at <= now && at > now - grace && !logged.contains(&dt(at))
                     }
                 };
                 if hit {

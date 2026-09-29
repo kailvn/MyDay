@@ -161,6 +161,7 @@ pub struct Attachment {
 /// - [`ReminderKind::Notify`] = 系统通知（各端走平台通知：GNOME / Android 通知栏）；
 /// - [`ReminderKind::Alarm`]  = 闹钟（桌面：置顶弹窗 + 循环提示音；安卓：AlarmManager
 ///   全屏闹铃，进程被杀/冻结也能响）。
+///
 /// 「不提醒」不是档位，是不建提醒行。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReminderKind {

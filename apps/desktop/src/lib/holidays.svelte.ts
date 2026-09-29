@@ -16,6 +16,7 @@ import {
   type HolidaysDoc,
 } from "./holidays";
 import { t } from "./i18n";
+import { api } from "./api";
 
 export type { HolidayInfo, HolidaysDoc } from "./holidays";
 export { parseHolidaysJson } from "./holidays";
@@ -34,10 +35,7 @@ function readVersion(): number {
 /** 应用启动装载：用户数据目录文件优先，回退内置 `holidays.json`。 */
 export async function initHolidays(): Promise<void> {
   await initCore({
-    userText: async () => {
-      const { api } = await import("./api");
-      return api.loadHolidaysJson();
-    },
+    userText: async () => api.loadHolidaysJson(),
     builtinText: async () => {
       const resp = await fetch("holidays.json");
       if (!resp.ok) throw new Error(`holidays.json HTTP ${resp.status}`);
@@ -51,7 +49,6 @@ export async function initHolidays(): Promise<void> {
 export async function importHolidaysJson(text: string): Promise<string | null> {
   const r = parseHolidaysJson(text);
   if (!r.ok) return r.error;
-  const { api } = await import("./api");
   await api.saveHolidaysJson(text);
   const doc: HolidaysDoc = r.ok ? r.doc : (null as never);
   applyDoc(doc, "user");
@@ -61,7 +58,6 @@ export async function importHolidaysJson(text: string): Promise<string | null> {
 
 /** 删除用户文件，回退内置数据 */
 export async function resetHolidays(): Promise<void> {
-  const { api } = await import("./api");
   await api.resetHolidaysJson();
   await initHolidays();
 }

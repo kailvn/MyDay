@@ -101,7 +101,10 @@ async fn run_session(
     // None = 对端旧版本不下发配置 → 跳过（保留本地种子）；Some = 精确对齐（可清空）
     if resp.templates.is_some() || resp.field_defs.is_some() {
         let s = store.clone();
-        let (tpls, fds) = (resp.templates.clone().unwrap_or_default(), resp.field_defs.clone().unwrap_or_default());
+        let (tpls, fds) = (
+            resp.templates.clone().unwrap_or_default(),
+            resp.field_defs.clone().unwrap_or_default(),
+        );
         tauri::async_runtime::spawn_blocking(move || s.sync_apply_config(&tpls, &fds))
             .await
             .map_err(|e| e.to_string())?

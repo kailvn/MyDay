@@ -208,13 +208,14 @@ pub fn restore_zip(zip_path: &Path, root: &Path) -> Result<RestoreReport> {
     let store = Store::open(&live_db, root)?;
     let counts = {
         let conn = store.raw_conn()?;
-        let mut m = ItemCounts { event: 0, task: 0, log: 0 };
-        let mut stmt = conn.prepare(
-            "SELECT type, COUNT(*) FROM items WHERE deleted_at IS NULL GROUP BY type",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-        })?;
+        let mut m = ItemCounts {
+            event: 0,
+            task: 0,
+            log: 0,
+        };
+        let mut stmt = conn
+            .prepare("SELECT type, COUNT(*) FROM items WHERE deleted_at IS NULL GROUP BY type")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         for row in rows {
             let (t, n) = row?;
             match t.as_str() {
@@ -241,11 +242,9 @@ pub fn restore_zip(zip_path: &Path, root: &Path) -> Result<RestoreReport> {
 /// 校验暂存库：integrity_check 通过、含 items 表、版本可被当前程序接手。
 /// 返回备份包内库的 schema 版本。
 fn validate_staged_db(staging: &Path) -> Result<i64> {
-    let conn = rusqlite::Connection::open_with_flags(
-        staging,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| MyDayError::Invalid(format!("备份包内的数据库打不开: {e}")))?;
+    let conn =
+        rusqlite::Connection::open_with_flags(staging, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| MyDayError::Invalid(format!("备份包内的数据库打不开: {e}")))?;
     let integrity: String = conn
         .query_row("PRAGMA integrity_check", [], |r| r.get(0))
         .map_err(|e| MyDayError::Invalid(format!("备份包内数据库完整性校验失败: {e}")))?;
