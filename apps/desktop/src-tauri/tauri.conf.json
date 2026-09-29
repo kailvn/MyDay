@@ -64,11 +64,6 @@
           "$DATA/myday-dev/**"
         ]
       }
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false,
-      "menuOnLeftClick": false
     }
   },
   "bundle": {

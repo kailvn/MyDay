@@ -300,7 +300,8 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         quit: quit.clone(),
     });
 
-    TrayIconBuilder::with_id("main-tray")
+    // 图标必须显式设置：builder 不回退默认图标，KDE 下无图标的托盘显示成 "…" 占位符
+    let mut tray = TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -329,8 +330,11 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
             {
                 show_main(tray.app_handle());
             }
-        })
-        .build(app)?;
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
     Ok(())
 }
 
