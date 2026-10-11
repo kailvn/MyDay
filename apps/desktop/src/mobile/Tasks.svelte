@@ -69,12 +69,58 @@
     }
   }
 
+  // ---- 就地速记：回车 / ＋ 即建无日期待办（落「未安排」组） ----------------
+  // 本页是手机上唯一能创建无日期待办的入口（QuickAdd 建待办必带当天日期）
+  let draft = $state("");
+  let adding = $state(false);
+  async function addTask() {
+    const title = draft.trim();
+    if (!title || adding) return;
+    adding = true;
+    try {
+      await api.addItem({
+        item_type: "task",
+        title,
+        idempotency_key: crypto.randomUUID(),
+      });
+      draft = "";
+      await reload();
+      onchange();
+    } catch (e) {
+      toast.show(String(e));
+    } finally {
+      adding = false;
+    }
+  }
+
   onMount(() => {
     void reload();
     // 完成动作走本组件；外部（详情/日历）改动经 data-changed 同步
     return listen("data-changed", () => void reload());
   });
 </script>
+
+<div class="capture">
+  <input
+    class="m-input cap-input"
+    type="text"
+    placeholder={t("mobile.quickadd_placeholder")}
+    bind:value={draft}
+    disabled={adding}
+    onkeydown={(e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void addTask();
+      }
+    }}
+  />
+  <button
+    class="cap-add"
+    disabled={adding || !draft.trim()}
+    onclick={() => void addTask()}
+    aria-label={t("mobile.other_add")}
+  >＋</button>
+</div>
 
 {#if error}
   <p class="m-hint" style="color: var(--danger); overflow-wrap: anywhere;">{error}</p>
@@ -132,6 +178,33 @@
 {/if}
 
 <style>
+  /* 就地速记条：本页主操作，恒在顶部（空态 / 分组之上） */
+  .capture {
+    display: flex;
+    gap: 8px;
+    margin: 2px 0 12px;
+  }
+  .cap-input {
+    flex: 1;
+    min-width: 0;
+  }
+  .cap-add {
+    appearance: none;
+    flex: none;
+    width: 46px;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    font: inherit;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .cap-add:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
   .empty {
     text-align: center;
     color: var(--text-dim);
