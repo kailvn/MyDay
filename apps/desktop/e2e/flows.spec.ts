@@ -65,6 +65,9 @@ test("T1 首屏：今天视图 + 节假日文案 + 提醒中心入口", async ({
 });
 
 test("T2 日历：周/日/月切换与网格挂载", async ({ page }) => {
+  // 周视图断言「本周有节假日角标」——把时钟钉进国庆周，不随运行日期漂移
+  await page.clock.setFixedTime(new Date("2026-10-03T09:00:00"));
+  await page.reload();
   await navButton(page, /日历/).click();
 
   // 周视图：时间网格挂载、月网格卸载、7 列、列头节假日角标、事件块渲染
@@ -235,6 +238,9 @@ test("T8.5 附件：粘路径记链接，文件夹 chip 以 📂 区分（拖放
 });
 
 test("T8.6 未排期池：拖入月格排期 23:59，顺延与清除闭环", async ({ page }) => {
+  // 时钟钉进 10 月上旬：落点计算依赖「今天」，跨月漂移会改变网格几何
+  await page.clock.setFixedTime(new Date("2026-10-03T09:00:00"));
+  await page.reload();
   const pad2 = (n: number) => String(n).padStart(2, "0");
   const dayKey = (offset: number) =>
     page.evaluate(
