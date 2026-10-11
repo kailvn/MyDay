@@ -52,7 +52,8 @@
     background: rgb(0 0 0 / 0.35);
     display: grid;
     place-items: center;
-    z-index: 90;
+    /* 高于编辑面板遮罩（200）与其截图预览（300）：作用域询问是顶层决策 */
+    z-index: 400;
   }
   .choice {
     background: var(--bg);

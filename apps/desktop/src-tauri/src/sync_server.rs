@@ -110,12 +110,65 @@ pub async fn start(
     Ok(tx)
 }
 
-/// 本机主路由的局域网 IP（UDP connect 不发包，仅让内核选路由）。
-/// 离线 / 无路由时为 None,由前端提示手填。
-pub fn primary_lan_ip() -> Option<String> {
-    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    sock.connect("8.8.8.8:80").ok()?;
-    Some(sock.local_addr().ok()?.ip().to_string())
+/// 同步可用的候选地址：真实枚举全部网卡（默认路由法只能看到一张），
+/// 覆盖 USB 网络共享（usb/rndis/ncm）、蓝牙网络共享（bt-pan）、Tailscale 等
+/// 虚拟网卡的地址——二维码与手填不再绑死主路由。
+pub fn candidate_lan_ips() -> Vec<String> {
+    let raw = if_addrs::get_if_addrs()
+        .map(|list| {
+            list.into_iter()
+                .map(|i| {
+                    let ip = i.ip();
+                    (i.name, ip)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    select_candidates(raw)
+}
+
+/// 从原始 (网卡名, IP) 列表筛出同步候选：剔除回环 / 链路本地（169.254，
+/// DHCP 失败的空网卡）与常见虚拟网桥（docker 等，手机永远到不了），
+/// 按「家用网段 → 办公网段 → CGNAT/Tailscale → 其他」排序（同类内按地址序）。
+fn select_candidates(raw: Vec<(String, std::net::IpAddr)>) -> Vec<String> {
+    let mut out: Vec<(u8, String)> = Vec::new();
+    for (name, ip) in raw {
+        let std::net::IpAddr::V4(v4) = ip else {
+            continue;
+        };
+        if v4.is_loopback() || is_junk_iface(&name) {
+            continue;
+        }
+        let o = v4.octets();
+        if o[0] == 169 && o[1] == 254 {
+            continue;
+        }
+        out.push((rank_ip(&o), v4.to_string()));
+    }
+    out.sort();
+    out.dedup();
+    out.into_iter().map(|(_, ip)| ip).collect()
+}
+
+/// 手机永远连不上的虚拟接口（网桥 / 容器对），按名前缀剔除；
+/// tailscale / ZeroTier / usb / bt-pan / wg 等真实可达链路全部保留。
+fn is_junk_iface(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ["docker", "br-", "veth", "virbr", "vmnet", "lo"]
+        .iter()
+        .any(|p| n.starts_with(p))
+}
+
+/// 地址类别（越小越优先）：192.168 家用 > 10. 办公/大型局域网 >
+/// 172.16-31 > 100.64-127（CGNAT 段，Tailscale 等虚拟网所在）> 其他。
+fn rank_ip(o: &[u8; 4]) -> u8 {
+    match (o[0], o[1]) {
+        (192, 168) => 0,
+        (10, _) => 1,
+        (172, 16..=31) => 2,
+        (100, 64..=127) => 3,
+        _ => 4,
+    }
 }
 
 pub fn new_token() -> String {
@@ -159,4 +212,68 @@ pub(crate) fn server_running(app: &tauri::AppHandle) -> bool {
     app.try_state::<SyncRunning>()
         .map(|s| s.0.lock().map(|g| g.is_some()).unwrap_or(false))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    fn v4(s: &str) -> IpAddr {
+        s.parse().expect("valid ipv4")
+    }
+
+    #[test]
+    fn candidates_filter_and_rank() {
+        let out = select_candidates(vec![
+            ("lo".into(), v4("127.0.0.1")),
+            ("wlp3s0".into(), v4("192.168.1.23")), // 家用 Wi-Fi：最优先
+            ("enp5s0".into(), v4("10.0.12.5")),    // 办公网
+            ("docker0".into(), v4("172.17.0.1")),  // 容器网桥：按名剔除
+            ("br-9a2b".into(), v4("172.18.0.1")),  // 同上
+            ("virbr0".into(), v4("192.168.122.1")), // libvirt 网桥：剔除
+            ("tailscale0".into(), v4("100.64.12.9")), // 虚拟网：保留，排 CGNAT 段
+            ("usb0".into(), v4("192.168.42.87")),  // USB 网络共享：保留
+            ("wlp3s0".into(), v4("169.254.3.4")),  // 链路本地：剔除
+            ("eth0".into(), v4("10.0.12.5")),      // 同 IP 多网卡：去重
+        ]);
+        assert_eq!(
+            out,
+            vec!["192.168.1.23", "192.168.42.87", "10.0.12.5", "100.64.12.9"]
+        );
+    }
+
+    #[test]
+    fn rank_orders_network_classes() {
+        let mut ips = [
+            "100.64.0.1",
+            "172.20.0.1",
+            "8.8.8.8",
+            "192.168.0.2",
+            "10.1.2.3",
+        ];
+        ips.sort_by_key(|s| rank_ip(&s.parse::<std::net::Ipv4Addr>().expect("ipv4").octets()));
+        assert_eq!(
+            ips,
+            [
+                "192.168.0.2",
+                "10.1.2.3",
+                "172.20.0.1",
+                "100.64.0.1",
+                "8.8.8.8"
+            ]
+        );
+    }
+
+    #[test]
+    fn junk_iface_names() {
+        assert!(is_junk_iface("docker0"));
+        assert!(is_junk_iface("br-1a2b3c"));
+        assert!(is_junk_iface("vethabc123"));
+        assert!(is_junk_iface("LO")); // 大小写不敏感
+        assert!(!is_junk_iface("wlp3s0"));
+        assert!(!is_junk_iface("bt-pan"));
+        assert!(!is_junk_iface("tailscale0"));
+        assert!(!is_junk_iface("usb0"));
+    }
 }

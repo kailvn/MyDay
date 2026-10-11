@@ -1103,48 +1103,52 @@ mod tests {
     #[test]
     fn import_foreign_ics_events_and_todos() {
         let (_dir, store) = test_store();
-        let ics = concat!(
-            "BEGIN:VCALENDAR\r\n",
-            "VERSION:2.0\r\n",
-            "BEGIN:VEVENT\r\n",
-            "UID:ext-1@example.com\r\n",
-            "DTSTAMP:20260901T000000Z\r\n",
-            "SUMMARY:两天营期\r\n",
-            "DTSTART;VALUE=DATE:20261001\r\n",
-            "DTEND;VALUE=DATE:20261003\r\n",
-            "RRULE:FREQ=WEEKLY;BYDAY=TH\r\n",
-            "BEGIN:VALARM\r\n",
-            "ACTION:DISPLAY\r\n",
-            "TRIGGER:-PT15M\r\n",
-            "END:VALARM\r\n",
-            "END:VEVENT\r\n",
-            "BEGIN:VEVENT\r\n",
-            "UID:ext-2@example.com\r\n",
-            "DTSTAMP:20260901T000000Z\r\n",
-            "SUMMARY:浮动时刻会\r\n",
-            "DTSTART:20261005T090000\r\n",
-            "DTEND:20261005T100000\r\n",
-            "END:VEVENT\r\n",
-            "BEGIN:VTODO\r\n",
-            "UID:ext-3@example.com\r\n",
-            "DTSTAMP:20260901T000000Z\r\n",
-            "SUMMARY:交房租\\,别忘\r\n",
-            "CATEGORIES:生活,财务\r\n",
-            "DUE;VALUE=DATE:20261010\r\n",
-            "RRULE:FREQ=MONTHLY;BYMONTHDAY=10;UNTIL=20271210T000000Z\r\n",
-            "BEGIN:VALARM\r\n",
-            "ACTION:DISPLAY\r\n",
-            "TRIGGER;RELATED=END:-PT1H\r\n",
-            "END:VALARM\r\n",
-            "END:VTODO\r\n",
-            "BEGIN:VTODO\r\n",
-            "UID:ext-4@example.com\r\n",
-            "DTSTAMP:20260901T000000Z\r\n",
-            "SUMMARY:无截止想法\r\n",
-            "END:VTODO\r\n",
-            "END:VCALENDAR\r\n",
+        // 浮动时刻会用「未来 30 天」的动态日期：默认提醒只对开始在未来的一次性条目
+        // 补种（add_item 语义），日期写死会在越过那天后让本测试定时失败
+        // （写死 2026-10-05，2026-10-11 起踩中）。
+        let base = (chrono::Utc::now() + chrono::Duration::days(30)).with_timezone(&chrono::Local);
+        let day = base.format("%Y%m%d");
+        let ics = format!(
+            "BEGIN:VCALENDAR\r\n\
+             BEGIN:VEVENT\r\n\
+             UID:ext-1@example.com\r\n\
+             DTSTAMP:20260901T000000Z\r\n\
+             SUMMARY:两天营期\r\n\
+             DTSTART;VALUE=DATE:20261001\r\n\
+             DTEND;VALUE=DATE:20261003\r\n\
+             RRULE:FREQ=WEEKLY;BYDAY=TH\r\n\
+             BEGIN:VALARM\r\n\
+             ACTION:DISPLAY\r\n\
+             TRIGGER:-PT15M\r\n\
+             END:VALARM\r\n\
+             END:VEVENT\r\n\
+             BEGIN:VEVENT\r\n\
+             UID:ext-2@example.com\r\n\
+             DTSTAMP:20260901T000000Z\r\n\
+             SUMMARY:浮动时刻会\r\n\
+             DTSTART:{day}T090000\r\n\
+             DTEND:{day}T100000\r\n\
+             END:VEVENT\r\n\
+             BEGIN:VTODO\r\n\
+             UID:ext-3@example.com\r\n\
+             DTSTAMP:20260901T000000Z\r\n\
+             SUMMARY:交房租\\,别忘\r\n\
+             CATEGORIES:生活,财务\r\n\
+             DUE;VALUE=DATE:20261010\r\n\
+             RRULE:FREQ=MONTHLY;BYMONTHDAY=10;UNTIL=20271210T000000Z\r\n\
+             BEGIN:VALARM\r\n\
+             ACTION:DISPLAY\r\n\
+             TRIGGER;RELATED=END:-PT1H\r\n\
+             END:VALARM\r\n\
+             END:VTODO\r\n\
+             BEGIN:VTODO\r\n\
+             UID:ext-4@example.com\r\n\
+             DTSTAMP:20260901T000000Z\r\n\
+             SUMMARY:无截止想法\r\n\
+             END:VTODO\r\n\
+             END:VCALENDAR\r\n",
         );
-        let report = import_ics(&store, ics).expect("import");
+        let report = import_ics(&store, &ics).expect("import");
         assert_eq!(report.events, 2, "{:?}", report.warnings);
         assert_eq!(report.tasks, 2);
         // 营期与房租各带 1 条 VALARM；浮动时刻会无 VALARM → 按设置自动补默认提醒
@@ -1186,7 +1190,7 @@ mod tests {
         assert!(idea.recurrence.is_none());
 
         // 幂等重导：外部 UID 命中 idempotency_key → 按跳过计数，不新增
-        let again = import_ics(&store, ics).expect("import again");
+        let again = import_ics(&store, &ics).expect("import again");
         assert_eq!(again.skipped_duplicates, 4);
         assert_eq!(again.events, 0);
         let all = store.list_items(&ListFilter::default()).expect("list");

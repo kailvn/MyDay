@@ -17,6 +17,8 @@
   let running = $state(false);
   let scanning = $state(false);
   let report = $state<SyncRunReport | null>(null);
+  /** 失败原因（含网络层分类与可操作建议）：面板常驻展示，不用 toast（会消失） */
+  let err = $state("");
 
   onMount(async () => {
     server = (await api.getSetting("sync.server").catch(() => null)) ?? "";
@@ -32,13 +34,14 @@
     }
     running = true;
     report = null;
+    err = "";
     try {
       report = await api.syncRun(server || null, token.trim());
       void api.setSetting("sync.server", server.trim());
       void api.setSetting("sync.client_token", token.trim());
       last = report.last_sync;
     } catch (e) {
-      toast.show(String(e));
+      err = String(e);
     } finally {
       running = false;
     }
@@ -108,6 +111,12 @@
       {running ? t("mobile.sync_running") : t("mobile.sync_run")}
     </button>
 
+    {#if err}
+      <div class="fail" data-testid="sync-fail">
+        <p class="fail-title">{t("mobile.sync_failed")}</p>
+        <p class="fail-msg">{err}</p>
+      </div>
+    {/if}
     {#if report}
       <p class="result">
         {t("mobile.sync_result", {
@@ -119,6 +128,17 @@
       </p>
     {/if}
     <p class="m-hint">{t("mobile.sync_last")}：{lastText}</p>
+
+    <details class="synchelp">
+      <summary>{t("settings.syncHelpTitle")}</summary>
+      <ul>
+        <li>{t("settings.syncHelpHotspot")}</li>
+        <li>{t("settings.syncHelpPhoneHotspot")}</li>
+        <li>{t("settings.syncHelpUsb")}</li>
+        <li>{t("settings.syncHelpBt")}</li>
+        <li>{t("settings.syncHelpRemote")}</li>
+      </ul>
+    </details>
   </div>
 </div>
 
@@ -144,6 +164,42 @@
   }
   .result {
     margin: 12px 0 6px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .fail {
+    margin-top: 12px;
+    border: 1px solid color-mix(in srgb, #c0392b 45%, transparent);
+    background: color-mix(in srgb, #c0392b 8%, transparent);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .fail-title {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #c0392b;
+  }
+  .fail-msg {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .synchelp {
+    margin-top: 14px;
+  }
+  .synchelp summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--accent);
+    user-select: none;
+  }
+  .synchelp ul {
+    margin: 8px 0 0;
+    padding-left: 1.2em;
+    display: grid;
+    gap: 6px;
     font-size: 13px;
     color: var(--text);
   }

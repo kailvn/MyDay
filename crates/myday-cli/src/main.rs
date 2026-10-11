@@ -266,13 +266,14 @@ enum ItemCmd {
         /// 按模板创建（defaults 双命名空间预填；模板管理在前端）
         #[arg(long)]
         template: Option<String>,
-        /// 提醒：@token（@start-1h / @due-1d / @dailyT09:00）或时间；缺省按设置提前 N 分钟
+        /// 提醒：@token（@start-1h / @due-1d / @dailyT09:00）或时间；可重复（多条并存）；
+        /// 缺省按设置提前 N 分钟
         #[arg(long)]
-        remind: Option<String>,
+        remind: Vec<String>,
         /// 提醒用闹钟档（缺省 = 系统通知档；需与 --remind 同用）
         #[arg(long, requires = "remind")]
         alarm: bool,
-        /// 禁用提醒
+        /// 禁用提醒（不建提醒行，也不补默认提醒）
         #[arg(long, conflicts_with = "remind")]
         no_remind: bool,
         #[arg(long = "tag")]
@@ -358,7 +359,7 @@ enum ItemCmd {
         #[arg(long)]
         extra_json: Option<String>,
         #[arg(long)]
-        remind: Option<String>,
+        remind: Vec<String>,
         /// 提醒用闹钟档（缺省 = 系统通知档；需与 --remind 同用）
         #[arg(long, requires = "remind")]
         alarm: bool,
@@ -701,18 +702,22 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                     MyDayError::Invalid(format!("未知状态: {s}（可用 todo / done）"))
                 })?);
             }
-            new.reminders = match remind.as_deref() {
-                Some(r) => vec![NewReminder {
-                    spec: parse_reminder_spec(r)?,
-                    channel: if *alarm {
-                        "alarm".into()
-                    } else {
-                        "notify".into()
-                    },
-                }],
-                None if *no_remind => Vec::new(),
-                None => Vec::new(), // 未表态 → core 按设置补默认提醒
-            };
+            // --remind 可重复 = 多条提醒并存（schema 1:N）；空 = 未表态 → core 按设置补默认提醒
+            new.reminders = remind
+                .iter()
+                .map(|r| {
+                    Ok(NewReminder {
+                        spec: parse_reminder_spec(r)?,
+                        channel: if *alarm {
+                            "alarm".into()
+                        } else {
+                            "notify".into()
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            // 修复：--no-remind 此前在 add 路径是空操作（空 Vec ≠ 跳过默认补种）
+            new.skip_default_reminder = *no_remind;
             merge_fields(&mut new.extra, fields)?;
             validate_new(&new)?;
             if *dry_run {
@@ -806,53 +811,59 @@ fn item_cmd(cmd: &ItemCmd, mode: JsonMode) -> Result<()> {
                 }
                 None => (None, None),
             };
-            let patch =
-                ItemPatch {
-                    title: title.clone(),
-                    note: note.clone(),
-                    start_at: start.as_deref().map(parse_dt_arg).transpose()?,
-                    end_at: end.as_deref().map(parse_dt_arg).transpose()?,
-                    clear_start_at: *clear_start,
-                    clear_end_at: *clear_end,
-                    due_at,
-                    due_all_day,
-                    clear_due_at: *clear_due,
-                    occurred_at: at.as_deref().map(parse_dt_arg).transpose()?,
-                    status: match status.as_deref() {
-                        None => None,
-                        Some(s) => Some(ItemStatus::parse(s).ok_or_else(|| {
-                            MyDayError::Invalid(format!("未知状态: {s}（可用 todo / done）"))
-                        })?),
-                    },
-                    recurrence: recurse
-                        .as_deref()
-                        .filter(|s| !s.eq_ignore_ascii_case("none"))
-                        .map(parse_recurrence_arg)
-                        .transpose()?,
-                    clear_recurrence: recurse
-                        .as_deref()
-                        .is_some_and(|s| s.eq_ignore_ascii_case("none")),
-                    tags: tags.clone(),
-                    extra: if fields.is_empty() && extra_json.is_none() {
-                        None
-                    } else {
-                        Some(extra)
-                    },
-                    reminders: remind.as_deref().map(parse_reminder_spec).transpose()?.map(
-                        |spec| {
-                            vec![NewReminder {
-                                spec,
-                                channel: if *alarm {
-                                    "alarm".into()
-                                } else {
-                                    "notify".into()
-                                },
-                            }]
-                        },
-                    ),
-                    clear_reminders: *no_remind,
-                    ..Default::default()
-                };
+            let patch = ItemPatch {
+                title: title.clone(),
+                note: note.clone(),
+                start_at: start.as_deref().map(parse_dt_arg).transpose()?,
+                end_at: end.as_deref().map(parse_dt_arg).transpose()?,
+                clear_start_at: *clear_start,
+                clear_end_at: *clear_end,
+                due_at,
+                due_all_day,
+                clear_due_at: *clear_due,
+                occurred_at: at.as_deref().map(parse_dt_arg).transpose()?,
+                status: match status.as_deref() {
+                    None => None,
+                    Some(s) => Some(ItemStatus::parse(s).ok_or_else(|| {
+                        MyDayError::Invalid(format!("未知状态: {s}（可用 todo / done）"))
+                    })?),
+                },
+                recurrence: recurse
+                    .as_deref()
+                    .filter(|s| !s.eq_ignore_ascii_case("none"))
+                    .map(parse_recurrence_arg)
+                    .transpose()?,
+                clear_recurrence: recurse
+                    .as_deref()
+                    .is_some_and(|s| s.eq_ignore_ascii_case("none")),
+                tags: tags.clone(),
+                extra: if fields.is_empty() && extra_json.is_none() {
+                    None
+                } else {
+                    Some(extra)
+                },
+                reminders: if remind.is_empty() {
+                    None
+                } else {
+                    Some(
+                        remind
+                            .iter()
+                            .map(|r| {
+                                Ok(NewReminder {
+                                    spec: parse_reminder_spec(r)?,
+                                    channel: if *alarm {
+                                        "alarm".into()
+                                    } else {
+                                        "notify".into()
+                                    },
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                    )
+                },
+                clear_reminders: *no_remind,
+                ..Default::default()
+            };
             run_mutation(
                 mode,
                 IpcRequest::UpdateItem {

@@ -1614,10 +1614,14 @@ pub fn sync_server_info(state: State<'_, AppState>, app: tauri::AppHandle) -> se
             .flatten()
             .unwrap_or_default()
     };
+    // ip = 排序最前的候选（向后兼容字段）；ips = 全部网卡候选，
+    // 覆盖 USB 网络共享 / 蓝牙共享 / 虚拟网卡——二维码按所选地址生成
+    let ips = crate::sync_server::candidate_lan_ips();
     serde_json::json!({
         "enabled": get("sync.enabled") == "true",
         "running": crate::sync_server::server_running(&app),
-        "ip": crate::sync_server::primary_lan_ip(),
+        "ip": ips.first(),
+        "ips": ips,
         "port": myday_core::sync::SYNC_PORT,
         "token": get("sync.token"),
         // 注意:与服务端会话写入的 settings 键一致(core sync LAST_SYNC_KEY)

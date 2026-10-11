@@ -55,6 +55,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("T1 首屏：今天视图 + 节假日文案 + 提醒中心入口", async ({ page }) => {
+  // 节假日文案只在假日当天出现在今天页——把时钟钉进国庆假期（仅冻结 Date，
+  // 计时器不受影响），测试不随运行日期漂移（曾写死期望，10 月 8 日后必挂）
+  await page.clock.setFixedTime(new Date("2026-10-03T09:00:00"));
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/今天/);
   await expect(page.locator("main")).toContainText(/假期|中秋|国庆|元旦|春节|清明|劳动|端午/);
   await expect(page.getByRole("button", { name: "提醒中心" })).toBeVisible();
 });
@@ -556,4 +561,91 @@ test("T12 单次例外：虚拟实例详情「拆为单次」，系列其余周�
   // 该周周四：系列实例被例外剔除，替代为无 🔁 的单次块
   await expect(page.locator(".event", { hasText: "团队周会" })).toHaveCount(1);
   await expect(page.locator(".event", { hasText: "团队周会" }).locator(".ev-flag", { hasText: "🔁" })).toHaveCount(0);
+});
+
+test("T13 编辑重复条目保存问作用域：「只改这一期」拆为单次改标题，可撤销", async ({ page }) => {
+  await gotoWeek(page);
+
+  // 下一周的实例 = 虚拟实例：详情 → 编辑 → 改标题 → 保存
+  await page.keyboard.press("ArrowRight");
+  const nextBlock = eventBlock(page, "团队周会");
+  await nextBlock.scrollIntoViewIfNeeded();
+  await nextBlock.click();
+  await expect(page.getByTestId("occ-actions")).toBeVisible();
+  await page.getByRole("button", { name: "编辑" }).click();
+
+  const panel = page.getByRole("dialog", { name: "编辑条目" });
+  await expect(panel).toBeVisible();
+  await panel.getByTestId("panel-title").fill("团队周会（改期讨论）");
+  await panel.getByRole("button", { name: "保存修改" }).click();
+
+  // 作用域二选一（与编辑面板同屏，按可访问名区分两个 dialog）
+  const choice = page.getByRole("dialog", { name: /重复条目/ });
+  await expect(choice).toBeVisible();
+  await choice.getByRole("button", { name: "只改这一期" }).click();
+
+  // 拆出的单次条目带新标题落在该期时刻；原系列实例被例外剔除
+  await expect(page.getByRole("status")).toContainText(/已拆为单次条目/);
+  await expect(page.locator(".event", { hasText: "团队周会（改期讨论）" })).toHaveCount(1);
+  await expect(page.locator(".event", { hasText: "团队周会" })).toHaveCount(1);
+  await expect(
+    page.locator(".event", { hasText: "团队周会（改期讨论）" }).locator(".ev-flag", { hasText: "🔁" }),
+  ).toHaveCount(0);
+
+  // 撤销 = 删除拆出条目 + 移除例外锚点：该期回到系列展开
+  await page.getByRole("button", { name: "撤销" }).click();
+  await expect(page.locator(".event", { hasText: "团队周会" })).toHaveCount(1);
+  await expect(page.locator(".event", { hasText: "改期讨论" })).toHaveCount(0);
+});
+
+test("T14 编辑重复条目选「整个系列」：改动全系列生效，时刻不被虚拟实例写回", async ({ page }) => {
+  await gotoWeek(page);
+
+  await page.keyboard.press("ArrowRight");
+  const nextBlock = eventBlock(page, "团队周会");
+  await nextBlock.scrollIntoViewIfNeeded();
+  await nextBlock.click();
+  await expect(page.getByTestId("occ-actions")).toBeVisible();
+  await page.getByRole("button", { name: "编辑" }).click();
+
+  const panel = page.getByRole("dialog", { name: "编辑条目" });
+  await expect(panel).toBeVisible();
+  await panel.getByTestId("panel-title").fill("团队周会（全员）");
+  await panel.getByRole("button", { name: "保存修改" }).click();
+
+  const choice = page.getByRole("dialog", { name: /重复条目/ });
+  await expect(choice).toBeVisible();
+  await choice.getByRole("button", { name: "整个系列" }).click();
+
+  // 该周实例改名且仍带 🔁；时刻保持 14:00（未把这一期的虚拟时刻写回锚点）
+  await expect(page.locator(".event", { hasText: "团队周会（全员）" })).toHaveCount(1);
+  await expect(page.locator(".event", { hasText: "团队周会（全员）" })).toContainText("14:00");
+  await expect(
+    page.locator(".event", { hasText: "团队周会（全员）" }).locator(".ev-flag", { hasText: "🔁" }),
+  ).toHaveCount(1);
+
+  // 锚点周同步改名（系列级生效）
+  await page.keyboard.press("ArrowLeft");
+  const anchorBlock = page.locator(".event", { hasText: "团队周会（全员）" });
+  await expect(anchorBlock).toHaveCount(1);
+  await expect(anchorBlock).toContainText("14:00");
+});
+
+test("T15 同步多通道：候选地址按网卡切换出码，连接方式指引在列", async ({ page }) => {
+  await navButton(page, /设置/).click();
+  const sec = page.getByTestId("sync-section");
+  await expect(sec.getByTestId("sync-addr")).toContainText("192.168.1.10");
+
+  // 候选 chips（家用 / USB 网络共享 / 虚拟网段）：点选后出码地址跟随
+  const ips = sec.getByTestId("sync-ips");
+  await ips.getByRole("button", { name: "192.168.42.87" }).click();
+  await expect(sec.getByTestId("sync-addr")).toContainText("192.168.42.87");
+  await expect(sec.getByTestId("sync-qr").locator("svg")).toHaveCount(1);
+
+  // 连接方式指引：五种方式（电脑热点 / 手机热点 / USB / 蓝牙 / 虚拟局域网）折叠在列
+  await sec.getByTestId("sync-help").locator("summary").click();
+  await expect(sec.getByTestId("sync-help")).toContainText(/电脑开热点/);
+  await expect(sec.getByTestId("sync-help")).toContainText(/USB 数据线/);
+  await expect(sec.getByTestId("sync-help")).toContainText(/蓝牙/);
+  await expect(sec.getByTestId("sync-help")).toContainText(/Tailscale/);
 });

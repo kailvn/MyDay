@@ -1,12 +1,12 @@
 <script lang="ts">
   /**
-   * 条目编辑弹层（移动端编辑面 v1）：标题 / 备注 / 时间（按类型）/ 提醒 / 标签。
-   * 重复条目 = 「修改全部」语义（与桌面编辑面板一致），只动这一期走桌面的
-   * 拆为单次 / 删除这一期；字段（extra）与重复规则仍只在桌面编辑。
+   * 条目编辑弹层（移动端编辑面）：标题 / 备注 / 时间（按类型）/ 提醒（多行）/
+   * 标签。重复条目 = 「修改全部」语义（只动这一期可走桌面编辑面板的作用域
+   * 二选一，或详情的拆为单次 / 删除这一期）；字段（extra）与重复规则仍只在桌面编辑。
    * 保存 = 只把改动过的键放进 ItemPatch（无改动不写库）。
    */
   import { t } from "../lib/i18n";
-  import { api, type Item, type ItemPatch, type NewReminder } from "../lib/api";
+  import { api, type Item, type ItemPatch } from "../lib/api";
   import { toast } from "../lib/toast.svelte";
 
   let { item, onclose, onsaved }: { item: Item; onclose: () => void; onsaved: () => void } = $props();
@@ -61,8 +61,11 @@
   let dueNone = $state(item.type === "task" && !item.due_at);
   let occurredHm = $state(occurred0.hm || "12:00");
 
-  // ---- 提醒（改 = 整体替换；解析不了的特殊 spec 提供「保持现状」） --------
-  type RemChoice = "keep" | "none" | "pt" | "m5" | "m15" | "m30" | "h1" | "d1";
+  // ---- 提醒（多行编辑，保存 = 整体替换）：能表达为「类型锚 + 档位」的行给具体
+  // 档位；@dailyT / 绝对时刻 / 锚与类型不符的 spec 以原文展示（只可原样保留或删除）；
+  // 零行 = 显式「不提醒」。保存与现值 diff，无改动不写库。 --------------------
+  type RemChoice = "pt" | "m5" | "m15" | "m30" | "h1" | "d1";
+  type RemRow = { choice: RemChoice | null; raw: string; mode: "notify" | "alarm" };
   const REM_OFFSET: Partial<Record<RemChoice, string>> = {
     pt: "",
     m5: "-5m",
@@ -72,8 +75,6 @@
     d1: "-1d",
   };
   const REM_LABEL: Record<RemChoice, string> = $derived({
-    keep: t("mobile.rem_keep"),
-    none: t("mobile.rem_none"),
     pt: t("mobile.rem_pt"),
     m5: t("mobile.rem_m5"),
     m15: t("mobile.rem_m15"),
@@ -81,24 +82,30 @@
     h1: t("mobile.rem_h1"),
     d1: t("mobile.rem_d1"),
   });
-  /** 预填：现提醒能被「类型锚 + 档位」原样表达才预选具体档位，否则保持现状
-   *  （@dailyT / 绝对时刻 / 锚与类型不符的 spec 一律 keep，保存即零改动）。 */
-  function initialChoice(): RemChoice {
-    const r = item.reminders[0];
-    if (!r) return "none";
+  const SPECIFIC_CHOICES: RemChoice[] = ["pt", "m5", "m15", "m30", "h1", "d1"];
+  function remRowFrom(r: { spec: string; channel: string }): RemRow {
+    const mode = r.channel === "alarm" ? "alarm" : "notify";
     const m = /^@(start|due)(-[0-9]+[mhd])?$/.exec(r.spec);
-    if (!m) return "keep";
-    const hit = (Object.entries(REM_OFFSET) as [RemChoice, string][]).find(
-      ([, v]) => v === (m[2] ?? ""),
-    );
-    if (!hit) return "keep";
-    return m[1] === (item.type === "task" ? "due" : "start") ? hit[0] : "keep";
+    const hit = m
+      ? (Object.entries(REM_OFFSET) as [RemChoice, string][]).find(([, v]) => v === (m[2] ?? ""))
+      : undefined;
+    if (m && hit && m[1] === (item.type === "task" ? "due" : "start")) {
+      return { choice: hit[0], raw: "", mode };
+    }
+    return { choice: null, raw: r.spec, mode };
   }
-  let reminder = $state<RemChoice>(initialChoice());
   // svelte-ignore state_referenced_locally
-  let remMode = $state<"notify" | "alarm">(
-    item.reminders[0]?.channel === "alarm" ? "alarm" : "notify",
-  );
+  let remRows = $state<RemRow[]>(item.reminders.map(remRowFrom));
+
+  /** 追加一档：默认取未被占用的第一个档位，全占用则回落 15 分钟前 */
+  function addRemRow() {
+    const used = new Set(remRows.map((r) => r.choice));
+    const choice = SPECIFIC_CHOICES.find((c) => !used.has(c)) ?? "m15";
+    remRows = [...remRows, { choice, raw: "", mode: "notify" }];
+  }
+  function removeRemRow(i: number) {
+    remRows = remRows.filter((_, x) => x !== i);
+  }
 
   // svelte-ignore state_referenced_locally
   const isLog = item.type === "log";
@@ -140,20 +147,20 @@
       }
 
       if (!isLog) {
-        if (reminder === "none") {
-          if (item.reminders.length) patch.clear_reminders = true;
-        } else if (reminder !== "keep") {
-          const anchor = item.type === "task" ? "due" : "start";
-          const reminders: NewReminder[] = [
-            { spec: `@${anchor}${REM_OFFSET[reminder] ?? ""}`, channel: remMode },
-          ];
-          if (
-            item.reminders.length !== 1 ||
-            item.reminders[0].spec !== reminders[0].spec ||
-            item.reminders[0].channel !== remMode
-          ) {
-            patch.reminders = reminders;
-          }
+        const anchor = item.type === "task" ? "due" : "start";
+        const next = remRows.map((r) => ({
+          spec: r.choice ? `@${anchor}${REM_OFFSET[r.choice] ?? ""}` : r.raw,
+          channel: r.mode,
+        }));
+        const remChanged =
+          next.length !== item.reminders.length ||
+          next.some(
+            (r, i) =>
+              r.spec !== item.reminders[i].spec || r.channel !== item.reminders[i].channel,
+          );
+        if (remChanged) {
+          if (next.length === 0) patch.clear_reminders = true;
+          else patch.reminders = next;
         }
       }
 
@@ -225,21 +232,30 @@
       {/if}
       <div class="m-formrow">
         <span class="lbl">{t("mobile.reminder")}</span>
-        <select bind:value={reminder}>
-          {#each Object.entries(REM_LABEL) as [id, label] (id)}
-            <option value={id}>{label}</option>
-          {/each}
-        </select>
+        {#if remRows.length === 0}
+          <span class="rem-none">{t("mobile.rem_none")}</span>
+        {/if}
       </div>
-      {#if reminder !== "keep" && reminder !== "none"}
+      {#each remRows as row, i (i)}
         <div class="m-formrow">
-          <span class="lbl">{t("mobile.rem_mode")}</span>
-          <select bind:value={remMode}>
+          <span class="lbl"></span>
+          {#if row.choice}
+            <select bind:value={row.choice} aria-label={t("mobile.reminder")}>
+              {#each SPECIFIC_CHOICES as c (c)}
+                <option value={c}>{REM_LABEL[c]}</option>
+              {/each}
+            </select>
+          {:else}
+            <span class="rem-raw" title={row.raw}>{row.raw}</span>
+          {/if}
+          <select bind:value={row.mode} aria-label={t("mobile.rem_mode")}>
             <option value="notify">🔔 {t("panel.rem.kindNotify")}</option>
             <option value="alarm">⏰ {t("panel.rem.kindAlarm")}</option>
           </select>
+          <button class="m-iconbtn" onclick={() => removeRemRow(i)}>×</button>
         </div>
-      {/if}
+      {/each}
+      <button class="m-chip rem-add" onclick={addRemRow}>＋ {t("mobile.rem_add")}</button>
     {/if}
 
     <div class="m-formrow">
@@ -267,5 +283,24 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 8px 10px;
+  }
+  .rem-none {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .rem-raw {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--text-dim);
+    align-self: center;
+  }
+  .rem-add {
+    margin: 8px 0 2px;
+    align-self: flex-start;
   }
 </style>

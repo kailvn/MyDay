@@ -28,9 +28,21 @@
   // 移动端同步服务
   let sync = $state<SyncServerInfo | null>(null);
   let syncing = $state(false);
+  /** 出码所选的候选地址（USB 网络共享 / 蓝牙共享 / 虚拟网卡各有自己的网段，手机只能扫到可达的那个） */
+  let syncIp = $state("");
+  /** 采纳一次服务信息：所选地址失效（网卡变了/重新生成）时回落到排序最前的候选 */
+  function adoptSyncInfo(v: SyncServerInfo | null) {
+    sync = v;
+    if (v && !v.ips.includes(syncIp)) syncIp = v.ips[0] ?? "";
+  }
+  async function refreshSync() {
+    adoptSyncInfo(await api.syncServerInfo().catch(() => null));
+  }
   /** 服务监听中：二维码 = myday-sync://ip:port/token，手机端「扫码填写」一次配对 */
   const syncQr = $derived(
-    sync?.running && sync.ip ? renderSVG(`myday-sync://${sync.ip}:${sync.port}/${sync.token}`) : null,
+    sync?.running && (syncIp || sync.ip)
+      ? renderSVG(`myday-sync://${syncIp || sync.ip}:${sync.port}/${sync.token}`)
+      : null,
   );
 
   // 今日悬浮窗（OVERLAY-SPEC §6/§9.6）
@@ -52,7 +64,7 @@
     catchupMinutes = (await api.getSetting("reminder_catchup_minutes")) ?? "120";
     overlayCfg = await api.getOverlayConfig().catch(() => null);
     autostart = await api.getAutostart().catch(() => false);
-    sync = await api.syncServerInfo().catch(() => null);
+    await refreshSync();
     refreshHolidayMeta();
   }
 
@@ -71,7 +83,7 @@
     } catch (e) {
       toast.show(t("settings.autostartFailed", { e: String(e) }));
       autostart = await api.getAutostart().catch(() => false);
-    sync = await api.syncServerInfo().catch(() => null);
+      await refreshSync();
     }
   }
 
@@ -307,7 +319,7 @@
         if (!sync) return;
         syncing = true;
         try {
-          sync = await api.syncServerToggle(!sync.enabled);
+          adoptSyncInfo(await api.syncServerToggle(!sync.enabled));
         } catch (e) {
           toast.show(String(e));
         } finally {
@@ -323,7 +335,7 @@
         if (!sync) return;
         syncing = true;
         try {
-          sync = await api.syncServerTokenRegen();
+          adoptSyncInfo(await api.syncServerTokenRegen());
         } catch (e) {
           toast.show(String(e));
         } finally {
@@ -339,19 +351,47 @@
       <dt>{t("settings.syncStatus")}</dt>
       <dd>{sync.running ? t("settings.syncOn") : t("settings.syncOff")}</dd>
       <dt>{t("settings.syncAddr")}</dt>
-      <dd><code>{sync.ip ?? "?"}:{sync.port}</code></dd>
+      <dd><code data-testid="sync-addr">{syncIp || sync.ip || "?"}:{sync.port}</code></dd>
       <dt>{t("settings.syncToken")}</dt>
       <dd><code>{sync.token || "—"}</code></dd>
       <dt>{t("settings.syncLast")}</dt>
       <dd>{sync.last_sync || "—"}</dd>
     </dl>
     <p class="hint">{t("settings.syncHint2")}</p>
+    {#if sync.running}
+      {#if sync.ips.length}
+        <!-- 每张网卡一个网段：手机只能到达其中之一（热点网段 / usb·bt 网段 / 虚拟网段），
+             选中哪个就出哪个的二维码 -->
+        <div class="ipchips" data-testid="sync-ips">
+          <span class="hint">{t("settings.syncIps")}</span>
+          {#each sync.ips as ip (ip)}
+            <button
+              class="ipchip"
+              class:on={ip === (syncIp || sync.ip)}
+              onclick={() => (syncIp = ip)}
+            >{ip}</button>
+          {/each}
+        </div>
+      {:else}
+        <p class="hint" data-testid="sync-noip">{t("settings.syncNoIps")}</p>
+      {/if}
+    {/if}
     {#if syncQr}
       <div class="qrrow">
         <div class="qr" data-testid="sync-qr">{@html syncQr}</div>
         <p class="hint">{t("settings.syncQrHint")}</p>
       </div>
     {/if}
+    <details class="synchelp" data-testid="sync-help">
+      <summary>{t("settings.syncHelpTitle")}</summary>
+      <ul>
+        <li>{t("settings.syncHelpHotspot")}</li>
+        <li>{t("settings.syncHelpPhoneHotspot")}</li>
+        <li>{t("settings.syncHelpUsb")}</li>
+        <li>{t("settings.syncHelpBt")}</li>
+        <li>{t("settings.syncHelpRemote")}</li>
+      </ul>
+    </details>
   {/if}
 </section>
 
@@ -630,6 +670,51 @@
   }
   .qrrow .hint {
     max-width: 34em;
+  }
+  /* 候选地址 chips：每张可达网卡一个网段，点选即切换出码地址 */
+  .ipchips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .ipchip {
+    appearance: none;
+    font: inherit;
+    font-size: 12px;
+    font-family: var(--mono, monospace);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+  .ipchip.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+  /* 连接方式指引：默认折叠，不吃设置页版面 */
+  .synchelp {
+    margin-top: 12px;
+  }
+  .synchelp summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--accent);
+    user-select: none;
+  }
+  .synchelp ul {
+    margin: 8px 0 0;
+    padding-left: 1.2em;
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text);
+    max-width: 42em;
   }
 
   /* 主题：配色圆点 = 亮/暗形态对半拼（预览色来自 PALETTE_SWATCH，真实取色在 themes.css） */

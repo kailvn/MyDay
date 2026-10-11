@@ -610,6 +610,16 @@ export function installE2eMock() {
       socket_path: "/tmp/myday-e2e.sock",
       backend: "x11",
     }),
+    // 同步服务状态：多网卡候选（家用 / USB 共享 / 虚拟网段）供设置页出码切换
+    sync_server_info: () => ({
+      enabled: true,
+      running: true,
+      ip: "192.168.1.10",
+      ips: ["192.168.1.10", "192.168.42.87", "100.64.12.9"],
+      port: 26136,
+      token: "e2e-pairing-token",
+      last_sync: null,
+    }),
     attachment_abs_path: (a) => `/tmp/myday-e2e/${String(a.relPath ?? a.rel_path ?? "")}`,
     add_attachment_b64: () => null,
     open_quick_add: (a) => {

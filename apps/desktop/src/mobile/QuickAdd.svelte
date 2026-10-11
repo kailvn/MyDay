@@ -87,10 +87,15 @@
   }
 
   // ---- 提醒选择（日程锚开始 / 待办锚截止；同类软件惯例的档位） -----------
+  // 首档 = 整体语义（跟随默认 / 不提醒）或第一条提醒的具体档位；
+  // 「＋ 添加提醒」追加更多档（1:N），每档独立选方式（notify / alarm）。
   type RemChoice = "default" | "none" | "pt" | "m5" | "m15" | "m30" | "h1" | "d1";
+  type SpecificChoice = Exclude<RemChoice, "default" | "none">;
+  type RemRow = { choice: SpecificChoice; mode: "notify" | "alarm" };
   let reminder = $state<RemChoice>("default");
-  /** 提醒方式：notify = 系统通知；alarm = 系统闹钟（进程被杀也响）。仅具体时机可选 */
+  /** 首档提醒方式：notify = 系统通知；alarm = 系统闹钟（进程被杀也响）。仅具体时机可选 */
   let remMode = $state<"notify" | "alarm">("notify");
+  let extraRows = $state<RemRow[]>([]);
   const REM_OFFSET: Partial<Record<RemChoice, string>> = {
     pt: "",
     m5: "-5m",
@@ -109,19 +114,35 @@
     h1: t("mobile.rem_h1"),
     d1: t("mobile.rem_d1"),
   });
+  const SPECIFIC_CHOICES: SpecificChoice[] = ["pt", "m5", "m15", "m30", "h1", "d1"];
+
+  /** 追加一档：默认取未被占用的第一个档位，全占用则回落 15 分钟前 */
+  function addRemRow() {
+    const used = new Set([reminder as SpecificChoice, ...extraRows.map((r) => r.choice)]);
+    const choice = SPECIFIC_CHOICES.find((c) => !used.has(c)) ?? "m15";
+    extraRows = [...extraRows, { choice, mode: "notify" }];
+  }
+  function removeRemRow(i: number) {
+    extraRows = extraRows.filter((_, x) => x !== i);
+  }
 
   function buildReminders(): { reminders: NewReminder[]; skip_default_reminder?: boolean } {
     if (reminder === "default") return { reminders: [] };
     if (reminder === "none") return { reminders: [], skip_default_reminder: true };
     const anchor = type === "task" ? "due" : "start";
-    return {
-      reminders: [
-        {
-          spec: `@${anchor}${REM_OFFSET[reminder] ?? ""}`,
-          channel: remMode,
-        },
-      ],
-    };
+    const specOf = (c: SpecificChoice) => `@${anchor}${REM_OFFSET[c] ?? ""}`;
+    // 同档位同方式去重（重复行只会让同一条提醒响两次）
+    const seen = new Set<string>();
+    const rows = [
+      { spec: specOf(reminder), channel: remMode },
+      ...extraRows.map((r) => ({ spec: specOf(r.choice), channel: r.mode })),
+    ].filter((r) => {
+      const k = `${r.spec}|${r.channel}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    return { reminders: rows };
   }
 
   // 标题实时识别（≤60 字，与桌面同一解析器）
@@ -360,6 +381,22 @@
             <option value="alarm">⏰ {t("panel.rem.kindAlarm")}</option>
           </select>
         </div>
+        {#each extraRows as row, i (i)}
+          <div class="m-formrow">
+            <span class="lbl"></span>
+            <select bind:value={row.choice} aria-label={t("mobile.reminder")}>
+              {#each SPECIFIC_CHOICES as c (c)}
+                <option value={c}>{REM_LABEL[c]}</option>
+              {/each}
+            </select>
+            <select bind:value={row.mode} aria-label={t("mobile.rem_mode")}>
+              <option value="notify">🔔 {t("panel.rem.kindNotify")}</option>
+              <option value="alarm">⏰ {t("panel.rem.kindAlarm")}</option>
+            </select>
+            <button class="m-iconbtn" onclick={() => removeRemRow(i)}>×</button>
+          </div>
+        {/each}
+        <button class="m-chip rem-add" onclick={addRemRow}>＋ {t("mobile.rem_add")}</button>
       {/if}
     {/if}
 
@@ -407,5 +444,9 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 8px 10px;
+  }
+  .rem-add {
+    margin: 8px 0 2px;
+    align-self: flex-start;
   }
 </style>

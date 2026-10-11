@@ -385,6 +385,83 @@ fn occurrence_detach_and_skip() {
 }
 
 // ----------------------------------------------------------------------
+// 提醒 1:N（schema 早已支持多条，CLI --remind 至此可重复对齐）
+// ----------------------------------------------------------------------
+
+#[test]
+fn multiple_reminders_via_repeatable_flag() {
+    let t = TempDir::new().unwrap();
+
+    // add：两条提醒并存；--alarm 闹钟档作用于全部 --remind
+    let id = add_item_id(
+        &t,
+        &[
+            "--type",
+            "event",
+            "--title",
+            "评审会",
+            "--start",
+            "2026-10-15T10:00",
+            "--remind",
+            "@start-1d",
+            "--remind",
+            "@start-10m",
+            "--alarm",
+        ],
+    );
+    let out = run(myday(&t).args(["item", "get", &id, "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rems = v["data"]["reminders"].as_array().unwrap();
+    assert_eq!(rems.len(), 2, "两条提醒并存");
+    assert!(rems.iter().all(|r| r["channel"] == "alarm"));
+
+    // update：--remind 重复 = 整体替换；缺省通知档
+    let out = run(myday(&t).args(["item", "update", &id, "--remind", "@start-1h", "--json"]));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = run(myday(&t).args(["item", "get", &id, "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rems = v["data"]["reminders"].as_array().unwrap();
+    assert_eq!(rems.len(), 1);
+    assert_eq!(rems[0]["spec"], "@start-1h");
+    assert_eq!(rems[0]["channel"], "notify");
+
+    // --no-remind 删除全部提醒
+    let out = run(myday(&t).args(["item", "update", &id, "--no-remind", "--json"]));
+    assert!(out.status.success());
+    let out = run(myday(&t).args(["item", "get", &id, "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["reminders"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn add_no_remind_skips_default() {
+    let t = TempDir::new().unwrap();
+    // 回归：add 路径 --no-remind 此前是空操作（空 reminders ≠ 跳过默认补种）
+    let id = add_item_id(
+        &t,
+        &[
+            "--type",
+            "event",
+            "--title",
+            "安静",
+            "--start",
+            "2026-10-15T10:00",
+            "--no-remind",
+        ],
+    );
+    let out = run(myday(&t).args(["item", "get", &id, "--json"]));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["data"]["reminders"].as_array().unwrap().is_empty(),
+        "--no-remind 不得补默认提醒"
+    );
+}
+
+// ----------------------------------------------------------------------
 // 模板管理（v1.4.1 起 CLI 全量可管，不再只有前端入口）
 // ----------------------------------------------------------------------
 

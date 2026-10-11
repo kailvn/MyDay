@@ -15,6 +15,9 @@
    * - 模板模式：填一遍面板存为模板。时间列存 @token（占位池，tpltime.ts 文法），
    *   字段值 / 标题 / 备注 / 状态为具体默认；「模板存意图，条目存事实」。
    * - 提醒 1:N（相对锚点快捷 + 自定义）；event 全天 / task 全天截止开关。
+ * - 编辑保存只提交改动的键（时间按时刻 diff）——不把虚拟实例时刻写回系列锚点。
+ *   重复条目落库前问作用域（RescheduleChoice）：只改这一期 = 拆为单次再应用，
+ *   整个系列 = 直接更新；改了重复规则则天然作用于系列，不再询问。
    * - 时间可清空（task）；文件 / 文件夹拖入只记路径；Ctrl+V 粘贴截图。
    */
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -54,6 +57,7 @@
   import { toast } from "./toast.svelte";
   import TimePopover, { timePopoverOpen } from "./TimePopover.svelte";
   import { closePanel, panelRequest } from "./panel.svelte";
+  import RescheduleChoice from "./RescheduleChoice.svelte";
   import { trashItems } from "./trash";
   import DeleteButton from "./DeleteButton.svelte";
   import FileLinkChips from "./FileLinkChips.svelte";
@@ -116,6 +120,8 @@
   let dragHover = $state(false);
   let saving = $state(false);
   let error = $state("");
+  /** 非空 = 重复条目保存前待选作用域（RescheduleChoice 挂载中，面板不关） */
+  let scopeAsk = $state<ItemPatch | null>(null);
 
   // ---- 激活状态：时间字段 + 自定义字段（键 = 字段 id） -------------------
   let activeTimes = $state<TimeFieldId[]>([]);
@@ -213,6 +219,18 @@
   }
   // svelte-ignore state_referenced_locally
   extraVals = { ...extraVals, ...initialExtra };
+
+  /** 编辑态 extra 的零改动基线：buildExtra 会过滤未知键、重组文件链接，
+   *  与 initialExtra 原文不可直接对比；挂载时先序列化一份作 diff 基准 */
+  // svelte-ignore state_referenced_locally
+  const initialBuiltExtra = isEdit ? JSON.stringify(buildExtra()) : "";
+  /** 重复条目编辑的作用域锚点期：虚拟实例 = 被编辑的那期，母条目 = 当前锚点期。
+   *  拆分/记例外以挂载时刻的值为准，不随表单后续改动漂移 */
+  // svelte-ignore state_referenced_locally
+  const occAnchor: string | null =
+    isEdit && src && src.recurrence && (src.type === "event" || src.type === "task")
+      ? ((src.type === "task" ? src.due_at : src.start_at) ?? null)
+      : null;
 
   /** defaults 的列键（非字段 id） */
   function byColumnKey(k: string): boolean {
@@ -1061,20 +1079,26 @@
     if (!title.trim()) toast.show(t("panel.toast.quickSaved", { title: q(effTitle) }));
   }
 
-  async function saveEdit(item: Item) {
-    // 状态切换（仅待办，两态）：勾选 = 完成，取消勾选 = 重开
-    if (effType === "task" && status !== item.status) {
-      if (status === "done") await api.completeTask(item.id);
-      else await api.updateItem(item.id, { status: "todo" });
-    }
-    const patch: ItemPatch = {
-      title: effTitle.trim() || null,
-      note: note.trim() || null,
-      tags: [...tags],
-      extra: buildExtra(),
-    };
-    // 重复规则变更（编辑 = 修改整个系列）
-    if (recurrenceSpec !== (src?.recurrence ?? "")) {
+  /** 表单值与条目现值是否同一时刻（datetime-local 串 vs ISO；一空一有视为不同） */
+  function sameInstant(iso: string | null | undefined, local: string): boolean {
+    if (!iso) return local === "";
+    if (!local) return false;
+    return Date.parse(iso) === Date.parse(fromLocalInput(local));
+  }
+
+  /** 编辑 patch 组装：只提交真正改动的键（无改动不写库，也不无谓推进 updated_at）。
+   *  重复条目尤其不能把挂载快照整包写回——那会把这一期的虚拟时刻覆盖到系列锚点、
+   *  把别处刚推进的完成账本（recurred_done_at）洗回去。 */
+  function buildEditPatch(item: Item): { patch: ItemPatch; ruleTouched: boolean } {
+    const patch: ItemPatch = {};
+    if (effTitle.trim() !== (item.title ?? "")) patch.title = effTitle.trim() || null;
+    if (note.trim() !== (item.note ?? "")) patch.note = note.trim() || null;
+    if (JSON.stringify(tags) !== JSON.stringify(item.tags)) patch.tags = [...tags];
+    const nextExtra = buildExtra();
+    if (JSON.stringify(nextExtra) !== initialBuiltExtra) patch.extra = nextExtra;
+    const ruleTouched = recurrenceSpec !== (item.recurrence ?? "");
+    if (ruleTouched) {
+      // 重复规则变更：规则操作天然作用于整个系列（无「只改这一期」形态）
       if (recurrenceSpec) patch.recurrence = recurrenceSpec;
       else patch.clear_recurrence = true;
     }
@@ -1094,26 +1118,91 @@
         .map((r) => ({ spec: r.spec, channel: r.channel }));
     }
     if (effType === "log") {
-      if (occurredLocal) patch.occurred_at = fromLocalInput(occurredLocal);
+      if (occurredLocal && !sameInstant(item.occurred_at, occurredLocal))
+        patch.occurred_at = fromLocalInput(occurredLocal);
     } else {
       if (allDay) {
         if (allDayStart) {
-          patch.start_at = fromLocalInput(`${allDayStart}T00:00`);
-          patch.end_at = fromLocalInput(`${allDayStart}T23:59`);
+          if (!sameInstant(item.start_at, `${allDayStart}T00:00`))
+            patch.start_at = fromLocalInput(`${allDayStart}T00:00`);
+          if (!sameInstant(item.end_at, `${allDayStart}T23:59`))
+            patch.end_at = fromLocalInput(`${allDayStart}T23:59`);
         }
       } else {
-        if (startLocal) patch.start_at = fromLocalInput(startLocal);
-        else if (item.start_at) patch.clear_start_at = true;
-        if (endLocal) patch.end_at = fromLocalInput(endLocal);
-        else if (item.end_at) patch.clear_end_at = true;
+        if (startLocal) {
+          if (!sameInstant(item.start_at, startLocal)) patch.start_at = fromLocalInput(startLocal);
+        } else if (item.start_at) patch.clear_start_at = true;
+        if (endLocal) {
+          if (!sameInstant(item.end_at, endLocal)) patch.end_at = fromLocalInput(endLocal);
+        } else if (item.end_at) patch.clear_end_at = true;
       }
-      if (dueLocal) patch.due_at = fromLocalInput(dueLocal);
-      else if (item.due_at) patch.clear_due_at = true;
+      if (dueLocal) {
+        if (!sameInstant(item.due_at, dueLocal)) patch.due_at = fromLocalInput(dueLocal);
+      } else if (item.due_at) patch.clear_due_at = true;
     }
-    await api.updateItem(item.id, patch);
-    if (effType === "event" && item.start_at && item.end_at) {
-      // 冲突提示但不阻止（需求 §5）；编辑面板冲突相对已保存的值判定
-      warnConflict(item.start_at, item.end_at, item.id);
+    return { patch, ruleTouched };
+  }
+
+  /** 系列级保存（改整个系列）。返回 false = 已弹出作用域询问，面板保持打开 */
+  async function saveEdit(item: Item): Promise<boolean> {
+    // 状态切换（仅待办，两态）：勾选 = 完成，取消勾选 = 重开。
+    // 重复待办的完成推进本就是「这一期」语义（核心推进到下一期），保持在系列层执行
+    if (effType === "task" && status !== item.status) {
+      if (status === "done") await api.completeTask(item.id);
+      else await api.updateItem(item.id, { status: "todo" });
+    }
+    const { patch, ruleTouched } = buildEditPatch(item);
+    if (Object.keys(patch).length === 0) return true;
+    if (ruleTouched || !occAnchor) {
+      await api.updateItem(item.id, patch);
+      if (effType === "event" && item.start_at && item.end_at) {
+        // 冲突提示但不阻止（需求 §5）；编辑面板冲突相对已保存的值判定
+        warnConflict(item.start_at, item.end_at, item.id);
+      }
+      return true;
+    }
+    scopeAsk = patch; // 重复条目：落库前问作用域（Google Calendar 式）
+    return false;
+  }
+
+  /** 作用域选择落库：「只改这一期」= 拆为独立条目再应用改动（与拖拽同链路） */
+  async function applyScope(scope: "once" | "series") {
+    const patch = scopeAsk;
+    scopeAsk = null;
+    if (!patch || !src || !occAnchor) return;
+    saving = true;
+    error = "";
+    try {
+      if (scope === "series") {
+        await api.updateItem(src.id, patch);
+        if (effType === "event" && src.start_at && src.end_at) {
+          warnConflict(src.start_at, src.end_at, src.id);
+        }
+      } else {
+        const det = await api.detachOccurrence(src.id, occAnchor);
+        // extra 里的重复完成账本键不随快照回写（detach 已从拆出条目剥过）
+        const extra = patch.extra ? { ...patch.extra } : null;
+        if (extra) delete extra.recurred_done_at;
+        await api.updateItem(det.id, extra ? { ...patch, extra } : patch);
+        toast.show(t("detail.occ_detached", { name: q(displayTitle(det)) }), {
+          ms: 6000,
+          action: {
+            label: t("common.undo"),
+            run: async () => {
+              await api.deleteItem(det.id);
+              await api.removeOccurrenceExdate(src.id, occAnchor);
+            },
+          },
+        });
+        if (effType === "event" && det.start_at && det.end_at) {
+          warnConflict(det.start_at, det.end_at, det.id);
+        }
+      }
+      finish();
+    } catch (e) {
+      error = String(e);
+    } finally {
+      saving = false;
     }
   }
 
@@ -1209,8 +1298,10 @@
     error = "";
     try {
       if (isTpl) await saveTemplate();
-      else if (isEdit && src) await saveEdit(src);
-      else await saveCreate();
+      else if (isEdit && src) {
+        const done = await saveEdit(src);
+        if (!done) return; // 作用域询问中：面板保持打开，等 applyScope 收尾
+      } else await saveCreate();
       finish();
     } catch (e) {
       error = String(e);
@@ -1300,6 +1391,8 @@
   ];
 
   function onKeydown(e: KeyboardEvent) {
+    // 作用域询问开着：Esc 归 RescheduleChoice（关询问不关面板），也不重复触发保存
+    if (scopeAsk) return;
     if (e.key === "Escape") {
       e.preventDefault();
       // 时间弹层开着时 Esc 只关弹层（弹层自带处理），不关面板
@@ -1513,6 +1606,7 @@
 
   <input
     class="title"
+    data-testid="panel-title"
     placeholder={isTpl
       ? t("panel.title.tplPlaceholder")
       : isEdit
@@ -1887,6 +1981,15 @@
       {@render body()}
     </div>
   </div>
+{/if}
+
+{#if scopeAsk && src}
+  <!-- 重复条目编辑保存：作用域二选一（与拖拽同组件）；Esc / 点遮罩 = 回到面板 -->
+  <RescheduleChoice
+    title={t("reschedule.choice_title", { title: displayTitle(src) })}
+    onpick={(s) => void applyScope(s)}
+    oncancel={() => (scopeAsk = null)}
+  />
 {/if}
 
 {#if previewUrl}

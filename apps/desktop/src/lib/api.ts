@@ -685,6 +685,8 @@ export interface SyncServerInfo {
   enabled: boolean;
   running: boolean;
   ip: string | null;
+  /** 全部网卡候选地址（含 USB 网络共享 / 蓝牙共享 / 虚拟网卡），按可达性优先级排序 */
+  ips: string[];
   port: number;
   token: string;
   last_sync: string;
