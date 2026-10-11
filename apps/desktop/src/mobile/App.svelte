@@ -250,7 +250,7 @@
     {#if view === "trash"}
       <Trash onchange={() => void reload()} />
     {:else}
-      <Tasks onopen={(it) => (detail = it)} onchange={() => void reload()} />
+      <Tasks onopen={(it) => (editing = it)} onchange={() => void reload()} />
     {/if}
   </div>
 {/if}
@@ -285,6 +285,10 @@
       void reload();
       editing = null;
       detail = null;
+    }}
+    ondeleted={() => {
+      void reload();
+      editing = null;
     }}
   />
 {/if}

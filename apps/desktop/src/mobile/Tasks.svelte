@@ -138,7 +138,7 @@
     {#each undated as it (it.id)}
       <div class="m-row">
         <input
-          class="m-switch"
+          class="m-check"
           type="checkbox"
           disabled={busyId === it.id}
           onchange={() => toggle(it)}
@@ -160,7 +160,7 @@
       {#each doneSorted as it (it.id)}
         <div class="m-row m-done">
           <input
-            class="m-switch"
+            class="m-check"
             type="checkbox"
             checked
             disabled={busyId === it.id}

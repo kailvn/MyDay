@@ -9,7 +9,12 @@
   import { api, type Item, type ItemPatch } from "../lib/api";
   import { toast } from "../lib/toast.svelte";
 
-  let { item, onclose, onsaved }: { item: Item; onclose: () => void; onsaved: () => void } = $props();
+  let { item, onclose, onsaved, ondeleted }: {
+    item: Item;
+    onclose: () => void;
+    onsaved: () => void;
+    ondeleted?: () => void;
+  } = $props();
 
   const pad2 = (n: number) => String(n).padStart(2, "0");
   /** ISO → 本地 { day, hm } 两个 input 值（date / time 分开渲染，移动端原生选择器） */
@@ -40,6 +45,31 @@
   // svelte-ignore state_referenced_locally
   let tags = $state(item.tags.join(", "));
   let saving = $state(false);
+  /** 删除两步确认（Android WebView 无 window.confirm，八秒不确认自动退回） */
+  let confirmDel = $state(false);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function askDelete() {
+    if (confirmDel) {
+      clearTimeout(confirmTimer);
+      void doDelete();
+      return;
+    }
+    confirmDel = true;
+    clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(() => (confirmDel = false), 8000);
+  }
+  async function doDelete() {
+    saving = true;
+    try {
+      await api.deleteItem(item.id);
+      ondeleted?.();
+    } catch (e) {
+      toast.show(String(e));
+    } finally {
+      saving = false;
+    }
+  }
 
   // ---- 时间（按类型预填自条目现值） --------------------------------------
   // svelte-ignore state_referenced_locally
@@ -270,6 +300,10 @@
     <button class="m-primary" style="margin-top: 12px;" disabled={!canSave || saving} onclick={save}>
       {t("common.save")}
     </button>
+
+    <button class="del" class:arm={confirmDel} disabled={saving} onclick={askDelete}>
+      {confirmDel ? t("mobile.delete_confirm") : t("common.delete")}
+    </button>
   </div>
 </div>
 
@@ -302,5 +336,23 @@
   .rem-add {
     margin: 8px 0 2px;
     align-self: flex-start;
+  }
+  /* 删除两步确认：默认描边弱化，武装后铺危险底（与详情面板同语义） */
+  .del {
+    appearance: none;
+    border: 1px solid var(--danger);
+    background: none;
+    color: var(--danger);
+    font: inherit;
+    font-size: 14px;
+    border-radius: var(--radius);
+    padding: 10px;
+    width: 100%;
+    margin-top: 10px;
+  }
+  .del.arm {
+    background: var(--danger);
+    color: #fff;
+    font-weight: 600;
   }
 </style>

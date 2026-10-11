@@ -315,3 +315,35 @@
 .m-switch:checked::after {
   left: 23px;
 }
+
+/* ---- 待办勾选框：√ 语义（完成打勾即变灰弱化），不用开关（那是启用/停用） ---- */
+.m-check {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  flex: none;
+  margin: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.m-check:checked {
+  background: var(--text-dim);
+  border-color: var(--text-dim);
+}
+.m-check:checked::after {
+  content: "";
+  width: 11px;
+  height: 6px;
+  border-left: 2px solid var(--bg);
+  border-bottom: 2px solid var(--bg);
+  transform: rotate(-45deg) translateY(-1px);
+}
+.m-check:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
