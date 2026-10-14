@@ -1546,6 +1546,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         alarm_dismiss,
         #[cfg(mobile)]
         alarms_sync_payload,
+        qr_push_items,
+        qr_receive_apply,
         #[cfg(mobile)]
         alarms_synced,
         convert_task_to_event,
@@ -1596,6 +1598,32 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         #[cfg(desktop)]
         overlay_show_main,
     ]
+}
+
+// ----------------------------------------------------------------------
+// 扫码推送（免网络单向合并）：电脑生成「今天及以后」快照二维码，手机扫码合并。
+// 合并复用 core::sync 的 LWW（record_sync=false 不动真实同步的基线）。
+// ----------------------------------------------------------------------
+
+/// 电脑端：今天及以后的条目快照（前端压缩后渲染成二维码）。
+#[tauri::command]
+pub fn qr_push_items(state: State<'_, AppState>) -> std::result::Result<Vec<Item>, String> {
+    state.store.qr_push_items().map_err(err_string)
+}
+
+/// 手机端：合并电脑推送的快照（updated_at 守卫，不删除；成功后广播刷新）。
+#[tauri::command]
+pub fn qr_receive_apply(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    items: Vec<Item>,
+) -> std::result::Result<myday_core::sync::SyncPushResp, String> {
+    let resp = state
+        .store
+        .sync_apply_incoming(&items, false)
+        .map_err(err_string)?;
+    notify_changed(&app);
+    Ok(resp)
 }
 
 // ----------------------------------------------------------------------

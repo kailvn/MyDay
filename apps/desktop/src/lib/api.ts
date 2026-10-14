@@ -679,6 +679,13 @@ export const api = {
   syncServerTokenRegen: () => invoke<SyncServerInfo>("sync_server_token_regen"),
   syncRun: (server: string | null, token: string) =>
     invoke<SyncRunReport>("sync_run", { server: server ?? null, token }),
+
+  // ---- 扫码推送（免网络单向合并；编码解码见 lib/qrpush.ts）----
+  /** 电脑端：今天及以后的条目快照（前端压缩后渲染二维码） */
+  qrPushItems: () => invoke<Item[]>("qr_push_items"),
+  /** 手机端：合并电脑推送的快照（LWW 守卫，不删除） */
+  qrReceiveApply: (items: Item[]) =>
+    invoke<{ applied: number; conflicts: number }>("qr_receive_apply", { items }),
 };
 
 export interface SyncServerInfo {

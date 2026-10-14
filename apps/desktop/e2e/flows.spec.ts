@@ -655,3 +655,11 @@ test("T15 同步多通道：候选地址按网卡切换出码，连接方式指�
   await expect(sec.getByTestId("sync-help")).toContainText(/蓝牙/);
   await expect(sec.getByTestId("sync-help")).toContainText(/Tailscale/);
 });
+
+test("T16 扫码推送：生成「今天及以后」压缩载荷的单帧二维码", async ({ page }) => {
+  await navButton(page, /设置/).click();
+  const sec = page.getByTestId("sync-section");
+  // 免网络单向合并：电脑出码即渲染成功（容量校验与编解码往返在 qrpush.test.ts）
+  await sec.getByTestId("qr-push-btn").click();
+  await expect(sec.getByTestId("qr-push").locator("svg")).toHaveCount(1);
+});

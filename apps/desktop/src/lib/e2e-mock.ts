@@ -269,6 +269,16 @@ export function installE2eMock() {
       return clone(out.slice(0, Number(f.limit ?? 200)));
     },
     list_items_window: (a) => clone(listWindow(String(a.from), String(a.to))),
+    // 扫码推送：今天及以后的活跃条目（重复系列含锚在过去）——与 core qr_push_items 同口径
+    qr_push_items: () => {
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const anchor = (i: MockItem) => Date.parse(i.due_at ?? i.start_at ?? i.occurred_at ?? "");
+      return clone(
+        items.filter(
+          (i) => !i.deleted_at && (i.recurrence || (anchor(i) && anchor(i) >= todayStart)),
+        ),
+      );
+    },
     tasks_view: (a) => {
       // 对齐 core tasks_view：无截止退回 start_at 判断，两者皆无的待办归「今天/全部」
       const view = String(a.view ?? "today");

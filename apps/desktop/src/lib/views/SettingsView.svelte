@@ -14,6 +14,7 @@
     type ThemeMode,
   } from "../theme.svelte";
   import { renderSVG } from "uqr";
+  import { encodeQrPayload, QrTooLargeError, QR_PAYLOAD_CAP } from "../qrpush";
 
   let info = $state<{ version: string; data_root: string; socket_path: string; backend?: string } | null>(null);
   let reminderMinutes = $state("10");
@@ -44,6 +45,27 @@
       ? renderSVG(`myday-sync://${syncIp || sync.ip}:${sync.port}/${sync.token}`)
       : null,
   );
+
+  // 扫码推送（免网络单向合并）：今天及以后的条目 → 压缩 → 单帧二维码，手机扫码合并
+  let qrPushSvg = $state("");
+  let qrPushErr = $state("");
+  let qrPushWorking = $state(false);
+  async function genQrPush() {
+    qrPushSvg = "";
+    qrPushErr = "";
+    qrPushWorking = true;
+    try {
+      const payload = encodeQrPayload(await api.qrPushItems());
+      qrPushSvg = renderSVG(payload, { ecc: "L" });
+    } catch (e) {
+      qrPushErr =
+        e instanceof QrTooLargeError
+          ? t("settings.qrPushOver", { size: e.size, cap: QR_PAYLOAD_CAP })
+          : String(e);
+    } finally {
+      qrPushWorking = false;
+    }
+  }
 
   // 今日悬浮窗（OVERLAY-SPEC §6/§9.6）
   let overlayCfg = $state<OverlayConfig | null>(null);
@@ -392,6 +414,21 @@
         <li>{t("settings.syncHelpRemote")}</li>
       </ul>
     </details>
+
+    <div class="qrpush">
+      <button data-testid="qr-push-btn" disabled={!!qrPushWorking} onclick={genQrPush}>
+        {qrPushWorking ? t("settings.qrPushWorking") : t("settings.qrPushBtn")}
+      </button>
+      {#if qrPushErr}
+        <p class="hint import-error" data-testid="qr-push-over">{qrPushErr}</p>
+      {/if}
+      {#if qrPushSvg}
+        <div class="qrrow">
+          <div class="qr qr-big" data-testid="qr-push">{@html qrPushSvg}</div>
+          <p class="hint">{t("settings.qrPushHint")}</p>
+        </div>
+      {/if}
+    </div>
   {/if}
 </section>
 
@@ -667,6 +704,14 @@
     display: block;
     width: 148px;
     height: 148px;
+  }
+  /* 推送码载荷大（版本号高、模块多），放大到手机相机可靠分辨 */
+  .qr-big :global(svg) {
+    width: 300px;
+    height: 300px;
+  }
+  .qrpush {
+    margin-top: 14px;
   }
   .qrrow .hint {
     max-width: 34em;

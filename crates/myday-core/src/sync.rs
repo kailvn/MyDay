@@ -16,7 +16,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::error::MyDayError;
-use crate::model::{new_id, FieldDef, Item, Template};
+use crate::model::{new_id, FieldDef, Item, ItemType, Template};
 use crate::store::{dt, exdates_json, item_mapper, opt_dt, parse_dt, Store};
 
 type Result<T> = std::result::Result<T, MyDayError>;
@@ -111,6 +111,39 @@ impl Store {
             params![LAST_SYNC_KEY, dt(Utc::now())],
         )?;
         Ok(())
+    }
+
+    /// 扫码推送快照（免网络单向合并的电脑端来源）：「今天及以后」的条目。
+    /// 口径：非墓碑；重复系列整行纳入——锚在过去也在产生未来期次，且行内自带
+    /// 例外/完成账本；非重复按类型主时间 ≥ 本地今日零点
+    ///（event 取结束/开始、task 取截止/开始、log 取发生/开始；无时间的不推）。
+    /// 有 `;until` 已结束的旧系列一并纳入：多推无害，少推会截断手机端渲染。
+    pub fn qr_push_items(&self) -> Result<Vec<Item>> {
+        let today_start = crate::tpltime::local_to_utc(
+            chrono::Local::now()
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        );
+        let conn = self.lock()?;
+        let ids: Vec<String> = conn
+            .prepare("SELECT id FROM items WHERE deleted_at IS NULL")?
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let items = load_items_full(&conn, &ids)?;
+        Ok(items
+            .into_iter()
+            .filter(|it| {
+                it.recurrence.is_some() || {
+                    let primary = match it.item_type {
+                        ItemType::Event => it.end_at.or(it.start_at),
+                        ItemType::Task => it.due_at.or(it.start_at),
+                        ItemType::Log => it.occurred_at.or(it.start_at),
+                    };
+                    primary.is_some_and(|t| t >= today_start)
+                }
+            })
+            .collect())
     }
 
     /// 阶段①：对比客户端索引，产出（发给客户端的差异，向客户端索要的 id 清单）。
@@ -822,5 +855,61 @@ mod tests {
         let to_ids: Vec<&str> = resp.to_client.iter().map(|i| i.id.as_str()).collect();
         assert!(to_ids.contains(&b.id.as_str()), "服务器新 → to_client");
         assert!(!to_ids.contains(&a.id.as_str()), "两边一致 → 不发");
+    }
+
+    /// 扫码推送口径：今天及以后 + 重复系列；过去与墓碑不推
+    #[test]
+    fn qr_push_scope_today_future() {
+        let (s, _dir) = store();
+        let today = chrono::Local::now().date_naive();
+        let at = |d: chrono::Duration, h: u32| {
+            crate::tpltime::local_to_utc((today + d).and_hms_opt(h, 0, 0).unwrap())
+        };
+        let past = s
+            .add_item(NewItem {
+                item_type: Some(ItemType::Log),
+                title: Some("昨天".into()),
+                occurred_at: Some(at(chrono::Duration::days(-1), 12)),
+                ..Default::default()
+            })
+            .unwrap();
+        let today_item = s
+            .add_item(NewItem {
+                item_type: Some(ItemType::Task),
+                title: Some("今天".into()),
+                due_at: Some(at(chrono::Duration::days(0), 9)),
+                ..Default::default()
+            })
+            .unwrap();
+        let future = s
+            .add_item(NewItem {
+                item_type: Some(ItemType::Task),
+                title: Some("十天后".into()),
+                due_at: Some(at(chrono::Duration::days(10), 9)),
+                ..Default::default()
+            })
+            .unwrap();
+        // 重复系列：锚在过去仍在产生未来期次 → 必须纳入（行内自带例外/完成账本）
+        let series = s
+            .add_item(NewItem {
+                item_type: Some(ItemType::Task),
+                title: Some("每日站会".into()),
+                due_at: Some(at(chrono::Duration::days(-30), 9)),
+                recurrence: Some("@daily".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        s.delete_item(&past.id).unwrap();
+
+        let ids: Vec<String> = s
+            .qr_push_items()
+            .unwrap()
+            .into_iter()
+            .map(|i| i.id)
+            .collect();
+        assert!(ids.contains(&today_item.id), "今天 → 推");
+        assert!(ids.contains(&future.id), "未来 → 推");
+        assert!(ids.contains(&series.id), "重复系列（锚在过去）→ 推");
+        assert!(!ids.contains(&past.id), "昨天 + 墓碑 → 不推");
     }
 }

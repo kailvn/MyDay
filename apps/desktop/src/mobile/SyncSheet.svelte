@@ -5,9 +5,10 @@
    */
   import { onMount } from "svelte";
   import { t } from "../lib/i18n";
-  import { api, type SyncRunReport } from "../lib/api";
+  import { api, type SyncRunReport, type Item } from "../lib/api";
   import { toast } from "../lib/toast.svelte";
   import { scan, checkPermissions, requestPermissions } from "@tauri-apps/plugin-barcode-scanner";
+  import { decodeQrPayload, QrBadPayloadError } from "../lib/qrpush";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -19,6 +20,11 @@
   let report = $state<SyncRunReport | null>(null);
   /** 失败原因（含网络层分类与可操作建议）：面板常驻展示，不用 toast（会消失） */
   let err = $state("");
+
+  // ---- 扫码接收电脑推送（免网络单向合并）----
+  let qrItems = $state<Item[] | null>(null);
+  let qrCounts = $state<{ added: number; updated: number; skipped: number } | null>(null);
+  let qrErr = $state("");
 
   onMount(async () => {
     server = (await api.getSetting("sync.server").catch(() => null)) ?? "";
@@ -85,6 +91,68 @@
         })
       : t("mobile.sync_none"),
   );
+
+  /** 扫电脑的推送二维码（mydayqr1.:今天及以后快照）：解码 → 预览计数 → 待确认 */
+  async function scanReceive() {
+    if (scanning || running) return;
+    scanning = true;
+    qrErr = "";
+    qrItems = null;
+    qrCounts = null;
+    try {
+      const perm = await checkPermissions();
+      if (perm !== "granted" && (await requestPermissions()) !== "granted") {
+        toast.show(t("mobile.sync_scan_denied"));
+        return;
+      }
+      const res = await scan();
+      const items = decodeQrPayload(res.content) as Item[];
+      // 预览计数（与 Rust 合并守卫同口径：updated_at 新者胜，同刻/更旧跳过）
+      const local = await api.listItems({});
+      const byId = new Map(local.map((i) => [i.id, i]));
+      let added = 0;
+      let updated = 0;
+      let skipped = 0;
+      for (const it of items) {
+        const l = byId.get(it.id);
+        if (!l) added++;
+        else if (String(it.updated_at) > String(l.updated_at)) updated++;
+        else skipped++;
+      }
+      qrItems = items;
+      qrCounts = { added, updated, skipped };
+    } catch (e) {
+      qrErr =
+        e instanceof QrBadPayloadError || e instanceof SyntaxError
+          ? t("mobile.sync_qr_bad")
+          : String(e);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  /** 确认合并：LWW 应用 + data-changed 广播（列表刷新 + 系统闹钟重排都挂在该事件上） */
+  async function applyQr() {
+    if (!qrItems || running) return;
+    running = true;
+    try {
+      const r = await api.qrReceiveApply(qrItems);
+      toast.show(
+        t("mobile.sync_qr_done", {
+          added: qrCounts?.added ?? 0,
+          updated: qrCounts?.updated ?? 0,
+          skipped: qrCounts?.skipped ?? 0,
+          conflicts: r.conflicts,
+        }),
+      );
+      qrItems = null;
+      qrCounts = null;
+    } catch (e) {
+      qrErr = String(e);
+    } finally {
+      running = false;
+    }
+  }
 </script>
 
 <div class="m-backdrop" onclick={onclose} aria-hidden="true"></div>
@@ -99,6 +167,26 @@
     <button class="m-scan" disabled={scanning || running} onclick={scanFill}>
       {scanning ? t("mobile.sync_scanning") : t("mobile.sync_scan")}
     </button>
+    <button class="m-scan receive" data-testid="qr-receive-btn" disabled={scanning || running} onclick={scanReceive}>
+      {scanning ? t("mobile.sync_scanning") : t("mobile.sync_qr_receive")}
+    </button>
+    {#if qrCounts}
+      <div class="qrx" data-testid="qr-preview">
+        <p class="qrx-line">
+          {t("mobile.sync_qr_preview", {
+            added: qrCounts.added,
+            updated: qrCounts.updated,
+            skipped: qrCounts.skipped,
+          })}
+        </p>
+        <button class="m-primary" disabled={running} onclick={applyQr}>
+          {t("mobile.sync_qr_apply")}
+        </button>
+      </div>
+    {/if}
+    {#if qrErr}
+      <p class="qrerr" data-testid="qr-err">{qrErr}</p>
+    {/if}
     <div class="m-formrow">
       <span class="lbl">{t("mobile.sync_server")}</span>
       <input type="text" placeholder={t("mobile.sync_server_ph")} bind:value={server} spellcheck="false" />
@@ -158,6 +246,30 @@
     padding: 10px;
     width: 100%;
     margin: 8px 0 4px;
+  }
+  .m-scan.receive {
+    margin-top: 0;
+  }
+  .qrx {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 8px 0 4px;
+  }
+  .qrx-line {
+    margin: 0 0 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .qrx .m-primary {
+    margin-top: 0;
+  }
+  .qrerr {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: var(--danger);
+    overflow-wrap: anywhere;
   }
   .m-primary {
     margin-top: 10px;
