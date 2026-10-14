@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "myday-cli"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "chrono",
  "clap",
@@ -2520,7 +2520,7 @@ dependencies = [
 
 [[package]]
 name = "myday-core"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -2535,7 +2535,7 @@ dependencies = [
 
 [[package]]
 name = "myday-desktop"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2559,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "myday-e2e-bridge"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
